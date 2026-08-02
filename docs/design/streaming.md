@@ -10,8 +10,10 @@ The primary regime is a temporally ordered stream: an ingest head advances once,
 and replay revisits already-seen frames at random. Poodle/midway readers instead
 target shuffled sampling of random pairs from mp4s — their seek ladders and
 chunk-permutation plans solve a problem this regime doesn't have. Baseline storage
-is pre-extracted frames, which makes sequential ingest and random replay plain
-file reads. On-the-fly mp4 decoding is deferred until a project hits disk limits.
+is pre-extracted frames, which makes sequential ingest, random replay, and
+shuffled iid baselines all plain file reads. On-the-fly mp4 decoding is deferred
+until a project needs shuffled training at a scale where extraction is
+impractical.
 
 ## Core contracts
 
@@ -61,15 +63,15 @@ file reads. On-the-fly mp4 decoding is deferred until a project hits disk limits
 7. **Reproducibility** — everything seeded; checkpoints are state_dicts plus
    config; trainers resume.
 
-## Non-goals
+## Deferred by default
 
-- No general random-access mp4 reader until a project needs one.
-- No plugin registry — hydra `_target_` instantiation does that job.
-- No streaming-pipeline framework until a measured bottleneck says otherwise.
-- Replay buffers stay `Sampler`s, not stateful services.
-- No unified Memory superclass across index, generative, latent, caption, and
-  KV-cache forms.
-- No unified Model superclass across the two interfaces.
+Reversible triage defaults, revisited whenever a project shows the need:
+
+- On-the-fly mp4 decoding. Random access is already free over extracted frames —
+  iid baselines run that way. Decoding from mp4s matters only when extraction is
+  impractical.
+- Plugin registries — hydra `_target_` instantiation covers it.
+- Streaming-pipeline frameworks — adopt only against a measured bottleneck.
 
 ## Port triage findings (2026-08-02)
 
