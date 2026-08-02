@@ -1,5 +1,7 @@
 # egolearn
 
+[![ci](https://github.com/agentic-learning-ai-lab/egolearn/actions/workflows/ci.yml/badge.svg)](https://github.com/agentic-learning-ai-lab/egolearn/actions/workflows/ci.yml)
+
 Learning from first-person video streams: streaming self-supervised representation
 learning, continual learning and replay, temporal segmentation, multimodal learning,
 memory retrieval, and egocentric video question answering.
