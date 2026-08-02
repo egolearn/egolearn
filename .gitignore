@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Environments
+.venv/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Experiment outputs (hydra run dirs, logging, artifacts)
+outputs/
+multirun/
+wandb/
+checkpoints/
+data/
+frames/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# NOTE: launch scripts (*.sh, *.slurm) are deliberately NOT ignored. They belong
+# in scripts/ and are committed — past lab repos gitignored them and lost launchers.

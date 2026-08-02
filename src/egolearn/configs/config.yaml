@@ -1,0 +1,8 @@
+# Root config. Per-paper configs in projects/<name>/configs compose on top of
+# this tree via `hydra.searchpath: [pkg://egolearn.configs]`.
+# Dataset roots are always config/env-supplied — never hardcoded in code.
+seed: 0
+wandb:
+  entity: nyu-mengye-group
+  project: null
+  mode: disabled

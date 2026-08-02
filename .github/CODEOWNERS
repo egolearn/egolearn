@@ -1,0 +1,5 @@
+# Code owners are the review gate: branch protection requires an approving review
+# from one of them on every PR (require_code_owner_reviews). A PR author's own
+# approval never counts. Scope owners to subtrees as components land, e.g.:
+#   /src/egolearn/memory/  @YingWANGG
+* @renmengye @yanlai00 @YingWANGG
