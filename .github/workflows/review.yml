@@ -15,5 +15,5 @@ jobs:
     with:
       bot_login: agentic-learning-bot
     secrets:
-      anthropic_reviewer_key: ${{ secrets.REVIEWER_API_KEY }}
+      anthropic_reviewer_key: ${{ secrets.ANTHROPIC_REVIEWER_KEY }}
       checkout_ssh_key: ${{ secrets.AUTORESEARCH_CHECKOUT_KEY }}
