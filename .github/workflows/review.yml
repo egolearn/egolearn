@@ -1,15 +1,19 @@
 name: advisory-review
+# The agent-session reviewer (reads the PR head read-only). Runs on PR
+# open/reopen and the autoresearch:review label, not every push.
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened]
+    types: [opened, reopened, labeled]
 permissions:
   contents: read
   pull-requests: write
 jobs:
   advisory:
-    uses: agentic-learning-ai-lab/autoresearch/.github/workflows/advisory-review.yml@main
+    # label events only run the review for the explicit re-request label
+    if: github.event.action != 'labeled' || github.event.label.name == 'autoresearch:review'
+    uses: agentic-learning-ai-lab/autoresearch/.github/workflows/advisory-review-agent.yml@main
     with:
       bot_login: agentic-learning-bot
     secrets:
-      reviewer_api_key: ${{ secrets.REVIEWER_API_KEY }}
+      anthropic_reviewer_key: ${{ secrets.REVIEWER_API_KEY }}
       checkout_ssh_key: ${{ secrets.AUTORESEARCH_CHECKOUT_KEY }}
