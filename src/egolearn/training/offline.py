@@ -119,6 +119,7 @@ class OfflineDriver:
         logs: dict[str, float] = {}
         total = None
         with self.timer.measure("model.forward"):
+            self.model.precompute_feats(batch, self.ctx.device)
             for loss_fn in self.losses:
                 values = loss_fn.compute(batch, self.model, self.ctx)
                 for lname, lval in values.items():

@@ -57,6 +57,18 @@ class NTXent(Loss):
         self.requires_heads = [head]
 
     def compute(self, batch, model, ctx) -> dict[str, torch.Tensor]:
+        if all("feats" in self._slot(batch, s) for s in self.slots):
+            # driver-shared trunk features (one forward per slot/view)
+            f1s, f2s = [], []
+            for s in self.slots:
+                feats = self._slot(batch, s)["feats"]  # [B, V, D]
+                if feats.size(1) < 2:
+                    raise ValueError(f"ntxent needs >=2 views in slot {s!r}")
+                f1s.append(feats[:, 0])
+                f2s.append(feats[:, 1])
+            z1 = model.apply_head(self.head, torch.cat(f1s, dim=0))
+            z2 = model.apply_head(self.head, torch.cat(f2s, dim=0))
+            return {"ntxent": _nt_xent(z1, z2, self.temperature)}
         v1s, v2s = [], []
         for s in self.slots:
             views = self._slot(batch, s)["views"]  # [B, V, C, H, W]

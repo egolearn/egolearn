@@ -49,8 +49,11 @@ class ClipInfoNCE(Loss):
                     "recipe (and configure a tokenizer)"
                 )
 
-        x = slot["views"][:, 0].to(ctx.device, non_blocking=True)
-        img = model.apply_head(self.vision_head, model.vision_tap(x))
+        if "feats" in slot:
+            img = model.apply_head(self.vision_head, slot["feats"][:, 0])
+        else:
+            x = slot["views"][:, 0].to(ctx.device, non_blocking=True)
+            img = model.apply_head(self.vision_head, model.vision_tap(x))
         txt = model.text_tap(slot["text_ids"].to(ctx.device), slot["text_len"].to(ctx.device))
         img = F.normalize(img, dim=1)
         txt = F.normalize(txt, dim=1)

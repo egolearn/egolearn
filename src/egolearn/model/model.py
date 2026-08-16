@@ -8,10 +8,11 @@ VLM by tap name.
 Physically shared trunks come for free: several heads referencing the same
 tap (BabyCL: proj128, cls and embed512 all hang off vision.pool2048).
 
-Note (design review): there is deliberately NO cross-loss forward
-de-duplication here.  Fusing slots into one forward changes BatchNorm
-statistics and is not semantically neutral; losses each call the taps
-they need.
+Note (design review): slots are deliberately NEVER fused into one forward --
+that changes BatchNorm statistics and is not semantically neutral.  What IS
+shared is the per-slot, per-view trunk forward (`precompute_feats`): the
+original trainers run the backbone once per crop and feed every head from
+it, so recomputing it per loss would double memory, compute and BN updates.
 """
 
 from __future__ import annotations
@@ -51,6 +52,20 @@ class EgoModel(nn.Module):
         if self.text is None:
             raise RuntimeError("model has no text trunk")
         return self.text(ids, lengths)
+
+    def precompute_feats(self, batch: dict, device) -> None:
+        """One trunk forward per slot and view, written to `slot["feats"]`
+        as [B, V, D]; losses consume these instead of re-running the trunk.
+        Each forward sees exactly one slot's one view, so BatchNorm batch
+        composition matches the original per-crop trainers. Clip-unit slots
+        ([B, V, T, ...]) are skipped -- no video trunk yet."""
+        for slot in batch.values():
+            views = slot.get("views")
+            if views is None or views.dim() != 5:
+                continue
+            v = views.to(device, non_blocking=True)
+            feats = [self.vision_tap(v[:, i].contiguous()) for i in range(v.size(1))]
+            slot["feats"] = torch.stack(feats, dim=1)
 
     # ---- heads ----------------------------------------------------------------
     def head_names(self) -> list[str]:
