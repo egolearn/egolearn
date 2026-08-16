@@ -1,0 +1,62 @@
+# Offline IID upper bound on SAYCam -- the traditional training recipe.
+#
+# driver.mode=offline is the PARALLEL mode to streaming (design decision,
+# 2026-08 working group): index every frame of the dataset up front, shuffle,
+# train in epochs.  No memory, no admission, no rate limiter -- declaring
+# `memories:` / `admission:` / `recipe:` here is a config error.
+#
+# This is the offline SimCLR upper bound that streaming methods (Memory
+# Storyboard, BabyCL's visual side) are compared against, expressed inside
+# the framework instead of borrowed from another repo.  It shares the data
+# plane (sources/decoding/Loader/views), the model/losses/solver, hooks,
+# probes, and the latency ledger with the streaming configs -- only the
+# training loop differs.
+
+defaults:
+  - /config          # packaged root: seed, wandb, dry_run, resume
+  - _self_
+
+hydra:
+  searchpath:
+    - pkg://egolearn.configs
+
+run_dir: runs/offline_iid_saycam
+seed: 1337
+device: cuda
+
+stream:
+  _target_: "stream:saycam"
+  root_dir: /path/to/saycam_5fps          # <- data location
+  fps: 5.0
+
+views:
+  v1: {name: simclr_strong, size: 224, view_idx: 0, scale_min: 0.2}
+  v2: {name: simclr_strong, size: 224, view_idx: 1, scale_min: 0.2}
+
+model:
+  vision: {_target_: "trunk:resnext50", pretrained: false}
+  heads:
+    proj128: {tap: vision.pool2048, _target_: "head:mlp", sizes: [2048, 2048, 128]}
+
+losses:
+  - {_target_: "loss:ntxent", name: instance,
+     slots: [frames], head: proj128, temperature: 0.1, weight: 1.0}
+
+solver:
+  opt: sgd
+  groups:
+    - {match: ".*", lr: 0.05, weight_decay: 1.0e-4}
+  # in offline mode, progress = fraction of planned gradient steps, so the
+  # standard warmup+cosine schedule applies unchanged
+  schedule: {warmup_frac: 0.02, warmup_min_steps: 100, floor: 0.0}
+
+driver:
+  mode: offline
+  batch: {slot: frames, n: 256, views: [v1, v2]}
+  epochs: 5
+  subsample: 1        # take every frame into the index (set >1 to thin it)
+
+hooks:
+  log_every: 100
+  checkpoint_every: 5000
+ 

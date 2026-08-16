@@ -21,27 +21,40 @@ memory retrieval, and egocentric video question answering.
 ```bash
 git clone git@github.com:agentic-learning-ai-lab/egolearn.git
 cd egolearn
-uv sync                      # creates .venv, installs package + dev tools
+uv sync --extra train        # creates .venv, installs package + torch + dev tools
 uv run pre-commit install    # local gates: ruff, gitleaks, large-file blocker
 uv run pytest                # unit tests (slow/gpu/llm tiers excluded by default)
+
+# validate a full pipeline without reading any data
+uv run python -m egolearn.train --config-dir projects/babycl/configs \
+    --config-name saycam_default dry_run=true
+# train (dataset roots come from the command line / config, never code)
+uv run python -m egolearn.train --config-dir projects/babycl/configs \
+    --config-name saycam_default stream.root_dir=$DATA_ROOT
 ```
 
 Requires [uv](https://docs.astral.sh/uv/); Python 3.12 is provisioned automatically.
 
-## What this will become
+## What's here
 
-An ecosystem consolidating the lab's egocentric-learning line — Memory Storyboard,
-LifelongMemory, BabyCL, and the video-SSL toolchain — into one integrated codebase:
-base utilities for streaming and video processing, replay buffers, temporal
-segmentation, self-supervised losses, and evaluation on multimodal readout and QA.
-Currently scaffold-only; components arrive per [docs/roadmap.md](docs/roadmap.md),
-and **nothing is ported without triage** — see the porting policy there.
+The streaming learning framework: dataset adapters (SAYCam, BabyView, video,
+synthetic), tiered replay memories with revisable labels, online admission
+(temporal segmentation), slot-based batch composition, SSL/multimodal losses,
+a lockstep streaming trainer plus a conventional offline-IID mode, world-state
+snapshots with deterministic resume, anytime evaluation probes (4AFC, visual
+two-word test, Baby Winoground), and a per-stage latency ledger. Memory
+Storyboard and BabyCL ship as 1:1 method ports expressed as configs. How it
+all fits together: [docs/design/architecture.md](docs/design/architecture.md).
+
+The rest of the consolidation (LifelongMemory's QA/memory line, more evals)
+arrives per [docs/roadmap.md](docs/roadmap.md), and **nothing is ported
+without triage** — see the porting policy there.
 
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
-| `src/egolearn/` | The installable library (subpackages arrive with their code — see roadmap) |
+| `src/egolearn/` | The installable library: `core` `config` `data` `memory` `model` `training` `evaluation`, plus `methods/<name>/` (per-paper components) |
 | `src/egolearn/configs/` | Packaged hydra configs (`pkg://egolearn.configs`) — entry points never require running from the repo root |
 | `projects/` | One directory per paper: thin entry points + configs composing on the library ([conventions](projects/README.md)) |
 | `tests/` | Tiered tests: unit (default), `video`, `slow`, `gpu`, `llm` markers |

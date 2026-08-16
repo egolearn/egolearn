@@ -18,33 +18,34 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
 
 ## Phase 1 — Streaming & video base
 
-- [ ] StreamIndex: deterministic, temporally ordered index of typed records;
+- [x] StreamIndex: deterministic, temporally ordered index of typed records;
       captions, transcripts, and in-stream QA interleave by timestamp
 - [ ] Offline frame-extraction CLI + frame-dir reads; on-the-fly mp4 reader
       deferred
 - [ ] Video metadata cache, one schema
-- [ ] Streaming dataset with mutable shared-memory labels and deterministic
+- [x] Streaming dataset with mutable shared-memory labels and deterministic
       ordering
 - [ ] Pair-consistent transforms; guaranteed-overlap two-crop
+      (clip-consistent transforms shipped; guaranteed-overlap two-crop pending)
 - [ ] Dataset registry: SAYCam, KrishnaCam, BabyView, Ego4D, Walking Tours —
       roots from config only
 
 ## Phase 2 — Replay, segmentation, losses
 
-- [ ] Index replay as retention policy × sampling policy, seeded, behind the
+- [x] Index replay as retention policy × sampling policy, seeded, behind the
       `Sampler` surface; beyond-index memory forms arrive separately
-- [ ] Temporal segmentation core
-- [ ] SSL losses as composable modules
+- [x] Temporal segmentation core
+- [x] SSL losses as composable modules
 
 ## Phase 3 — Models & one streaming trainer
 
 - [ ] Embedding and text interface boundaries per design/streaming.md §5
 - [ ] Backbones with attribution headers; ViT sibling
-- [ ] Composable `SSLModel(backbone, heads, losses)` replacing per-ablation
+- [x] Composable `SSLModel(backbone, heads, losses)` replacing per-ablation
       classes
-- [ ] One streaming trainer — seeded, resumable, state-dict checkpoints —
+- [x] One streaming trainer — seeded, resumable, state-dict checkpoints —
       replacing the seven trainer scripts
-- [ ] Memory Storyboard lands as `projects/memory-storyboard`
+- [x] Memory Storyboard lands as `src/egolearn/methods/storyboard` + `projects/storyboard`
 
 ## Phase 4 — Readout evals
 

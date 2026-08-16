@@ -6,3 +6,5 @@ wandb:
   entity: nyu-mengye-group
   project: null
   mode: disabled
+dry_run: false     # build + validate the pipeline, then exit
+resume: null       # snapshot path, or "auto" for the newest in run_dir

@@ -17,12 +17,13 @@ dependencies = [
 ]
 
 # Optional extras are added together with the code that needs them (see docs/roadmap.md).
-# Planned:
-#   video : av, opencv-python-headless, pillow  (frame decoding + extraction)
-#   train : torch, torchvision, wandb           (SSL training)
+# Still planned:
 #   qa    : openai, anthropic, pandas           (LLM-based QA + memory)
-#   eval  : scikit-learn                        (probes, kNN/SVM readout)
-#   all   : union of the above
+#   eval  : scikit-learn                        (kNN/SVM readout)
+[project.optional-dependencies]
+video = ["pillow>=10"]
+train = ["torch>=2.4", "torchvision>=0.19", "pillow>=10", "wandb>=0.18"]
+all = ["egolearn[video,train]"]
 
 [dependency-groups]
 dev = [
@@ -48,6 +49,14 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "NPY"]
 # Lambdas and non-ternary ifs are fine in research code.
 ignore = ["E731", "SIM108"]
 
+[tool.ruff.lint.per-file-ignores]
+# Verbatim 1:1 ports keep the original papers' code style untouched.
+"src/egolearn/methods/babycl/refine.py" = ["E501", "E701", "E702", "E741"]
+"src/egolearn/methods/storyboard/__init__.py" = ["E741"]
+
+[tool.ruff.format]
+exclude = ["src/egolearn/methods/babycl/refine.py"]
+
 [tool.mypy]
 python_version = "3.12"
 files = ["src", "tests"]
@@ -55,6 +64,13 @@ ignore_missing_imports = true
 check_untyped_defs = true
 no_implicit_optional = true
 warn_unused_ignores = true
+
+# Verbatim ports keep the original papers' code shape; typing them would
+# mean rewriting verbatim algorithm bodies (same rationale as the ruff
+# per-file-ignores).
+[[tool.mypy.overrides]]
+module = ["egolearn.methods.storyboard", "egolearn.methods.babycl.refine"]
+ignore_errors = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

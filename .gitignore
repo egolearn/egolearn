@@ -18,8 +18,9 @@ outputs/
 multirun/
 wandb/
 checkpoints/
-data/
+/data/
 frames/
+runs/
 
 # OS / editor
 .DS_Store

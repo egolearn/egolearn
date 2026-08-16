@@ -1,0 +1,75 @@
+# Runs out of the box with zero data: a synthetic color-block stream through
+# the full streaming machinery (admission -> tiered memory -> recipe ->
+# losses). Useful as a smoke test and as the smallest complete example.
+#
+#   uv run python -m egolearn.train --config-name toy_streaming dry_run=true
+#   uv run python -m egolearn.train --config-name toy_streaming   # ~1 min CPU
+
+defaults:
+  - /config
+  - _self_
+
+run_dir: runs/toy
+seed: 7
+device: cpu
+
+stream:
+  _target_: "stream:toy"
+  n_sessions: 1
+  blocks_per_session: 4
+  block_len: 40
+  img_size: 64
+
+views:
+  v1: {name: simclr_strong, size: 64, view_idx: 0}
+  v2: {name: simclr_strong, size: 64, view_idx: 1}
+
+label_stores: [fixed]
+
+admission:
+  - {_target_: "admission:frame_emitter", subsample: 1}
+  - {_target_: "admission:fixed_window_labeler", class_length: 40,
+     label_store: fixed}
+
+memories:
+  frames:
+    tiers:
+      short: {capacity: 30, update: fifo}
+      long:  {capacity: 60, update: reservoir}
+    admit_to: [short, long]
+    overflow: {}
+
+routes:
+  RawFrame: frames
+
+recipe:
+  slots:
+    - {name: curr,
+       source: {kind: tier, memory: frames, tier: short},
+       n: 4, unit: frame, views: [v1, v2], labels_from: fixed, strict: true}
+
+model:
+  vision: {_target_: "trunk:toy_cnn", dim: 64}
+  heads:
+    proj: {tap: vision.feat, _target_: "head:mlp", sizes: [64, 64, 32]}
+    cls:  {tap: vision.feat, _target_: "head:linear", in_dim: 64, out_dim: 8}
+
+losses:
+  - {_target_: "loss:ntxent", name: inst,
+     slots: [curr], head: proj, temperature: 0.2, weight: 1.0}
+  - {_target_: "loss:tcl", name: temp,
+     slots: [curr], head: cls, num_classes: 8, weight: 1.0}
+
+solver:
+  opt: adamw
+  groups:
+    - {match: ".*", lr: 1.0e-3, weight_decay: 0.0}
+  schedule: {warmup_frac: 0.1, warmup_min_steps: 2, floor: 0.0}
+
+driver:
+  advance: {kind: observations, n: 8}
+  rate: {steps_per_admit: 1, resample: true}
+  warmup: {admitted: 20}
+
+hooks:
+  log_every: 5

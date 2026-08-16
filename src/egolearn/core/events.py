@@ -1,0 +1,81 @@
+"""Event schemas: named key-sets, the contract between admission and memory.
+
+An event "type" is deliberately cheap: a named set of required keys.
+Compatibility checking degenerates to set algebra (see pipeline.validate).
+
+Governance rule (README, "Adding a schema"): try to express new research with
+existing schemas plus extra keys first; add a new schema only as a last
+resort -- every additional schema halves the density of the composition
+matrix.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from . import keys as K
+
+
+@dataclass(frozen=True)
+class EventSchema:
+    name: str
+    required: frozenset[str]
+    doc: str = ""
+
+
+_SCHEMAS: dict[str, EventSchema] = {}
+
+
+def register_schema(name: str, required, doc: str = "") -> EventSchema:
+    for k in required:
+        K.key_spec(k)  # must be registered keys
+    schema = EventSchema(name, frozenset(required), doc)
+    prev = _SCHEMAS.get(name)
+    if prev is not None and prev.required != schema.required:
+        raise K.KeyFlowError(f"schema {name!r} re-registered with different keys")
+    _SCHEMAS[name] = schema
+    return schema
+
+
+def schema(name: str) -> EventSchema:
+    try:
+        return _SCHEMAS[name]
+    except KeyError:
+        raise K.KeyFlowError(f"unknown event schema {name!r} (known: {sorted(_SCHEMAS)})") from None
+
+
+def make_event(schema_name: str, **fields) -> dict:
+    """Build a validated event item. Extra keys are allowed and preserved."""
+    sc = schema(schema_name)
+    item = dict(fields)
+    item[K.EVENT_SCHEMA] = schema_name
+    K.require_keys(item, sc.required, f"make_event({schema_name})")
+    return item
+
+
+# --------------------------------------------------------------------------
+# Core schemas (metadata is a core category): the coordination points shared
+# across the theme.  Method-specific schemas may still be registered from
+# projects; register_schema raises on conflicting re-registration.
+# --------------------------------------------------------------------------
+
+RAW_FRAME = register_schema(
+    "RawFrame",
+    [K.TIME_SESSION, K.TIME_T0, K.TIME_T1, K.VIDEO_REF],
+    "A single frame flowing straight into memory; labels may be attached lazily via a LabelStore.",
+)
+
+VISUAL_SEGMENT = register_schema(
+    "VisualSegment",
+    [K.TIME_SESSION, K.TIME_T0, K.TIME_T1, K.VIDEO_REF],
+    "A finalized temporal event segment. Frame-based methods sample K frames "
+    "per segment at load time; clip-based methods load the same "
+    "schema as clips.",
+)
+
+ALIGNED_PAIR = register_schema(
+    "AlignedPair",
+    [K.TIME_SESSION, K.TIME_T0, K.TIME_T1, K.VIDEO_REF, K.TEXT_UTTERANCE],
+    "A cross-channel aligned tuple: a video interval paired with an utterance "
+    "(CVCL/BabyCL multimodal unit; Ego4D narrations fit unchanged).",
+)

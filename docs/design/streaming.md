@@ -4,6 +4,14 @@ Contracts for code arriving via triage (see ../roadmap.md). Each is a cleanup of
 something that already exists in memory-storyboard, lifelong-memory, poodle, or
 midway-network — not a new invention.
 
+> **Status (2026-08):** the streaming/replay/modeling side of these contracts is
+> now implemented — see [architecture.md](architecture.md) for the shipped
+> interfaces. Where the implementation refines a sketch below (e.g. labels are
+> revised through a batch-time LabelStore lookup instead of shared-memory
+> arrays, so parallel loader workers never need to see labels at all), the
+> architecture doc is the current reference. §5 text interfaces and §6 QA evals
+> remain design-only.
+
 ## Access-pattern premise
 
 The primary regime is a temporally ordered stream: an ingest head advances once,

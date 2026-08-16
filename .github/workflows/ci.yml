@@ -44,7 +44,9 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --locked
+      # train extra: the unit tests exercise the real pipelines, which need
+      # torch (CPU is fine; the wheel is cached by setup-uv)
+      - run: uv sync --locked --extra train
       # addopts in pyproject.toml already excludes the slow/gpu/llm tiers
       - run: uv run pytest
 

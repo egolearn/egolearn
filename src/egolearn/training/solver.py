@@ -1,0 +1,160 @@
+"""Solver: parameter-group policy + progress-indexed LR schedule.
+
+Both reproductions need this (rule of two): BabyCL's four LR tiers with
+BN/bias decay exemption become two matcher rules; Memory Storyboard's single
+SGD group is one rule.  First matching rule wins per fully-qualified
+parameter name.
+
+The schedule is a function of the PROGRESS clock, not of a precomputed total
+step count -- this removes BabyCL's need to estimate steps_needed from the
+offline storyboard segment count.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+import torch
+
+_NO_DECAY_DEFAULT = r"(\.bias$|\bbn\b|norm|\bgn\b|downsample\.1)"
+
+
+def build_optimizer(
+    model: torch.nn.Module, groups: list[dict], opt: str = "adamw", momentum: float = 0.9
+):
+    """groups: [{match, lr, weight_decay, split_no_decay?, no_decay_pattern?}]
+
+    With split_no_decay=true a rule contributes two torch param groups: one
+    with the given weight_decay and one with 0.0 for params whose name matches
+    `no_decay_pattern` (default: bias / BN / norm, matching BabyCL's
+    _split_decay_named_params_cnn).
+    """
+    compiled: list[dict[str, Any]] = []
+    for g in groups:
+        compiled.append(
+            {
+                "re": re.compile(g["match"]),
+                "lr": float(g["lr"]),
+                "wd": float(g.get("weight_decay", 0.0)),
+                "split": bool(g.get("split_no_decay", False)),
+                "nd_re": re.compile(g.get("no_decay_pattern", _NO_DECAY_DEFAULT)),
+                "decay_params": [],
+                "no_decay_params": [],
+            }
+        )
+
+    unmatched = []
+    for name, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
+        for g in compiled:
+            if g["re"].search(name):
+                bucket = (
+                    "no_decay_params"
+                    if g["split"] and g["nd_re"].search(name.lower())
+                    else "decay_params"
+                )
+                g[bucket].append(p)
+                break
+        else:
+            unmatched.append(name)
+    if unmatched:
+        raise ValueError(
+            f"solver: {len(unmatched)} parameters matched no group rule, "
+            f"e.g. {unmatched[:3]} -- add a catch-all rule {{match: '.*'}}"
+        )
+
+    torch_groups = []
+    for g in compiled:
+        if g["decay_params"]:
+            torch_groups.append(
+                {"params": g["decay_params"], "lr": g["lr"], "weight_decay": g["wd"]}
+            )
+        if g["no_decay_params"]:
+            torch_groups.append(
+                {"params": g["no_decay_params"], "lr": g["lr"], "weight_decay": 0.0}
+            )
+
+    if opt == "adamw":
+        return torch.optim.AdamW(torch_groups)
+    if opt == "adam":
+        return torch.optim.Adam(torch_groups)
+    if opt == "sgd":
+        for tg in torch_groups:
+            tg["momentum"] = momentum
+        return torch.optim.SGD(torch_groups)
+    raise ValueError(f"unknown optimizer {opt!r}")
+
+
+class ProgressCosine:
+    """LR multiplier from the progress clock: linear warmup over
+    `warmup_frac` of the TRAINING RUN, then cosine decay to `floor`.
+
+    Anchoring (`anchor=True`, default): the schedule is indexed by progress
+    made SINCE TRAINING STARTED, not raw stream progress.  The driver's
+    buffer-warmup phase consumes stream before the first gradient step
+    (BabyCL fills the short tier ~10% of the stream); without anchoring the
+    LR warmup would be skipped and the cosine phase-shifted.  With it, the
+    curve matches the original's step-indexed schedule: warmup 2% of the
+    run, cosine over the remainder.
+
+    `warmup_min_steps` is a LOWER bound on warmup length (mcl:
+    `max(100, int(0.02 * steps_needed))`) -- on very short runs warmup
+    stretches to at least this many gradient steps.
+
+    When the stream announces no total (open-ended), progress is None and the
+    multiplier stays at 1.0 after warmup-by-steps -- constant LR is the sane
+    open-ended default; smarter open-ended schedules are a deferred question.
+    """
+
+    def __init__(
+        self,
+        warmup_frac: float = 0.02,
+        warmup_min_steps: int = 100,
+        floor: float = 0.0,
+        constant: bool = False,
+        anchor: bool = True,
+    ):
+        self.warmup_frac = float(warmup_frac)
+        self.warmup_min_steps = int(warmup_min_steps)
+        self.floor = float(floor)
+        self.constant = bool(constant)
+        self.anchor = bool(anchor)
+        self._prog0: float | None = None  # progress at first gradient step
+
+    def multiplier(self, ctx) -> float:
+        import math
+
+        prog = ctx.clock.progress
+        if self.constant:
+            return 1.0
+        if prog is None:
+            warm = max(1, self.warmup_min_steps)
+            return min(1.0, (ctx.clock.step + 1) / warm)
+        if self.anchor:
+            if self._prog0 is None:
+                self._prog0 = prog
+            prog = max(0.0, (prog - self._prog0) / max(1e-8, 1.0 - self._prog0))
+        if self.warmup_frac > 0 or self.warmup_min_steps > 0:
+            by_progress = (prog / self.warmup_frac) if self.warmup_frac > 0 else 1.0
+            by_steps = (ctx.clock.step + 1) / max(1, self.warmup_min_steps)
+            # warmup length = max(frac-of-run, min_steps)  ->  ramp = the slower
+            w = min(by_progress, by_steps)
+            if w < 1.0:
+                return w
+        span = max(1e-8, 1.0 - self.warmup_frac)
+        p = (prog - self.warmup_frac) / span
+        return self.floor + (1.0 - self.floor) * 0.5 * (1.0 + math.cos(math.pi * min(1.0, p)))
+
+    # anchor state must survive snapshots (resume would otherwise re-anchor)
+    def state_dict(self) -> dict:
+        return {"prog0": self._prog0}
+
+    def load_state_dict(self, st: dict) -> None:
+        self._prog0 = st.get("prog0")
+
+
+def apply_lr(optimizer, base_lrs: list[float], mult: float) -> None:
+    for group, base in zip(optimizer.param_groups, base_lrs, strict=False):
+        group["lr"] = base * mult
