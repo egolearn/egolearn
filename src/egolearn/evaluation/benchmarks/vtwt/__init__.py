@@ -2,8 +2,8 @@
 
 1:1 port of mcl's eval_vtwt.py (protocol from Wang et al., BabyVLM).  For
 each sample the model sees one image and two two-word phrases; it predicts
-whichever phrase has the higher cosine to the image.  Accuracy = fraction of
-samples where positive_phrase wins (strict >).
+whichever phrase has the higher cosine similarity to the image.  Accuracy =
+fraction of samples where positive_phrase wins (strict >).
 
 CSV format (mcl eval/vtwt.csv)::
 
@@ -11,15 +11,17 @@ CSV format (mcl eval/vtwt.csv)::
     S_20140420_1803_01_082_00.jpg,see person,touch pillow
 
 Faithfulness notes (verbatim from the original):
-  * tokenization: phrase.strip().lower().split()[:32]; OOV -> index 0
-    (padding_idx, a FIXED ZERO embedding) -- NOT <unk>, and no <sos>/<eos>.
-    The original documents this as intentional: "OOV handling is part of
-    what the evaluation measures."  length counts OOV tokens (they dilute
-    the mean-pool denominator);
-  * preprocessing: RGB, Resize(224, bicubic), CenterCrop(224), per-family
-    normalization -- `image_norm: imagenet` for EgoLearn/mcl-trained models,
-    `image_norm: clip` for the CVCL family.  Mixing families' preprocessing
-    was a documented pitfall, so this is an explicit config field;
+  * tokenization: phrase.strip().lower().split()[:32]; out-of-vocabulary
+    (OOV) words map to index 0 (padding_idx, a FIXED ZERO embedding) -- NOT
+    <unk>, and no <sos>/<eos> markers.  The original documents this as
+    intentional: "OOV handling is part of what the evaluation measures."
+    The phrase length counts OOV tokens, so they dilute the mean-pool
+    denominator;
+  * preprocessing: RGB, Resize(224, bicubic), CenterCrop(224), then
+    normalization chosen per model family -- `image_norm: imagenet` for
+    EgoLearn/mcl-trained models, `image_norm: clip` for the CVCL family.
+    Mixing families' preprocessing was a documented pitfall, so it is an
+    explicit config field;
   * missing images are skipped and counted, as in the original.
 """
 
@@ -48,7 +50,7 @@ NORMS = {
 def encode_phrase(
     phrase: str, word2idx: dict, device, max_len: int = 32
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Verbatim tokenize/batch_encode_phrase from eval_vtwt.py."""
+    """Verbatim port of tokenize/batch_encode_phrase from eval_vtwt.py."""
     tokens = phrase.strip().lower().split()[:max_len]
     ids = [word2idx.get(tok, 0) for tok in tokens]  # 0 = padding_idx / OOV
     length = max(len(ids), 1)

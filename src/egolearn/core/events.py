@@ -1,12 +1,15 @@
-"""Event schemas: named key-sets, the contract between admission and memory.
+"""Event schemas: named sets of required keys.
 
-An event "type" is deliberately cheap: a named set of required keys.
-Compatibility checking degenerates to set algebra (see pipeline.validate).
+A schema is the agreement between admission components (the pieces that
+watch the stream and decide what enters memory) and the memory tables that
+store what they emit.  An event "type" is deliberately simple: just a named
+set of required keys, so checking whether two components fit together is a
+plain comparison of key sets (see pipeline.validate).
 
 Governance rule (README, "Adding a schema"): try to express new research with
 existing schemas plus extra keys first; add a new schema only as a last
-resort -- every additional schema halves the density of the composition
-matrix.
+resort -- every additional schema shrinks the set of component combinations
+that can work together.
 """
 
 from __future__ import annotations
@@ -54,9 +57,9 @@ def make_event(schema_name: str, **fields) -> dict:
 
 
 # --------------------------------------------------------------------------
-# Core schemas (metadata is a core category): the coordination points shared
-# across the theme.  Method-specific schemas may still be registered from
-# projects; register_schema raises on conflicting re-registration.
+# Core schemas: the small set of event shapes shared by all projects.
+# Method-specific schemas may still be registered from projects;
+# register_schema raises on conflicting re-registration.
 # --------------------------------------------------------------------------
 
 RAW_FRAME = register_schema(

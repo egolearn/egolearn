@@ -1,8 +1,8 @@
 """VERBATIM port of BabyCL's segmentation math (mcl utils/online_ms_refine.py).
 
-These six functions are copied 1:1 from the original (device-placement
-arguments dropped; all tensors live on CPU here).  Do not "clean up" --
-fidelity to the published code is the point.
+These six functions are copied 1:1 from the original; the only change is that
+device-placement arguments were dropped (all tensors live on CPU here).  Do not
+"clean up" this file -- matching the published code exactly is the point.
 """
 
 from __future__ import annotations

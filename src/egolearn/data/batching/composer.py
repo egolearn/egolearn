@@ -1,10 +1,12 @@
-"""Composer: sampled refs -> loaded, collated batch.
+"""Composer: takes the refs a recipe sampled and turns them into a loaded,
+collated batch of tensors.
 
-The composer is where derived keys are produced:
-  * seg.id          -- dereferenced through the slot's LabelStore at THIS
-                       moment (so Memory Storyboard's retroactive relabeling
-                       is visible to the loss);
-  * seg.batch_label -- item position within the slot (BabyCL's TCL labels).
+Two label fields are computed here at batch time instead of being stored:
+  * seg.id          -- looked up in the slot's LabelStore at THIS moment, so
+                       Memory Storyboard's retroactive relabeling of old
+                       segments is visible to the loss;
+  * seg.batch_label -- the item's position within the slot (BabyCL's TCL
+                       labels).
 
 Batch layout: ``batch[slot_name]`` is a dict with
   views    FloatTensor [B, V, C, H, W]  (clip slots: [B, V, T, C, H, W])
@@ -55,10 +57,10 @@ class Composer:
         stream_head: dict[str, list[dict]],
         ctx: Context,
     ) -> dict | None:
-        # Fail fast on the control plane: draw EVERY slot (refs only) before
-        # a single pixel is decoded.  A starved strict slot must not waste the
-        # other slots' decode+augment work -- and mcl's feeder likewise gates
-        # (use_annot) before gathering.
+        # Draw the items for EVERY slot first -- refs only, no image decoding.
+        # If a strict slot comes up short we find out before a single pixel is
+        # decoded, so the other slots' decode+augment work is never wasted.
+        # mcl's feeder does the same: it checks use_annot before gathering.
         try:
             draws = {}
             for slot in recipe.slots:
@@ -115,7 +117,8 @@ class Composer:
 
             w = item.get(K.WEIGHT_SAMPLE)
             if slot.unit == "clip":
-                # one contiguous, temporally-consistent clip per item
+                # one contiguous clip per item; all its frames share the same
+                # random augmentation parameters (temporal consistency)
                 views.append(
                     self.loader.clip_views(ref, slot.views, slot.clip_len, slot.clip_stride, rng)
                 )

@@ -1,13 +1,14 @@
-"""Recursive component instantiation (the registry side of the config system).
+"""Turn config dicts into live Python objects.
 
 Hydra owns YAML composition (defaults lists, CLI overrides, multirun) and
 writes the resolved config of every run to `.hydra/config.yaml`.  This module
-owns what happens after composition: a config node with a "_target_" key is
-instantiated by calling the resolved component with the remaining keys
-(children instantiated first).  Targets are either registry addresses
-("admission:babycl_online_segmenter") -- short names decoupled from code
-location, kind-checked -- or dotted paths inside the egolearn package
-("egolearn.memory.table.Table").
+handles what happens after composition: a config node with a "_target_" key
+is turned into an object by calling the named component with the node's
+remaining keys as arguments (children are built first).  A target is either
+a registry address like "admission:babycl_online_segmenter" (a short name
+looked up in a component registry, so it works no matter where the code
+lives, and the kind prefix is checked) or a dotted import path inside the
+egolearn package ("egolearn.memory.table.Table").
 
 Norm (design review): no logic in configs.  YAML only; a config describes an
 object graph and scalar hyperparameters, nothing else.

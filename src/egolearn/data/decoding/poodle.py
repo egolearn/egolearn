@@ -1,21 +1,22 @@
-"""PoodleDecoder: integration slot for the lab's efficient video pipeline.
+"""PoodleDecoder: the placeholder where the lab's efficient video pipeline
+will plug in.
 
-STATUS: interface stub -- awaiting access to the Poodle/Midway codebase
+STATUS: interface stub -- waiting on access to the Poodle/Midway codebase
 (2026-08 working-group decision: reuse its efficient random-access video
 loading instead of writing our own decoder).
 
-What we need from the Poodle side, mapped onto the VideoDecoder protocol:
+What we need from the Poodle side, mapped onto the VideoDecoder interface:
 
   * probe        -> container metadata without a decode pass (fps, #frames);
-  * read_window  -> its batched random access: seek to nearest keyframe,
+  * read_window  -> its batched random access: seek to the nearest keyframe,
                     decode forward once per window, return the requested
                     subset.  This serves REPLAY (memory hands the loader
-                    refs into old videos);
+                    refs pointing into old videos);
   * iter_frames  -> its sequential reader with an open handle + prefetch
                     buffer.  This serves the STREAMING pass and Poodle's
                     own shuffled-IID training mode;
   * handle cache -> Poodle keeps per-file decode state; expose a close()
-                    to bound open handles.
+                    so the number of open handles stays bounded.
 
 Known wiring gap the integration must close: VideoStream currently serves
 every `open_frame` through `read_frame` (random access) even during the

@@ -1,14 +1,18 @@
-"""Memory tables.
+"""Memory tables: the buffers that hold what the learner can replay later.
 
-Control-plane only: a table holds event items (refs + small metadata), never
-tensors.  Admission/update/sampling decisions are single-threaded and
-deterministic given the run seed (named RNGs).
+These tables only hold references and small metadata, never image tensors --
+pixels are loaded from disk when a batch is built.  Decisions about admission
+(what gets in), update (what gets pushed out) and sampling are single-threaded
+and deterministic given the run seed (each table draws from its own named RNG).
 
-Two routing topologies, both code-verified:
-  * BabyCL   : new -> short only; FIFO overflow spills into long
-               (`admit_to: [short], overflow: {short: long}`);
-  * Storyboard: new -> short AND long independently, no spill
-               (`admit_to: [short, long], overflow: {}`).
+A TieredMemory groups several tables ("tiers": e.g. a small short-term buffer
+and a large long-term one).  It supports two routing topologies between tiers,
+both code-verified against the original repos:
+  * spill topology (BabyCL): new items enter the short buffer and anything it
+    pushes out moves into the long one
+    (`admit_to: [short], overflow: {short: long}`);
+  * parallel topology (Memory Storyboard): new items enter both buffers
+    independently (`admit_to: [short, long], overflow: {}`).
 """
 
 from __future__ import annotations
@@ -28,10 +32,11 @@ class Table:
         sampler: str = "uniform",
         admit_stride: int = 1,
     ):
-        """`admit_stride`: accept every k-th offered entry (default: all).
-        Memory Storyboard's short FIFO subsamples the stream (--subsample:
-        every 8th frame) while its long reservoir ingests every frame --
-        per-tier admission striding is a standard knob, not method logic."""
+        """`admit_stride`: accept only every k-th entry offered to this table
+        (default 1 = accept everything).  Memory Storyboard's short fifo tier
+        keeps only a subsample of the stream (--subsample: every 8th frame)
+        while its long reservoir tier ingests every frame -- so per-tier
+        admission striding is a generic knob here, not method-specific logic."""
         if capacity <= 0:
             raise ValueError(f"Table {name!r} needs positive capacity")
         self.name = name
@@ -105,7 +110,8 @@ class TieredMemory:
     def admit(self, event: dict, ctx: Context) -> None:
         for tname in self.admit_to:
             evicted = self.tiers[tname].admit(event, self._rng(ctx, tname))
-            # cascade spill (BabyCL: short FIFO overflow -> long reservoir)
+            # spill chain: an item this tier pushes out is offered to the next
+            # tier (BabyCL: short fifo overflow moves into the long reservoir)
             src = tname
             while evicted is not None and src in self.overflow:
                 dst = self.overflow[src]
@@ -118,9 +124,10 @@ class TieredMemory:
         return self.tiers[tier].sample(n, self._rng(ctx, tier + ".sample"))
 
     def sample_mix(self, n: int, fractions: dict[str, float], ctx: Context) -> list[dict]:
-        """Quota per tier with deficit backfill (BabyCL TwoTierBuffer.sample):
-        integer quotas from fractions; any shortfall is refilled from the
-        other tiers' remaining entries."""
+        """Sample n items with a per-tier quota, topping up when a tier runs
+        short.  This matches BabyCL's TwoTierBuffer.sample: integer quotas
+        come from `fractions`; if a tier has too few entries, the shortfall
+        is refilled from the other tiers' remaining entries."""
         quotas = {t: int(n * f) for t, f in fractions.items()}
         # give rounding leftovers to the largest-fraction tier
         leftover = n - sum(quotas.values())
@@ -136,7 +143,7 @@ class TieredMemory:
                 if id(e) not in picked_ids:
                     picked.append(e)
                     picked_ids.add(id(e))
-        if len(picked) < n:  # deficit backfill from all tiers
+        if len(picked) < n:  # a tier ran short: top up from all tiers' leftovers
             pool = [e for t in self.tiers for e in self.tiers[t].entries if id(e) not in picked_ids]
             rng = self._rng(ctx, "backfill")
             take = min(n - len(picked), len(pool))

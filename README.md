@@ -37,14 +37,18 @@ Requires [uv](https://docs.astral.sh/uv/); Python 3.12 is provisioned automatica
 
 ## What's here
 
-The streaming learning framework: dataset adapters (SAYCam, BabyView, video,
-synthetic), tiered replay memories with revisable labels, online admission
-(temporal segmentation), slot-based batch composition, SSL/multimodal losses,
-a lockstep streaming trainer plus a conventional offline-IID mode, world-state
-snapshots with deterministic resume, anytime evaluation probes (4AFC, visual
-two-word test, Baby Winoground), and a per-stage latency ledger. Memory
-Storyboard and BabyCL ship as 1:1 method ports expressed as configs. How it
-all fits together: [docs/design/architecture.md](docs/design/architecture.md).
+The streaming learning framework. In plain terms: dataset adapters read
+egocentric video as a time-ordered stream (SAYCam, BabyView, raw video,
+synthetic test data); admission components watch the stream and decide what
+goes into bounded replay buffers; a batch recipe describes how training
+batches are sampled from those buffers; SSL and image-text losses train the
+model; probes score it while it trains (4AFC, visual two-word test, Baby
+Winoground). Training can follow the stream in order (the streaming mode) or
+shuffle everything like ordinary offline training (the IID mode). Runs can
+stop and resume exactly where they left off, and every run prints a
+per-stage timing report. Memory Storyboard and BabyCL are included as
+faithful ports of the original code, each expressed as a config file. The
+full walkthrough: [docs/design/architecture.md](docs/design/architecture.md).
 
 The rest of the consolidation (LifelongMemory's QA/memory line, more evals)
 arrives per [docs/roadmap.md](docs/roadmap.md), and **nothing is ported

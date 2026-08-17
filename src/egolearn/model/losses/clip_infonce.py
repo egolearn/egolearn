@@ -1,12 +1,13 @@
 """Symmetric image-text InfoNCE (the textbook CLIP loss).
 
-Core loss library.  Faithful to multimodel.MultiModalModel.
+Part of the core loss library.  Faithful to multimodel.MultiModalModel.
 calculate_contrastive_loss (CVCL/BabyCL): L2-normalized embeddings, fixed
-temperature, symmetric CE.
+temperature, symmetric cross-entropy in both directions (image-to-text and
+text-to-image).
 
 `use_sample_weights` reproduces BabyCL's clip-importance weighting: if the
-slot carries per-sample weights (weight.sample flowing through
-memory/composer), the loss becomes sum(w_i * l_i) / sum(w_i).
+slot carries per-sample weights (the weight.sample field, carried through
+memory and the batch composer), the loss becomes sum(w_i * l_i) / sum(w_i).
 """
 
 from __future__ import annotations

@@ -3,24 +3,27 @@
 Reproduces the BabyCLIP default run (continual visual + verbal learning on
 SAYCam, single chronological pass).
 
-**This project owns the paper's contribution, as 1:1 ports** (`components/`,
-registered on import via the config's `_imports_`):
+**This project owns the paper's contribution, as 1:1 ports** (`components/`; the
+config's `_imports_` list makes them register themselves on import):
 
 * `refine.py` — **verbatim** segmentation math from mcl's
   `utils/online_ms_refine.py` (prefix sums, chunk expansion 2–12 s,
   gap cutting, representative picking)
-* `admission:babycl_online_segmenter` — the OnlineSegmenter: sliding window,
-  utterance-anchored expansion, ~3 min packing, watermark finalize-once,
-  global-id merge (cos ≥ 0.85) with cross-session handover
-* `admission:an_chunk_emitter` — the feeder's AN-chunk admission path: raw timestamp
-  runs split on contiguous 5fps steps, atomic complete-visibility emission,
-  dedup. **No similarity expansion** — the original feeder discards the
+* `admission:babycl_online_segmenter` — the OnlineSegmenter: a sliding window over
+  the stream; chunks anchored on utterances and grown by visual similarity; packing
+  into ~3 min segments; each segment finalized exactly once, only when the stream is
+  far enough past its end that nothing can change it (the paper's watermark rule);
+  global-id merge (cos ≥ 0.85) with handover across sessions
+* `admission:an_chunk_emitter` — the feeder's AN-chunk admission path: each
+  utterance's raw timestamps are split into runs of contiguous 5fps steps; a chunk is
+  emitted in one piece only after all of its frames have streamed past; duplicates
+  are dropped. **No similarity expansion** — the original feeder discards the
   segmenter's expanded chunks; this port preserves that.
-* `embedder:frozen_resnext50` (ImageNet-frozen segmentation embedder),
-  `trunk:text_bow` (CVCL BOW text encoder), `view:cvcl_aug` (an_transform
-  1:1, incl. the PIL radius blur), `view:babycl_ms_aug` (the EFFECTIVE
-  segment augmentation: center-crop at gather + strong SimCLR at train,
-  fused into one pipeline)
+* `embedder:frozen_resnext50` (the frozen ImageNet encoder the segmenter embeds
+  frames with), `trunk:text_bow` (CVCL bag-of-words text encoder), `view:cvcl_aug`
+  (an_transform 1:1, incl. the PIL radius blur), `view:babycl_ms_aug` (the
+  augmentation segments EFFECTIVELY receive: center-crop at gather + strong SimCLR
+  at train, fused into one pipeline)
 
 Everything else is the core toolbox (saycam/babyview adapters,
 ntxent/tcl/clip_infonce, simclr views, resnext50, spill-routed tables,

@@ -1,11 +1,13 @@
-"""NT-Xent (SimCLR) instance loss over two augmented views.
+"""NT-Xent (SimCLR) contrastive loss over two augmented views of each image.
 
-Core loss library: a textbook, method-agnostic loss (faithful to
-osiris_model.NT_Xent, the implementation both founding repos share).
-Methods differ in HOW they combine losses -- that is config, not code.
+Part of the core loss library: a textbook, method-agnostic loss, faithful to
+osiris_model.NT_Xent (the implementation both founding repos share).
+Methods differ in HOW they combine losses, and that difference lives in
+config, not code.
 
-`slots` may list several slots -- they are CONCATENATED before the loss.
-Memory Storyboard computes NT-Xent over curr+replay jointly ([curr, replay]);
+`slots` may list several slots (named groups of items in the batch); their
+contents are CONCATENATED before the loss is computed.  Memory Storyboard
+computes NT-Xent over current and replay items jointly ([curr, replay]);
 BabyCL uses a single segment slot.
 """
 
@@ -58,7 +60,7 @@ class NTXent(Loss):
 
     def compute(self, batch, model, ctx) -> dict[str, torch.Tensor]:
         if all("feats" in self._slot(batch, s) for s in self.slots):
-            # driver-shared trunk features (one forward per slot/view)
+            # trunk features precomputed by the driver (one forward per slot/view)
             f1s, f2s = [], []
             for s in self.slots:
                 feats = self._slot(batch, s)["feats"]  # [B, V, D]

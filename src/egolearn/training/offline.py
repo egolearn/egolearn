@@ -1,16 +1,16 @@
-"""OfflineDriver: traditional IID training -- the PARALLEL mode to streaming.
+"""OfflineDriver: conventional IID training, a second training mode alongside streaming.
 
-Design decision (2026-08 working group): IID and streaming are parallel
-training modes, not one degenerate config of the same loop.  Offline IID is
-the completely conventional recipe -- index the whole dataset up front,
-shuffle, train in epochs -- with **no memory tables, no admission, no rate
-limiter**.  It lives inside the framework (instead of borrowing someone
-else's implementation) because it is the upper bound every streaming method
-is compared against.
+Design decision (2026-08 working group): IID and streaming are two separate, parallel training
+modes, not one degenerate config of the same loop.  Offline IID is the completely conventional
+recipe -- index the whole dataset up front, shuffle, train in epochs -- with **no memory tables
+and no admission**; the streaming driver's control over how many training steps run per unit of
+new stream data does not apply here.  It lives inside the framework (instead of borrowing
+another repo's implementation) because it is the upper bound every streaming method is compared
+against.
 
-Shared with the streaming path: sources/decoding/Loader/views (the whole
-data plane), model/losses/solver, hooks/probes, and the stage-latency
-ledger.  Only the loop differs.  Config switch:
+Shared with the streaming path: sources/decoding/Loader/views (the whole data plane),
+model/losses/solver, hooks/probes, and the per-stage timing report.  Only the loop differs.
+Config switch:
 
     driver:
       mode: offline                       # default: streaming
@@ -18,18 +18,18 @@ ledger.  Only the loop differs.  Config switch:
       epochs: 10                          # and/or max_steps
       subsample: 1                        # take every k-th frame into the index
 
-Clocks: in offline mode `progress` is the fraction of planned gradient steps
-(epochs are conventional here; the "no epochs" rule applies to the streaming
-loop only).  Epoch e's shuffle order comes from the named RNG
-"offline.shuffle.epoch<e>" -- derived from (seed, epoch), never consumed
-across epochs -- so runs are deterministic AND resumable: `load_snapshot`
-restores the clock and fit() continues from step % batches_per_epoch of the
+Clocks: in streaming runs, progress = the fraction of the stream consumed so far, used instead
+of epochs.  In offline mode `progress` instead means the fraction of planned gradient steps
+(epochs are conventional here; the "no epochs" rule applies to the streaming loop only).
+Epoch e's shuffle order comes from the named RNG "offline.shuffle.epoch<e>" -- derived from
+(seed, epoch), never consumed across epochs -- so runs are deterministic AND resumable:
+`load_snapshot` restores the clock and fit() continues from step % batches_per_epoch of the
 regenerated epoch order.
 
-V1 scope: unit=frame -- the offline SSL upper bound both founding papers
-compare against (shuffled frames, two views, ntxent).  Utterance-pair IID
-(original CVCL) needs the utterance->frame mapping that admission components
-own in streaming; add unit=pair when a project needs it.
+V1 scope: unit=frame -- the offline SSL upper bound both founding papers compare against
+(shuffled frames, two views, ntxent).  Utterance-pair IID (original CVCL) needs the
+utterance->frame mapping that admission components own in streaming; add unit=pair when a
+project needs it.
 """
 
 from __future__ import annotations
@@ -98,8 +98,8 @@ class OfflineDriver:
 
     # ------------------------------------------------------------------
     def _build_index(self):
-        """Enumerate every (subsampled) dense-channel frame ref up front --
-        the conventional 'dataset as a list' view of the same stream."""
+        """List every (subsampled) dense-channel frame ref up front, turning the
+        stream into the conventional 'dataset as a list' that IID training expects."""
         refs = []
         for session in self.stream.sessions():
             for ch in session.channels.values():

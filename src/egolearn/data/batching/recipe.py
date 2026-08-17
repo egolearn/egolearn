@@ -1,17 +1,22 @@
-"""BatchRecipe: the declarative description of one training minibatch.
+"""BatchRecipe: a config-level description of what one training minibatch
+contains.  A recipe is a list of slots; each slot (one named part of the
+batch) says where its items come from and how they should be loaded.
 
 Slot source kinds (all three code-verified as necessary):
-  * tier        -- sample n items from one tier of one memory
+  * tier        -- sample n items from one tier (one age band) of one memory
                    (Memory Storyboard: curr=short, replay=long);
-  * mix         -- sample n items from one memory with per-tier fractions and
-                   deficit backfill (BabyCL: pairs 25% short / 75% long);
-  * stream_head -- the most recently admitted events of a schema, bypassing
-                   memory (the CL-CVCL baseline's include_pushed_new_in_batch).
+  * mix         -- sample n items from one memory with per-tier fractions;
+                   if one tier has too few items, the remainder is drawn from
+                   the other tiers (BabyCL: pairs 25% short / 75% long);
+  * stream_head -- the most recently admitted events of a schema, taken
+                   directly rather than sampled from memory (the CL-CVCL
+                   baseline's include_pushed_new_in_batch).
 
-`strict` slots that cannot be filled fail the recipe; the composer then falls
-back to `fallback` (BabyCL: multimodal slot starved early in the stream ->
-all-visual batch of 4 segments).  This cross-slot conditional is deliberately
-explicit in config instead of hidden in dataloader logic.
+If a `strict` slot cannot be filled, the whole recipe fails and the composer
+retries with `fallback` instead (BabyCL: early in the stream the multimodal
+slot has no items yet, so it falls back to an all-visual batch of 4
+segments).  This dependency between slots is deliberately spelled out in
+config instead of being hidden inside dataloader logic.
 """
 
 from __future__ import annotations
@@ -30,8 +35,8 @@ class SlotSpec:
     clip_stride: int = 1  # take every k-th frame (clip unit)
     views: list[str] = field(default_factory=list)
     text: bool = False  # tokenize text.utterance into the slot
-    labels_from: str | None = None  # LabelStore name; resolves seg.id
-    batch_label: bool = False  # derive seg.batch_label = item position
+    labels_from: str | None = None  # LabelStore name; seg.id is looked up there at batch time
+    batch_label: bool = False  # set seg.batch_label to the item's position within the slot
     strict: bool = True
 
     def __post_init__(self):

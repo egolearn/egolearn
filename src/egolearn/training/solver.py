@@ -1,13 +1,12 @@
-"""Solver: parameter-group policy + progress-indexed LR schedule.
+"""Solver: assigns model parameters to optimizer groups and computes the LR schedule.
 
-Both reproductions need this (rule of two): BabyCL's four LR tiers with
-BN/bias decay exemption become two matcher rules; Memory Storyboard's single
-SGD group is one rule.  First matching rule wins per fully-qualified
-parameter name.
+Both reproductions need this, which is why it is shared code: BabyCL's four LR tiers with
+BN/bias decay exemption become two matcher rules; Memory Storyboard's single SGD group is one
+rule.  Each parameter goes to the first rule whose regex matches its fully-qualified name.
 
-The schedule is a function of the PROGRESS clock, not of a precomputed total
-step count -- this removes BabyCL's need to estimate steps_needed from the
-offline storyboard segment count.
+The schedule is a function of progress -- the fraction of the stream consumed so far, used
+instead of epochs -- not of a precomputed total step count.  This removes BabyCL's need to
+estimate steps_needed from the offline storyboard segment count.
 """
 
 from __future__ import annotations
@@ -88,24 +87,25 @@ def build_optimizer(
 
 
 class ProgressCosine:
-    """LR multiplier from the progress clock: linear warmup over
-    `warmup_frac` of the TRAINING RUN, then cosine decay to `floor`.
+    """LR multiplier driven by progress (the fraction of the stream consumed so far):
+    linear warmup over `warmup_frac` of the TRAINING RUN, then cosine decay to `floor`.
 
-    Anchoring (`anchor=True`, default): the schedule is indexed by progress
-    made SINCE TRAINING STARTED, not raw stream progress.  The driver's
-    buffer-warmup phase consumes stream before the first gradient step
-    (BabyCL fills the short tier ~10% of the stream); without anchoring the
-    LR warmup would be skipped and the cosine phase-shifted.  With it, the
-    curve matches the original's step-indexed schedule: warmup 2% of the
-    run, cosine over the remainder.
+    Anchoring (`anchor=True`, default): the LR warmup starts counting from the first
+    training step, not from the start of buffer filling.  Concretely, the schedule is
+    indexed by progress made SINCE TRAINING STARTED rather than raw stream progress.
+    The driver's buffer-warmup phase consumes stream before the first gradient step
+    (BabyCL fills the short tier with ~10% of the stream); without anchoring the LR
+    warmup would already be over by then and the cosine curve shifted.  With it, the
+    curve matches the original's step-indexed schedule: warmup over 2% of the run,
+    cosine over the remainder.
 
     `warmup_min_steps` is a LOWER bound on warmup length (mcl:
-    `max(100, int(0.02 * steps_needed))`) -- on very short runs warmup
-    stretches to at least this many gradient steps.
+    `max(100, int(0.02 * steps_needed))`) -- on very short runs warmup stretches to
+    at least this many gradient steps.
 
-    When the stream announces no total (open-ended), progress is None and the
-    multiplier stays at 1.0 after warmup-by-steps -- constant LR is the sane
-    open-ended default; smarter open-ended schedules are a deferred question.
+    When the stream announces no total length (open-ended), progress is None and the
+    multiplier stays at 1.0 once the step-count warmup is done -- constant LR is the
+    sane open-ended default; smarter open-ended schedules are a deferred question.
     """
 
     def __init__(

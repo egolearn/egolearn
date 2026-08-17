@@ -6,16 +6,17 @@
 #   long reservoir 45000, crop 112, SGD lr 0.05, class_length 7500,
 #   prototype merging with dynamic quantile threshold (merge_threshold 0.003).
 #
-# Structural signatures of MS (vs. babycl config):
-#   * memory unit = FRAME; PARALLEL admission to both tiers (no spill);
+# How to tell this config apart from the babycl one, structurally:
+#   * memory unit = FRAME; both tiers admit from the stream INDEPENDENTLY (no spill);
 #     the short FIFO admits every 8th frame (admit_stride), the long
 #     reservoir ingests every frame;
-#   * batch = two slots, each addressing ONE tier;
+#   * batch = two slots, each drawing from ONE tier;
 #   * NT-Xent over curr+replay JOINTLY; TCL over the replay slot only,
 #     with GLOBAL class ids resolved through the revisable LabelStore;
 #   * segmentation embeddings come from the LEARNER'S OWN backbone;
-#   * rate limiter: 1 step per 64-frame advance, SAME batch if >1
-#     (resample=false == the original num_grads semantics).
+#   * training pace: 1 gradient step per 64-frame stream advance, and with more
+#     steps the SAME batch would be reused (resample=false == the original
+#     num_grads semantics).
 
 defaults:
   - /config          # packaged root: seed, wandb, dry_run, resume
@@ -29,8 +30,8 @@ run_dir: runs/storyboard_saycam
 seed: 42
 device: cuda
 
-# method-novel components (verbatim greedy_hierarchical_clustering,
-# storyboard_recluster, learner_tap) register on import
+# the method-specific components (verbatim greedy_hierarchical_clustering,
+# storyboard_recluster, learner_tap) register themselves when imported
 _imports_: [egolearn.methods.storyboard]
 
 stream:
@@ -53,7 +54,8 @@ embedders:
 admission:
   # every frame becomes a RawFrame item (frame-granularity memory)
   - {_target_: "admission:frame_emitter", subsample: 1}
-  # prior labels: fixed-length chunks (StreamingDataset default labels)
+  # labels before any reclustering: fixed-length chunks of class_length frames
+  # (StreamingDataset's default labels)
   - {_target_: "admission:fixed_window_labeler", class_length: 7500,
      label_store: storyboard}
   # recluster on short-window turnover + retroactive relabeling + prototype

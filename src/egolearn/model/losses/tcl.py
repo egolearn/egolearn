@@ -1,14 +1,17 @@
-"""Temporal classification (TCL) over segment labels.
+"""Temporal classification loss (TCL): classify each frame by its segment
+label.
 
-Core loss library.  Faithful to osiris_model.TemporalClassification:
-cross-entropy of a classifier head against segment labels on BOTH augmented
-views, summed and divided by 2B; `filter_unseen` zeroes the CE weight of
-classes beyond the largest label seen so far.
+Part of the core loss library.  Faithful to
+osiris_model.TemporalClassification: cross-entropy of a classifier head
+against segment labels on BOTH augmented views, summed and divided by 2B;
+`filter_unseen` zeroes the cross-entropy weight of classes beyond the
+largest label seen so far.
 
-The `slots` argument realizes what the original code does with tensor
-slicing: Memory Storyboard applies TCL to the replay portion only
-(slots: [replay]); BabyCL applies it to the whole visual batch with
-batch-local labels (slots: [segments], labels derived by the composer).
+The `slots` argument (slots are the named groups of items in the batch)
+expresses what the original code did with tensor slicing: Memory Storyboard
+applies TCL to the replay portion only (slots: [replay]); BabyCL applies it
+to the whole visual batch with batch-local labels (slots: [segments], labels
+derived by the composer).
 """
 
 from __future__ import annotations
@@ -68,7 +71,7 @@ class TemporalClassification(Loss):
 
         feats = None
         if all("feats" in self._slot(batch, s) for s in self.slots):
-            # driver-shared trunk features (one forward per slot/view)
+            # trunk features precomputed by the driver (one forward per slot/view)
             feats = torch.cat([self._slot(batch, s)["feats"] for s in self.slots], dim=0)
 
         n_views = min(2, views.size(1))

@@ -6,10 +6,11 @@
     ... --config-name saycam_default resume=auto       # continue a run
     ... --config-name saycam_default seed=42 driver.rate.steps_per_admit=4
 
-`dry_run=true` instantiates and validates the full pipeline (including model
-and optimizer) without reading any stream data -- contract errors surface at
-t=0. hydra writes the fully-resolved config to `.hydra/config.yaml` in the
-run's output dir; that file is the reproduction truth.
+`dry_run=true` builds and validates the full pipeline (including model and
+optimizer) without reading any stream data, so wiring mistakes show up
+before training starts. hydra writes the fully-resolved config to
+`.hydra/config.yaml` in the run's output dir; that is the file to use when
+reproducing the run.
 """
 
 from __future__ import annotations

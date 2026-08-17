@@ -1,18 +1,24 @@
-"""EgoModel: trunk registry + named taps + heads.
+"""EgoModel: trunks (backbone encoders), named taps, and heads.
 
-Losses and probes may only touch the model through taps and heads -- this is the
-export contract's foundation: a checkpoint is (trunks, heads, tap names,
-preprocessing spec), so any trained encoder can be dropped into probes or a
-VLM by tap name.
+A tap is a named feature output of a trunk (e.g. vision.pool2048, the pooled
+ResNeXt-50 features); a head is a small module (projector, classifier)
+attached to a tap by name.  Losses and probes may only touch the model
+through taps and heads, never through internals.  A checkpoint stores
+(trunks, heads, tap names, preprocessing spec) -- every checkpoint records
+the tap and head names, so a trained encoder can be reloaded elsewhere
+(probes, a VLM) by name.
 
-Physically shared trunks come for free: several heads referencing the same
-tap (BabyCL: proj128, cls and embed512 all hang off vision.pool2048).
+Sharing a trunk between heads needs no extra machinery: several heads simply
+reference the same tap (BabyCL: proj128, cls and embed512 all hang off
+vision.pool2048).
 
-Note (design review): slots are deliberately NEVER fused into one forward --
-that changes BatchNorm statistics and is not semantically neutral.  What IS
+Note (from design review): slots -- the named groups of items inside one
+batch -- are deliberately NEVER fused into a single trunk forward, because
+that changes BatchNorm statistics and so changes model behavior.  What IS
 shared is the per-slot, per-view trunk forward (`precompute_feats`): the
 original trainers run the backbone once per crop and feed every head from
-it, so recomputing it per loss would double memory, compute and BN updates.
+that result, so recomputing it per loss would double memory, compute and
+BatchNorm updates.
 """
 
 from __future__ import annotations
@@ -54,11 +60,11 @@ class EgoModel(nn.Module):
         return self.text(ids, lengths)
 
     def precompute_feats(self, batch: dict, device) -> None:
-        """One trunk forward per slot and view, written to `slot["feats"]`
-        as [B, V, D]; losses consume these instead of re-running the trunk.
-        Each forward sees exactly one slot's one view, so BatchNorm batch
-        composition matches the original per-crop trainers. Clip-unit slots
-        ([B, V, T, ...]) are skipped -- no video trunk yet."""
+        """Run the vision trunk once per slot and view, storing the result in
+        `slot["feats"]` as [B, V, D]; losses read these instead of re-running
+        the trunk.  Each forward sees exactly one slot's one view, so the
+        BatchNorm batch composition matches the original per-crop trainers.
+        Clip-unit slots ([B, V, T, ...]) are skipped -- no video trunk yet."""
         for slot in batch.values():
             views = slot.get("views")
             if views is None or views.dim() != 5:
@@ -77,7 +83,7 @@ class EgoModel(nn.Module):
     def apply_head(self, name: str, feats: torch.Tensor) -> torch.Tensor:
         return self.heads[name](feats)
 
-    # ---- export contract ------------------------------------------------------
+    # ---- export contract: what a checkpoint records so encoders reload by name -
     def export_contract(self) -> dict:
         return {
             "taps": self.taps(),

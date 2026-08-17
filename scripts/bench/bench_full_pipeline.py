@@ -1,18 +1,19 @@
 #!/usr/bin/env python
-"""Measure what the abstractions cost: run N real steps of a config and
-report per-stage latency + throughput.
+"""Full-pipeline benchmark: run N real training steps of a config and report the
+time spent in each stage plus overall throughput.  This shows what the framework's
+abstractions actually cost.
 
     python scripts/bench/bench_full_pipeline.py \\
         --config projects/babycl/configs/saycam_default.yaml --steps 200
 
-Data-plane-only measurement (no model, much faster to iterate on):
+To measure only the data side (no model, much faster to iterate on), use
 scripts/bench/bench_dataloading.py.
 
-Working-group reference point: the BabyCL default run holds ~70% GPU
-utilization on 2x A100 over ~48 h.  A framework port of the same config
-should be compared against that number BEFORE merging (real experiments
-validate merges).  The per-stage breakdown tells you whether a gap is the
-data plane (data.load / batch.compose dominate) or the model side.
+Working-group reference point: the BabyCL default run holds ~70% GPU utilization
+on 2x A100 over ~48 h.  A framework port of the same config should be compared
+against that number BEFORE merging (merges are validated by real experiments).
+The per-stage breakdown tells you whether a gap comes from the data pipeline
+(data.load / batch.compose dominate) or from the model side.
 """
 
 from __future__ import annotations

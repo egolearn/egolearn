@@ -1,15 +1,17 @@
-"""Loss protocol (the model's training signals).
+"""Loss protocol: the interface every training loss implements.
 
-A loss is a (mostly) pure function over declared batch slots and model
-taps/heads:
+A loss reads the slots it declared (slots are the named groups of items
+inside one batch) and the model's taps/heads, and returns named scalar
+values:
 
     values = loss.compute(batch, model, ctx)   # {name: scalar tensor}
 
-`requires_slots` / `requires_heads` are validated at build time (see
-pipeline.validate) and again against the first batch.  Losses that need
-training-loop state (EMA teachers, momentum queues) implement `on_step_end`
--- the single lifecycle hook agreed in design review; anything that cannot
-fit lives in a project-side Driver subclass.
+`requires_slots` / `requires_heads` are checked at build time (see
+pipeline.validate) and again against the first batch, so a bad config fails
+early.  Losses that need training-loop state (EMA teachers, momentum queues)
+implement `on_step_end` -- the single lifecycle hook agreed in design
+review; anything that cannot fit that hook belongs in a project-side Driver
+subclass.
 """
 
 from __future__ import annotations
@@ -24,8 +26,8 @@ class Loss:
         self.name = name
         self.weight = float(weight)
 
-    # declared consumption; validated at build time (subclasses assign
-    # per-instance in __init__)
+    # what this loss needs from the batch and model; checked at build time
+    # (subclasses assign these per-instance in __init__)
     requires_slots: Sequence[str] = ()
     requires_heads: Sequence[str] = ()
     requires_text: bool = False

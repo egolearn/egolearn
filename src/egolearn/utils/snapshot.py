@@ -1,16 +1,18 @@
-"""Whole-world snapshots + resume.
+"""Save and resume training snapshots.
 
-A snapshot is the full training state: model, optimizer, clocks/RNGs,
-memory tables, label stores, and the LR-schedule anchor.  `load_snapshot`
-restores it AND prepares the driver to continue:
+A snapshot captures everything a run needs to continue -- model, optimizer,
+clocks/RNG states, memory tables, label stores, and the LR-schedule anchor.
+`load_snapshot` restores all of it AND prepares the driver (the object that
+runs the training loop) to continue:
 
   * streaming (LockstepDriver): the stream and the admission algorithms are
     deterministic, so the driver replays the first `clock.admitted`
-    observations to rebuild admission-internal state (sliding windows,
-    watermark, global-id handover) -- with event routing suppressed, since
-    memories come from the snapshot.  Memory tables and label stores are
-    restored AFTER the replay, so any label writes the replay makes are
-    overwritten by the snapshot's ground truth.
+    observations to rebuild the admission components' internal state (sliding
+    windows, watermark, global-id handover) -- with event routing turned off
+    during the replay, since the memories themselves come from the snapshot.
+    Memory tables and label stores are restored AFTER the replay, so any
+    label writes the replay makes are overwritten by the snapshot's saved
+    values.
   * offline (OfflineDriver): no replay needed; fit() continues from
     `clock.step` (per-epoch shuffles are derived from (seed, epoch), so the
     epoch order regenerates exactly).
@@ -19,9 +21,9 @@ Restore order matters for devices too: the model moves to ctx.device before
 the optimizer state loads, so torch casts optimizer state onto the right
 device.
 
-Event-sourced resume (reconstruct memory from the admitted-event log,
-no replay) is the deferred elegant version -- the finalized-event contract
-keeps that door open.
+A possible future improvement is to rebuild memory directly from the log of
+admitted events, with no stream replay at all -- the finalized-event
+contract keeps that option open.
 """
 
 from __future__ import annotations
@@ -71,8 +73,8 @@ def load_snapshot(path: str, driver) -> None:
     if hasattr(driver, "_resume_replay"):
         driver._resume_replay()
 
-    # memories/labels restored AFTER replay -- replay label writes are
-    # overwritten by the snapshot's ground truth
+    # memories/labels restored AFTER replay -- any label writes the replay
+    # made are overwritten by the snapshot's saved values
     for name, st in state.get("memories", {}).items():
         driver.memories[name].load_state_dict(st)
     composer = getattr(driver, "composer", None)

@@ -1,6 +1,8 @@
-"""Labeled-S 4AFC benchmark probe (Vong et al. protocol).
+"""Labeled-S 4AFC benchmark probe (protocol from Vong et al.).
 
-Registered as probe:four_afc; configs reach it via
+4AFC = four-alternative forced choice: the model is given one category name
+and four candidate images and must pick the matching image.  Registered as
+probe:four_afc; configs load it via
 `_imports_: [egolearn.evaluation.benchmarks.labeled_s_4afc]`.
 """
 
@@ -19,8 +21,9 @@ from egolearn.evaluation.probe import Probe
 
 @PROBES.register("four_afc")
 class FourAFCProbe(Probe):
-    """4AFC (image mode): one target category text, four candidate images;
-    correct iff the target image has the highest cosine.
+    """4AFC in image mode: one target category as text, four candidate
+    images; a trial counts as correct iff the target image has the highest
+    cosine similarity to the text.
 
     Manifest json format::
 

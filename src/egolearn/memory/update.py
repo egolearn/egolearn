@@ -1,16 +1,18 @@
-"""Buffer update policies (what happens when a full buffer receives a new
-item) and sampling policies -- composable, Reverb-style atoms.
+"""Update policies (what a full buffer does when a new item arrives) and
+sampling policies (how items are drawn from a buffer to build a batch).
 
-These are standard tools, so they live in core: the abstract
-UpdatePolicy/Sampler plus the family of standard variants in this one file.
-Provenance notes:
-  * `reservoir` is the count-based reservoir used by BabyCL's TwoTierBuffer;
+These are standard, method-agnostic building blocks, which is why they live
+in core: the abstract UpdatePolicy/Sampler classes plus the common variants,
+all in this one file.  Where each variant comes from:
+  * `reservoir` is the count-based reservoir sampling used by BabyCL's
+    TwoTierBuffer (a reservoir keeps a uniform random subset of the stream);
   * `reservoir_weighted` is Memory Storyboard's random-priority reservoir
-    (Buffer.update): statistically equivalent admission, kept for faithful
-    reproduction;
-  * `fifo`, `random_replace` complete BabyCL's replay ablation set.
-Method-novel policies (MinRed, semantic samplers) live in the project that
-researches them and register into the same registries.
+    (Buffer.update): its admission is statistically equivalent to
+    `reservoir`, but it is kept as its own policy for faithful reproduction;
+  * `fifo` (first in, first out) and `random_replace` complete BabyCL's
+    replay ablation set.
+Policies invented by a specific method (MinRed, semantic samplers) live in
+that method's project and register into these same registries.
 """
 
 from __future__ import annotations
@@ -21,7 +23,8 @@ from egolearn.config.registry import SAMPLERS, UPDATE_POLICIES
 
 
 class UpdatePolicy:
-    """Mutates the entry list on admission; returns the displaced entry, if any."""
+    """Decides how a new item is inserted into a table's entry list.  `admit`
+    may modify the list in place and returns the item it pushed out, if any."""
 
     def reset(self) -> None:
         pass
@@ -49,7 +52,8 @@ class Fifo(UpdatePolicy):
 
 @UPDATE_POLICIES.register("reservoir")
 class Reservoir(UpdatePolicy):
-    """Standard count-based reservoir sampling (BabyCL long tier)."""
+    """Standard count-based reservoir sampling: keeps a uniform random subset
+    of every item seen so far (used by BabyCL's long tier)."""
 
     def __init__(self):
         self.seen = 0
@@ -67,7 +71,7 @@ class Reservoir(UpdatePolicy):
             displaced = entries[j]
             entries[j] = entry
             return displaced
-        return entry  # rejected at the door counts as "displaced" for routing
+        return entry  # not admitted: return the new item as "displaced" so overflow routing sees it
 
     def state_dict(self):
         return {"seen": self.seen}
@@ -79,7 +83,9 @@ class Reservoir(UpdatePolicy):
 @UPDATE_POLICIES.register("reservoir_weighted")
 class ReservoirWeighted(UpdatePolicy):
     """Random-priority reservoir (Memory Storyboard's Buffer): every entry
-    draws a uniform weight; the table keeps the `capacity` largest weights."""
+    draws a uniform random weight, and the table keeps the `capacity` entries
+    with the largest weights.  The result is a uniform random subset, same as
+    `reservoir`."""
 
     def admit(self, entries, entry, capacity, rng):
         entry = dict(entry)
@@ -110,7 +116,8 @@ class Sampler:
 
 @SAMPLERS.register("uniform")
 class Uniform(Sampler):
-    """Sample without replacement; fewer than n if the table is small."""
+    """Sample uniformly without replacement; returns fewer than n items when
+    the table holds fewer than n."""
 
     def sample(self, entries, n, rng):
         if n >= len(entries):

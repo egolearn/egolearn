@@ -1,18 +1,18 @@
 """Port of BabyCL's AN-chunk admission path (mcl ms_dataloader OnlineFeeder:
 _prepare_chunks_for_video / _emit_completed_chunks).
 
-Code-verified behavior being reproduced -- note this is NOT the segmenter's
+An AN chunk pairs one utterance with the run of frames it spans.  The behavior below
+is code-verified against the original -- note these are NOT the segmenter's
 similarity-expanded chunks (the feeder discards those):
 
-  * each utterance's raw timestamps are mapped to 5fps steps; steps missing
-    a frame are dropped; STRICTLY CONTIGUOUS step runs (diff == 1) become
-    separate chunks -- one utterance can yield several chunks;
+  * each utterance's raw timestamps are mapped to 5fps steps; steps with no matching
+    frame are dropped; STRICTLY CONTIGUOUS step runs (diff == 1) become separate
+    chunks -- so one utterance can yield several chunks;
   * a chunk covers frame indices [step2first[a], step2first[b] + 1);
-  * a chunk is emitted ATOMICALLY only once the stream has advanced past its
-    end index (complete visibility), deduplicated by
-    (utterance_num, start, end, session);
-  * clip_importance (weight.sample) and the utterance text flow through
-    untouched.
+  * a chunk is only emitted, in one piece, after every one of its frames has streamed
+    past (the stream has advanced past the chunk's end index); duplicates are dropped
+    by the key (utterance_num, start, end, session);
+  * clip_importance (weight.sample) and the utterance text flow through untouched.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ class ANChunkEmitter(EventBuilder):
         self._times: list[float] = []
         self._refs: list[ItemRef] = []
         self._step2first: dict[int, int] = {}
-        self._pending: list[dict] = []  # chunks awaiting complete visibility
+        self._pending: list[dict] = []  # chunks waiting for all their frames to stream past
 
     def start_session(self, sid: str) -> None:
         self._reset(sid)

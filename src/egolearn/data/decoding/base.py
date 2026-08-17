@@ -1,4 +1,6 @@
-"""Video decoding backends: (video file, time) -> frames, on the fly.
+"""Video decoding backends: given a video file and a position, return frames
+decoded on the fly.  A decoder is the pluggable component VideoStream uses
+to read pixels.
 
 Design decision from the 2026-08 working-group meeting: the primary data
 path is DIRECT VIDEO LOADING -- keep the raw videos on disk and decode the
@@ -11,15 +13,15 @@ optimize them separately:
 
   * SEQUENTIAL (the streaming pass): frames are requested in time order.
     `iter_frames` should keep an open decode handle and prefetch; never
-    reopen/seek per frame.
+    reopen the file or seek for each frame.
   * RANDOM (replay): memory holds refs to old intervals and asks for a few
     frames from arbitrary positions.  `read_frame`/`read_window` should
     seek to the nearest keyframe and decode forward, batching requests to
     the same file where possible.
 
 The efficient random-access implementation is expected to come from the
-lab's existing video pipeline (see decoding/poodle.py); this protocol is the
-integration surface.
+lab's existing video pipeline (see decoding/poodle.py); this class defines
+the interface that integration has to fill in.
 """
 
 from __future__ import annotations
@@ -39,8 +41,9 @@ class VideoDecoder:
         raise NotImplementedError  # pragma: no cover
 
     def read_window(self, path: str, i0: int, i1: int, indices: list[int] | None = None) -> list:
-        """Random access: frames [i0, i1) -- or only `indices` (relative to
-        i0) within that window.  One seek per window, not per frame."""
+        """Random access: return frames [i0, i1) -- or, if `indices` is
+        given, only those frames (indices are relative to i0).  Implementations
+        should seek once per window, not once per frame."""
         raise NotImplementedError  # pragma: no cover
 
     def iter_frames(self, path: str, start_index: int = 0) -> Iterator:

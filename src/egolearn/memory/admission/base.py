@@ -1,21 +1,24 @@
-"""Admission: what enters memory, in what unit, with what labels.
+"""Admission: the components that decide what enters memory.
 
-An EventBuilder watches the raw observation stream and decides which finalized
-units ("events": frames, segments, aligned pairs) are offered to memory.  It
-is the online replacement for offline dataset preprocessing.
+An EventBuilder watches the raw observation stream and decides which finished
+units ("events": single frames, segments, image-text pairs) are offered to
+memory.  In an offline pipeline this job is done by dataset preprocessing;
+here it happens online, while the stream plays.
 
-Contract (code-verified against both published systems):
+Rules (code-verified against both published systems):
 
   * Events are emitted exactly once and never change afterwards.  A builder
-    may only emit an event once it can never change (BabyCL's watermark:
-    finalize behind a safety margin).
+    may only emit an event once it can never change.  BabyCL enforces this
+    with a watermark: a segment is only emitted once the stream is far enough
+    past its end that nothing can change it.
   * Labels attached to events MAY be revised later -- but only through the
-    LabelStore indirection (egolearn.memory.labels), never by mutating
-    stored items.
+    LabelStore (egolearn.memory.labels): items store a key instead of a
+    label, and the label is looked up when a batch is built, so it can still
+    be corrected.  Stored items themselves are never mutated.
 
 EventBuilders come in two roles (one class may play both):
-  * emitters  -- produce events for memory admission (poll());
-  * labelers  -- produce no events; they maintain a LabelStore.
+  * emitters -- produce events offered to memory, returned from poll();
+  * labelers -- produce no events; they only write labels to a LabelStore.
 """
 
 from __future__ import annotations
@@ -30,9 +33,11 @@ from egolearn.memory.labels import LabelStore
 
 
 class EmbeddingProvider:
-    """Frame refs -> embeddings [N, D] (used by segmentation-style builders).
+    """Turns a list of frame refs into embeddings [N, D].  Builders that
+    cluster or segment frames use this to compare them.
 
-    Two code-verified published variants (this is why it is pluggable):
+    It is pluggable because the two published systems differ here (both
+    code-verified):
       * Memory Storyboard clusters with the LEARNER'S OWN backbone
         (`embedder: learner_tap`);
       * BabyCL's online segmenter uses a FROZEN ImageNet encoder
@@ -48,17 +53,18 @@ class EmbeddingProvider:
     def embed_refs(
         self, refs: list[ItemRef], normalize: bool = True
     ) -> torch.Tensor:  # pragma: no cover
-        """[N, D] embeddings. `normalize=False` returns raw features --
-        Memory Storyboard's prototype merge averages RAW embeddings before
-        normalizing the mean, while its recluster normalizes per frame."""
+        """Return [N, D] embeddings.  `normalize=False` returns raw features:
+        Memory Storyboard's prototype merge averages RAW embeddings and only
+        normalizes the mean, while its recluster normalizes each frame."""
         raise NotImplementedError
 
 
 class EventBuilder:
-    """Stateful online structure inducer. See module docstring for contract."""
+    """Stateful component that watches the stream and builds events and/or
+    labels from it.  See the module docstring for the rules it must follow."""
 
-    subscribes: tuple[str, ...] = ("video",)  # channel names it ingests
-    emits: tuple[str, ...] = ()  # event schema names it produces
+    subscribes: tuple[str, ...] = ("video",)  # channels this builder listens to
+    emits: tuple[str, ...] = ()  # names of the event schemas it produces
 
     def bind(
         self,
@@ -68,9 +74,10 @@ class EventBuilder:
         label_store: LabelStore | None = None,
         memory=None,
     ) -> None:
-        """`memory` (a TieredMemory) is bound when the builder's config names
-        one -- required for fidelity to Memory Storyboard, whose class-merge
-        step samples prototype frames from the LONG-TERM buffer."""
+        """`memory` (a TieredMemory) is only bound when the builder's config
+        names one.  Memory Storyboard needs it: its class-merge step samples
+        prototype frames from the LONG-TERM buffer, so faithful reproduction
+        requires the builder to read that buffer."""
         self.ctx = ctx
         self.loader = loader
         self.embedder = embedder
@@ -78,14 +85,18 @@ class EventBuilder:
         self.memory = memory
 
     def start_session(self, sid: str) -> None:
-        """Cross-session state (e.g. label continuity) is handed over here."""
+        """Called when a new recording session starts.  State that carries
+        over between sessions (e.g. keeping label ids continuous) is handled
+        here."""
 
     def ingest(self, obs: Observation) -> None:
         raise NotImplementedError  # pragma: no cover
 
     def poll(self) -> list[dict]:
-        """Return newly FINALIZED events (possibly empty). Never provisional."""
+        """Return events finalized since the last call (possibly none).  Only
+        finished events -- never ones that might still change."""
         return []
 
     def end_session(self) -> None:
-        """Flush: the session is over, everything left is final."""
+        """Called when the session ends: everything still pending can no
+        longer change, so it should be finalized and flushed."""

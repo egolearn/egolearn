@@ -1,6 +1,6 @@
-"""BabyCL's method-tied data components: CVCL views + frozen segmentation
-embedder.  (The BabyView dataset adapter is a core tool -- see
-egolearn/data/sources/saycam.py.)"""
+"""Data components specific to the BabyCL method: the CVCL augmentation views and the
+frozen encoder its segmenter uses for embeddings.  (The BabyView dataset adapter is a
+core tool -- see egolearn/data/sources/saycam.py.)"""
 
 from __future__ import annotations
 
@@ -18,9 +18,10 @@ from egolearn.memory.admission.base import EmbeddingProvider
 
 
 class PILRadiusBlur:
-    """VERBATIM port of utils_mcl.GaussianBlur (the SimCLR/MoCo PIL blur):
-    radius ~ U(sigma[0], sigma[1]) via ImageFilter -- NOT torchvision's
-    kernel-convolution GaussianBlur.  BabyCL's an_transform uses this one."""
+    """VERBATIM port of utils_mcl.GaussianBlur (the SimCLR/MoCo-style PIL blur):
+    draws a radius ~ U(sigma[0], sigma[1]) and applies PIL's ImageFilter blur.
+    This is NOT the same operation as torchvision's kernel-convolution
+    GaussianBlur -- BabyCL's an_transform uses this PIL version."""
 
     def __init__(self, sigma=(0.1, 2.0)):
         self.sigma = sigma
@@ -50,18 +51,18 @@ def cvcl_aug(size: int = 224):
 def babycl_ms_aug(
     size: int = 224, view_idx: int = 0, scale_min: float = 0.2, scale_max: float = 1.0
 ):
-    """BabyCL's EFFECTIVE visual-segment augmentation chain, 1:1 with the
-    original two-stage pipeline:
+    """The augmentation BabyCL EFFECTIVELY applies to visual-segment frames, 1:1 with
+    the original, which runs in two stages:
 
       gather:  ms_transform  = Resize(size, BICUBIC) + CenterCrop(size)
-      train:   two_crops     = de-normalize back to PIL, then the strong
-               SimCLR pipeline (build_two_view_augment "strong") ON THE
-               ALREADY CENTER-CROPPED image.
+      train:   two_crops     = de-normalize back to a PIL image, then the strong
+               SimCLR pipeline (build_two_view_augment "strong") ON THE ALREADY
+               CENTER-CROPPED image.
 
-    Fused here into one PIL pipeline (the de-norm/PIL round-trip is an
-    identity up to uint8 rounding).  This differs from the generic core
-    `simclr_strong`, which random-crops the RAW frame -- BabyCL's random
-    crops only ever see the center-cropped 224x224 content.
+    Here the two stages are fused into one PIL pipeline (the de-normalize/PIL
+    round-trip changes nothing beyond uint8 rounding).  This differs from the
+    generic core `simclr_strong`, which random-crops the RAW frame -- BabyCL's
+    random crops only ever see the center-cropped 224x224 content.
     view 0: blur p=1.0; view 1: blur p=0.1 + solarize p=0.2."""
     k = max(3, int(0.1 * size) // 2 * 2 + 1)
     blur_p = 1.0 if view_idx == 0 else 0.1
@@ -90,12 +91,12 @@ def babycl_ms_aug(
 
 @EMBEDDERS.register("frozen_resnext50")
 class FrozenResNeXt50Embedder(EmbeddingProvider):
-    """Frozen torchvision ResNeXt-50 -- BabyCL's online segmenter embedder
-    (online_ms_refine.build_backbone: IMAGENET1K_V1 weights, fc=Identity,
-    eval mode, center-crop transform, per-frame L2 normalization).
+    """Frozen torchvision ResNeXt-50 -- the encoder BabyCL's online segmenter uses to
+    embed frames (matches online_ms_refine.build_backbone: IMAGENET1K_V1 weights,
+    fc=Identity, eval mode, center-crop transform, per-frame L2 normalization).
 
-    The ImageNet pretraining is an explicit dependency of BabyCL's segmenter,
-    surfaced here on purpose.
+    Note that BabyCL's segmenter depends on ImageNet pretraining; making that
+    dependency visible here is deliberate.
     """
 
     def __init__(self, pretrained: bool = True, view: str = "eval", batch_size: int = 64):

@@ -1,9 +1,10 @@
-"""Vocab tokenizer for the CVCL/BabyCL text side.
+"""Tokenizer for the CVCL/BabyCL text side: turns utterance strings into
+padded id tensors using a fixed word-level vocabulary.
 
 Provenance: matches BabyCL's ms_dataloader tokenization -- vocab.json lookup,
 optional <sos>/<eos> wrapping, and the SAYCam-vocab normalizer (lowercase,
-split punctuation, split contractions).  Normalization is OFF for SAYCam
-(already normalized) and ON for BabyView.
+split punctuation off words, split contractions).  Normalization is OFF for
+SAYCam (its transcripts are already normalized) and ON for BabyView.
 """
 
 from __future__ import annotations
@@ -15,7 +16,9 @@ import torch
 
 
 def normalize_utterance(s: str) -> str:
-    """Normalize free text toward SAYCam vocab token forms. Idempotent."""
+    """Rewrite free text into the token forms the SAYCam vocab uses
+    (lowercase, punctuation and contractions split off).  Running it twice
+    gives the same result as running it once."""
     if not s:
         return s
     s = s.lower()
@@ -54,7 +57,8 @@ class VocabTokenizer:
         return toks
 
     def batch(self, texts: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
-        """Pad-collate a list of utterances -> (ids [B,T], lengths [B])."""
+        """Encode a list of utterances and pad them to equal length.
+        Returns (ids [B,T], lengths [B])."""
         seqs = [self.encode(t) for t in texts]
         lens = [len(s) for s in seqs]
         T = max(lens) if lens else 1

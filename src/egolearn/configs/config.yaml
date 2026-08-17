@@ -1,10 +1,11 @@
-# Root config. Per-paper configs in projects/<name>/configs compose on top of
-# this tree via `hydra.searchpath: [pkg://egolearn.configs]`.
-# Dataset roots are always config/env-supplied — never hardcoded in code.
+# Root config: the shared defaults every run starts from. Per-paper configs in
+# projects/<name>/configs layer their settings on top of this tree via
+# `hydra.searchpath: [pkg://egolearn.configs]`.
+# Dataset roots always come from the config or the environment — never hardcoded in code.
 seed: 0
 wandb:
   entity: nyu-mengye-group
   project: null
   mode: disabled
-dry_run: false     # build + validate the pipeline, then exit
-resume: null       # snapshot path, or "auto" for the newest in run_dir
+dry_run: false     # build and validate the whole pipeline, then exit without training
+resume: null       # path to a snapshot (saved run state), or "auto" for the newest in run_dir

@@ -1,8 +1,10 @@
-"""Driver hooks: logging, checkpointing, probes, snapshots.
+"""Hooks the driver calls at fixed points in its loop: logging, checkpointing, probes,
+snapshots.
 
-The driver's loop is deliberately tiny; everything periodic is a hook.
-A project that needs a different loop subclasses the Driver instead of
-stacking more hooks ("shared but escapable").
+A hook is a small object the driver calls after every training step, after every stream
+advance, and once at the end of the run.  The driver's loop is deliberately tiny; everything
+periodic lives in a hook.  A project that needs a genuinely different loop should subclass the
+driver instead of stacking more hooks.
 """
 
 from __future__ import annotations
@@ -70,7 +72,9 @@ class CheckpointHook(Hook):
 
 
 class ProbeHook(Hook):
-    """Anytime evaluation at a gradient-step cadence."""
+    """Runs evaluation probes (small held-out evaluations of the current model) every
+    `every_steps` gradient steps and once at the end, so the model can be scored at any
+    point during training rather than only after it finishes."""
 
     def __init__(self, probes: list, every_steps: int = 500):
         self.probes = probes
@@ -101,9 +105,10 @@ class ProbeHook(Hook):
 
 
 class SnapshotHook(Hook):
-    """World-state snapshots: progress milestones (BabyCL's 5/25/50/100%)
-    and/or a fixed step cadence (`every_steps`, for crash resume --
-    `snapshot_latest.pth` is overwritten in place)."""
+    """Saves snapshots -- the full resumable state of a run (model, optimizer, memories,
+    clocks).  Triggered at progress milestones (BabyCL's 5/25/50/100% of the stream)
+    and/or every `every_steps` steps for crash recovery, in which case
+    `snapshot_latest.pth` is overwritten in place."""
 
     def __init__(self, run_dir: str, milestones=(0.05, 0.25, 0.5, 1.0), every_steps: int = 0):
         self.run_dir = run_dir

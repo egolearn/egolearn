@@ -1,14 +1,16 @@
 """Run context: clocks and named deterministic RNGs.
 
-Design rules this module enforces:
-  * No component reaches for global randomness or global step counters --
-    everything is injected through the Context.
-  * There are exactly two clocks in core: `progress` (fraction of stream
-    consumed) and `step` (gradient steps).  Media time travels inside items
-    (time.t0/t1).  No epochs anywhere.
-  * RNGs are named and derived stably from (seed, name) with sha256, so a
-    run is reproducible regardless of thread scheduling or dict order.
-    (This deliberately replaces `hash(thread_id)`-style seeding.)
+Every component gets its notion of time and randomness from a shared Context
+object instead of from globals.  Rules this module enforces:
+  * No component uses global randomness or global step counters --
+    everything is handed in through the Context.
+  * There are exactly two clocks in core: `progress` (fraction of the stream
+    consumed so far) and `step` (number of gradient steps taken).  Media time
+    travels inside items (time.t0/t1).  There are no epochs anywhere.
+  * RNGs are looked up by name, and each one is seeded from sha256 of
+    (seed, name), so a run produces the same random numbers no matter how
+    threads are scheduled or dicts are ordered.  (This deliberately replaces
+    `hash(thread_id)`-style seeding.)
 """
 
 from __future__ import annotations
@@ -25,10 +27,11 @@ def _stable_seed(base_seed: int, name: str) -> int:
 
 
 class Clock:
-    """step = gradient steps taken; admitted = observations consumed.
+    """Counts progress through a run: `step` is the number of gradient steps
+    taken; `admitted` is the number of stream observations consumed.
 
-    `progress` in [0, 1] when the stream announces a total, else None --
-    schedules must handle both (see solver.ProgressCosine).
+    `progress` is in [0, 1] when the stream announces a total, and None when
+    it does not -- LR schedules must handle both (see solver.ProgressCosine).
     """
 
     def __init__(self, total_observations: int | None = None):
@@ -69,7 +72,7 @@ class Context:
             self._torch_gens[name] = g
         return self._torch_gens[name]
 
-    # ---- snapshot support (naive; see utils.snapshot) --------------------
+    # ---- snapshot support (plain save/restore of state; see utils.snapshot)
     def state_dict(self) -> dict:
         return {
             "seed": self.seed,

@@ -1,19 +1,21 @@
 #!/usr/bin/env python
-"""Data-plane-only benchmark: how fast can the framework FEED a training run?
+"""Benchmark of the data side only: how fast can the framework FEED a training run?
 
-No model forward/backward -- this isolates the dataloading path so the number
-answers "is the data plane the bottleneck?" independent of GPU speed.  Runs
-the real BabyCL main logic end to end:
+No model forward/backward runs here -- this isolates the dataloading path, so the
+result answers "is the data pipeline the bottleneck?" independent of GPU speed.
+It runs the real BabyCL data logic end to end, in three phases:
 
   phase 1  stream + admission   observations -> segmenter/AN-chunk emitters
                                 -> routed events -> tiered memories
                                 (includes the frozen-embedder work the online
-                                segmenter does -- that IS part of ingest cost)
+                                segmenter does -- that IS part of the ingest cost)
   phase 2  batch composition    recipe sampling -> decode -> augment -> collate,
-                                the exact per-gradient-step loading path
-                                (composer.compose, same call the driver makes)
-  phase 3  micro breakdown      per-frame decode vs. per-view augmentation,
-                                so a slow phase 2 can be attributed
+                                the exact loading path taken for every gradient
+                                step (composer.compose, the same call the driver
+                                makes)
+  phase 3  micro breakdown      per-frame decode time vs. per-view augmentation
+                                time, so a slow phase 2 can be attributed to one
+                                or the other
 
 Usage (defaults match the BabyCL default run):
 
@@ -24,11 +26,11 @@ Usage (defaults match the BabyCL default run):
     # realistic warmup cost (fills segments.short to capacity, slow):
     python scripts/bench/bench_dataloading.py --config ... --full-warmup
 
-Interpreting phase 2: with `rate.resample=true` every gradient step composes
-one fresh batch, so `1000 / mean-ms-per-batch` is the ceiling on steps/s the
-data plane can sustain single-threaded.  Compare against the model step time
-from scripts/bench/bench_full_pipeline.py (reference: BabyCL original holds
-~70% GPU util on 2x A100).
+Interpreting phase 2: with `rate.resample=true` every gradient step composes one
+fresh batch, so `1000 / mean-ms-per-batch` is the ceiling on steps/s the data
+pipeline can sustain single-threaded.  Compare against the model step time from
+scripts/bench/bench_full_pipeline.py (reference: the original BabyCL run holds
+~70% GPU utilization on 2x A100).
 """
 
 from __future__ import annotations
@@ -51,9 +53,9 @@ def mem_capacity(mem) -> int:
 
 
 def required_items(recipe, fill_factor: int):
-    """Per-memory item counts needed before phase 2 can compose strict slots:
-    max slot.n over the recipe (and its fallback), times a small oversampling
-    factor so batches are not near-copies of each other."""
+    """How many items each memory needs before phase 2 can fill every strict slot:
+    the largest slot.n over the recipe (and its fallback), times a small
+    oversampling factor so successive batches are not near-copies of each other."""
     need = {}
     r = recipe
     while r is not None:

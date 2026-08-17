@@ -1,13 +1,14 @@
-"""Per-kind component registries.
+"""Per-kind component registries (name -> class/function lookup tables).
 
-A variant of a protocol registers itself under a kind ("stream", "update",
-"loss", ...).  Configs address components as "kind:name".  Where the variant
-physically lives (a core subpackage or a project directory) is invisible to
-the config -- this is what makes swapping variants seamless.
+Each component kind ("stream", "update", "loss", ...) has its own registry.
+An implementation registers itself under a short name, and configs refer to
+it as "kind:name".  The config never needs to know which file the code lives
+in (a core subpackage or a project directory), so one implementation can be
+swapped for another by editing only the config.
 
-Promotion rule (README, "Where components live"): protocols live in core; a
-variant enters a core subpackage once >= 2 projects use it; experimental
-variants live inside their project and register locally.
+Promotion rule (README, "Where components live"): protocols live in core; an
+implementation moves into a core subpackage once >= 2 projects use it;
+experimental ones live inside their project and register locally.
 """
 
 from __future__ import annotations

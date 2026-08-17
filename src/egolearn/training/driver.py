@@ -1,31 +1,33 @@
-"""LockstepDriver: the streaming clock.
+"""LockstepDriver: the main training loop for streaming runs.
 
-One driver cycle:
+The driver (the object that owns the training loop) runs a fixed loop: pull new data from the
+stream, then run k training steps, repeat.  One cycle:
 
-  1. ADVANCE  -- pull observations from the stream in time order, feed every
-     subscribed admission component, poll finalized events, route them into
-     memories (`routes: {schema: memory}`).  The advance quantum is either a
-     fixed number of observations (Memory Storyboard: 64 frames) or a number
-     of emitted events of a schema (BabyCL: 1 finalized VisualSegment).
-  2. TRAIN    -- run `rate.steps_per_admit` gradient steps.  With
-     `rate.resample=true` each step composes a fresh batch from memory
-     (BabyCL's repeats_per_push); with false the same batch is reused
-     (Memory Storyboard's num_grads).  This is the rate limiter: the knob
-     that makes "compute-matched baseline" a config flag.
-  3. repeat until the stream is exhausted; termination is stream exhaustion,
-     never a precomputed step count.
+  1. ADVANCE  -- read observations (frames, transcript lines) from the stream in time order,
+     feed each one to every admission component subscribed to its channel (admission components
+     decide what enters memory), collect the events they finalize, and route each event into a
+     memory table (`routes: {schema: memory}`).  How much stream one advance covers is
+     configurable (the `advance` setting): either a fixed number of observations (Memory
+     Storyboard: 64 frames) or a number of emitted events of one schema (BabyCL: 1 finalized
+     VisualSegment).
+  2. TRAIN    -- run `rate.steps_per_admit` gradient steps.  This setting controls how many
+     training steps run per unit of new stream data, which turns "compute-matched baseline"
+     into a config flag.  With `rate.resample=true` each step draws a fresh batch from memory
+     (BabyCL's repeats_per_push); with false the same batch is reused (Memory Storyboard's
+     num_grads).
+  3. Repeat until the stream runs out.  Training ends when the stream ends, never at a
+     precomputed step count.
 
-Warmup is an admit-only phase: `warmup: {tier_full: "memory.tier"}` (both
-reproductions fill a buffer before the first gradient step) or
-`warmup: {admitted: N}`.
+Warmup is a phase that only fills memory and runs no gradient steps:
+`warmup: {tier_full: "memory.tier"}` (both reproductions fill a buffer before the first
+gradient step) or `warmup: {admitted: N}`.
 
-Every run carries a StageTimer (see training/profiling.py) so the cost of
-each stage -- stream advance, data loading, batch composition, forward,
-backward -- is measured, not guessed.
+Every run carries a StageTimer (see training/profiling.py) that records how long each stage
+actually takes -- stream advance, data loading, batch composition, forward, backward.
 
-V1 scope decisions (design review): single process, lockstep, deterministic;
-no AMP; no async ingestion.  Anything that does not fit this loop subclasses
-or replaces the Driver -- the loop is small on purpose.
+V1 scope decisions (design review): single process, one fixed synchronous loop, deterministic;
+no AMP (a known deviation from the originals); no async ingestion.  Anything that does not fit
+this loop should subclass or replace the driver -- the loop is small on purpose.
 """
 
 from __future__ import annotations
@@ -175,20 +177,19 @@ class LockstepDriver:
     # resume
     # ------------------------------------------------------------------
     def _resume_replay(self) -> None:
-        """Rebuild admission-internal state after a snapshot restore.
+        """Rebuild the admission components' internal state after a snapshot restore.
 
-        The stream and the admission algorithms are deterministic, so
-        replaying the first `clock.admitted` observations reconstructs every
-        sliding window, watermark position and global-id handover for free.
-        During replay, emitted events refresh the stream_head but are NOT
-        admitted (memories come from the snapshot), and no memory/composer
-        RNG is consumed.  Label writes made during replay are overwritten by
-        the snapshot's label stores afterwards (see utils.snapshot).
+        The stream and the admission algorithms are deterministic, so replaying the first
+        `clock.admitted` observations reconstructs every sliding window, every watermark
+        position (how far past a segment's end the stream must be before the segment is
+        finalized), and the global-id handover, with no extra bookkeeping.  During replay,
+        emitted events refresh the stream_head but are NOT admitted to memory (memories come
+        from the snapshot), and no memory/composer RNG is consumed.  Label writes made during
+        replay are overwritten by the snapshot's label stores afterwards (see utils.snapshot).
 
-        Cost: one pass over the already-consumed stream, including any
-        frozen-embedder work the admission components do -- proportional to
-        the resume position.  Event-sourced resume (no replay) is the
-        deferred elegant version.
+        Cost: one pass over the already-consumed stream, including any frozen-embedder work the
+        admission components do -- proportional to the resume position.  A future version could
+        store the emitted events and skip the replay entirely; that is deferred for now.
         """
         target = self.ctx.clock.admitted
         if target <= 0:

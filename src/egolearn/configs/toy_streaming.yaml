@@ -1,6 +1,6 @@
-# Runs out of the box with zero data: a synthetic color-block stream through
-# the full streaming machinery (admission -> tiered memory -> recipe ->
-# losses). Useful as a smoke test and as the smallest complete example.
+# Runs out of the box with no data at all: a synthetic stream of colored blocks goes
+# through the full streaming machinery (admission -> tiered memory -> batch recipe ->
+# losses). Useful as a smoke test and as the smallest complete example to read.
 #
 #   uv run python -m egolearn.train --config-name toy_streaming dry_run=true
 #   uv run python -m egolearn.train --config-name toy_streaming   # ~1 min CPU

@@ -1,28 +1,29 @@
-"""Memory Storyboard's method-novel components (1:1 ports).
+"""Memory Storyboard's method-specific components (1:1 ports).
 
-Owned here (the paper's contribution; everything else the config uses comes
-from the core toolbox):
+This module owns the paper's contribution; everything else the config uses
+comes from the core toolbox:
 
   * greedy_hierarchical_clustering / get_cluster_score -- VERBATIM port of
-    memory-storyboard/utils.py (the exact greedy: forces num_clusters-1 cuts
-    even when the score decreases, candidate scan range(1, N-1, subsample),
-    strictly-greater comparison, best_change_point initialized to 1);
+    memory-storyboard/utils.py, keeping the exact greedy behavior: it forces
+    num_clusters-1 cuts even when the score decreases, scans candidates over
+    range(1, N-1, subsample), compares with strictly-greater, and initializes
+    best_change_point to 1;
   * admission:storyboard_recluster -- port of the recluster + prototype-merge
     logic embedded in train_storyboard_merging.py (cluster_shortmem +
     merge_labels);
   * embedder:learner_tap -- MS clusters with the learner's own backbone
     (cluster_shortmem runs self.model.backbone).
 
-Framework adaptations (documented, everything else verbatim):
-  * label writes go through the LabelStore instead of mutating two buffers:
-    the original relabels the short window via set_labels AND the long buffer
-    via searchsorted over frames newer than the window start -- those are the
-    same frames (the window IS the newest span), so a single store.assign
-    covers both paths; class merges become store.remap redirects, which
-    subsume the original's long-buffer range rewrites (every class-j frame
-    resolves to the merge target).
-  * the recluster trigger is checked per ingested frame instead of per
-    training step; it fires at the same label-threshold crossing, at most
+Framework adaptations (documented here; everything else is verbatim):
+  * label writes go through the LabelStore instead of mutating two buffers.
+    The original relabels the short window via set_labels AND the long buffer
+    via searchsorted over frames newer than the window start -- but those are
+    the same frames (the window IS the newest span of the stream), so a
+    single store.assign covers both paths.  Class merges become store.remap
+    redirects, which subsume the original's long-buffer range rewrites (every
+    frame of class j resolves to the merge target).
+  * the recluster trigger is checked once per ingested frame instead of once
+    per training step; it fires at the same label-threshold crossing, at most
     step_frame_size frames earlier than the original's check cadence.
 """
 
@@ -90,8 +91,9 @@ def get_cluster_score(similarity_matrix, change_points):
 # ---------------------------------------------------------------------------
 @EMBEDDERS.register("learner_tap")
 class LearnerTapEmbedder(EmbeddingProvider):
-    """Embed with the learner's own backbone tap (MS's cluster_shortmem runs
-    self.model.backbone on the short window with eval transforms)."""
+    """Embeds frames with the training model's own backbone, read at a named tap
+    (an intermediate feature output).  This matches MS's cluster_shortmem, which
+    runs self.model.backbone on the short window with eval transforms."""
 
     def __init__(self, tap: str = "vision.pool2048", view: str = "eval", batch_size: int = 64):
         self.tap = tap
@@ -120,27 +122,30 @@ class LearnerTapEmbedder(EmbeddingProvider):
 # ---------------------------------------------------------------------------
 @ADMISSION.register("storyboard_recluster")
 class StoryboardRecluster(EventBuilder):
-    """Port of Memory Storyboard's segmentation-as-relabeling.
+    """Port of Memory Storyboard's segmentation step, which works by relabeling:
+    instead of emitting segment objects, it rewrites the class labels of frames
+    already in memory.
 
     Original control flow (train_storyboard_merging.py):
-      * frames carry default labels global_idx // class_length;
-      * when the short window's OLDEST default label reaches
-        shortmem_base_label (window fully turned over), recluster the whole
-        window: embed every window frame with the learner's backbone,
-        normalize, cosine matrix, greedy_hierarchical_clustering with
+      * every frame starts with the default label global_idx // class_length;
+      * when the short window's OLDEST default label reaches shortmem_base_label
+        (i.e. the window has fully turned over since the last recluster), the whole
+        window is reclustered: embed every window frame with the learner's backbone,
+        normalize, build the cosine similarity matrix, and run
+        greedy_hierarchical_clustering with
         num_clusters = (newest default label - oldest default label + 1);
-      * new labels = searchsorted(change_points, frame_pos, right) +
+      * the new labels are searchsorted(change_points, frame_pos, right) +
         oldest_default_label, written retroactively (store.assign);
-      * shortmem_base_label = newest default label;
-      * merge_labels: past `warmup`, sample <= prototype_samples frames per
-        class FROM THE LONG-TERM BUFFER, cache the samples per class,
-        re-embed ALL cached prototypes with the CURRENT backbone (raw
-        features, mean, then normalize), dynamic threshold
-        quantile(sim, 1 - 1/N - merge_threshold); each new class j merges
-        into its most similar older class when above threshold
-        (store.remap); merged_classes = shortmem_base_label.
+      * then shortmem_base_label = newest default label;
+      * merge_labels: once past `warmup`, sample <= prototype_samples frames per
+        class FROM THE LONG-TERM BUFFER, cache the samples per class, re-embed ALL
+        cached prototypes with the CURRENT backbone (raw features, mean per class,
+        then normalize), and compute the dynamic threshold
+        quantile(sim, 1 - 1/N - merge_threshold); each new class j merges into its
+        most similar older class when their similarity is above the threshold
+        (store.remap); finally merged_classes = shortmem_base_label.
 
-    Pure labeler: emits nothing.
+    This component only writes labels: it emits no events.
     Requires bindings: label_store, embedder, memory (for prototypes).
     """
 
@@ -159,12 +164,12 @@ class StoryboardRecluster(EventBuilder):
         prototype_tier: str = "long",
         cp_subsample: int = 1,
     ):
-        """`window_frames`/`window_stride` mirror the short FIFO: the original
-        reclusters the SHORT BUFFER's contents, which subsamples the stream
-        (--subsample, every 8th frame) -- set window_stride equal to the
-        short tier's admit_stride so the recluster window is the same frame
-        set the buffer holds. `window_frames` counts stored entries (the
-        FIFO's capacity), not raw stream frames."""
+        """`window_frames`/`window_stride` mirror the short FIFO buffer: the original
+        reclusters the SHORT BUFFER's contents, and that buffer subsamples the stream
+        (--subsample, every 8th frame).  Set window_stride equal to the short tier's
+        admit_stride so the recluster window holds exactly the same frames as the
+        buffer.  `window_frames` counts stored entries (the FIFO's capacity), not raw
+        stream frames."""
         self.window_frames = int(window_frames)
         self.class_length = int(class_length)
         self.window_stride = max(1, int(window_stride))

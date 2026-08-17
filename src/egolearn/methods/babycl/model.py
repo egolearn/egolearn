@@ -1,7 +1,7 @@
-"""BabyCL's method-tied model component: the CVCL BOW text encoder.
+"""The model component specific to the BabyCL method: the CVCL bag-of-words text encoder.
 
-(clip_infonce is a textbook loss and lives in the core loss library;
-what is method-tied here is the specific text encoder choice.)
+(clip_infonce is a textbook loss and lives in the core loss library; the only
+method-specific model choice here is the text encoder.)
 """
 
 from __future__ import annotations
@@ -14,10 +14,12 @@ from egolearn.config.registry import TRUNKS
 
 @TRUNKS.register("text_bow")
 class TextBowTrunk(nn.Module):
-    """CVCL text encoder: mean of learned word embeddings.
+    """CVCL text encoder: an utterance is encoded as the mean of its learned word
+    embeddings.
 
-    Tap: text.embed [B, dim].  Matches multimodel.TextEncoder (flat/embedding
-    path): sum(embeddings) / length, padding_idx = 0.
+    Output tap (the named feature other components read): text.embed [B, dim].
+    Matches multimodel.TextEncoder (flat/embedding path): sum(embeddings) / length,
+    padding_idx = 0.
     """
 
     tap = "text.embed"

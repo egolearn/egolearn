@@ -3,19 +3,20 @@
 Reproduces [Memory Storyboard](https://arxiv.org/abs/2501.12254) (streaming
 visual SSL with temporal segmentation and a two-tier memory).
 
-**This project owns the paper's contribution, as 1:1 ports** (`components.py`,
-registered on import via the config's `_imports_`):
+**This project owns the paper's contribution, as 1:1 ports** (`components.py`; the
+config's `_imports_` list makes them register themselves on import):
 
 * `greedy_hierarchical_clustering` / `get_cluster_score` — **verbatim** from
-  the public repo's `utils.py` (forces num_clusters−1 cuts even when the
-  score decreases; candidate scan `range(1, N−1, subsample)`; first-best
-  tie-breaking)
+  the public repo's `utils.py`, keeping its exact quirks (forces num_clusters−1
+  cuts even when the score decreases; scans candidates over
+  `range(1, N−1, subsample)`; ties broken by the first best)
 * `admission:storyboard_recluster` — the recluster + prototype-merge logic from
-  `train_storyboard_merging.py`: trigger on short-window turnover,
-  retroactive relabeling through the LabelStore, prototypes sampled
-  ≤32/class **from the long-term buffer** (the component binds `memory: frames`),
-  raw-mean-then-normalize embeddings, dynamic quantile threshold
-* `embedder:learner_tap` — MS segments with the learner's own backbone
+  `train_storyboard_merging.py`: triggered when the short window has fully turned
+  over, it relabels those frames retroactively through the LabelStore; prototypes
+  are sampled ≤32/class **from the long-term buffer** (the component binds
+  `memory: frames`), embedded raw, averaged, then normalized, with a dynamic
+  quantile threshold deciding merges
+* `embedder:learner_tap` — MS segments the stream with the learner's own backbone
 
 Everything else in the config is the core toolbox: saycam adapter,
 ntxent/tcl, simclr views, resnext50, fifo/reservoir_weighted tables with

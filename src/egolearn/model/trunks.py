@@ -1,8 +1,10 @@
-"""Core trunks: standard architectures (model zoo) + the toy reference trunk.
+"""Core trunks (backbone encoders): standard architectures plus a toy trunk
+for tests.
 
-Architectures are tools, not method contributions -- they live in core.
-Method-tied encoders (e.g. BabyCL's BOW text embedding) live in their
-projects and register into the same TRUNKS registry.
+Standard architectures are generic tools rather than method contributions,
+so they live in core.  Encoders tied to one method (e.g. BabyCL's
+bag-of-words text embedding) live in that method's project and register into
+the same TRUNKS registry.
 """
 
 from __future__ import annotations
@@ -14,7 +16,8 @@ from ..config.registry import TRUNKS
 
 @TRUNKS.register("resnext50")
 class ResNeXt50Trunk(nn.Module):
-    """torchvision ResNeXt-50; fc removed. Tap: vision.pool2048 [B, 2048].
+    """torchvision ResNeXt-50 with the final fc layer removed.  Its tap (the
+    named feature output) is vision.pool2048, shape [B, 2048].
 
     Both founding reproductions train FROM SCRATCH (pretrained=False):
     BabyCL passes --no_pretrained_cnn; Memory Storyboard builds its ResNet
@@ -39,7 +42,7 @@ class ResNeXt50Trunk(nn.Module):
 
 @TRUNKS.register("resnet18")
 class ResNet18Trunk(nn.Module):
-    """Small trunk for cheap experiments. Tap: vision.pool512 [B, 512]."""
+    """Small trunk for cheap experiments.  Tap: vision.pool512, shape [B, 512]."""
 
     tap = "vision.pool512"
     out_dim = 512
@@ -59,7 +62,8 @@ class ResNet18Trunk(nn.Module):
 
 @TRUNKS.register("toy_cnn")
 class ToyCNNTrunk(nn.Module):
-    """3-block convnet for tests/examples (no downloads). Tap: vision.feat."""
+    """Tiny 3-block convnet for tests and examples (needs no weight
+    downloads).  Tap: vision.feat."""
 
     tap = "vision.feat"
 

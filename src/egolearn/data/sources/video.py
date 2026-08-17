@@ -1,24 +1,26 @@
-"""VideoStream: a directory of raw video files as a stream source.
+"""VideoStream: treats a directory of raw video files as a stream source
+(a stream is the dataset adapter that yields sessions of observations).
 
-The video-first data path (2026-08 working-group decision): sessions are the
-video files themselves; frames are decoded on demand by a pluggable
-VideoDecoder backend (egolearn.data.decoding).  No pre-extraction step.
+This is the video-first data path decided at the 2026-08 working-group
+meeting: each session is a video file itself, and frames are decoded on
+demand by a pluggable VideoDecoder backend (egolearn.data.decoding).  There
+is no step that pre-extracts frames to disk.
 
 Session metadata (fps, frame counts) comes from `manifest_json` when given
--- {"<file>": {"fps": ..., "num_frames": ...}, ...} -- else from
-`decoder.probe()` per file at first touch.
+-- {"<file>": {"fps": ..., "num_frames": ...}, ...} -- otherwise from
+`decoder.probe()`, called once per file the first time it is needed.
 
 The transcript channel reuses the CVCL-style expand json exactly as
-SaycamStream does (utterances are decoder-independent).
+SaycamStream does (utterances do not depend on how video is decoded).
 
-Locators are (video_path, i0[, i1]) frame-index spans, same shape as the
-frame-dir adapters -- admission components and memory are agnostic to which
-backend minted a ref.
+Locators are (video_path, i0[, i1]) frame-index spans, the same shape the
+frame-dir adapters use -- so admission components and memory never need to
+know which backend created a ref (a lightweight pointer to frames on disk).
 
 Known limitation (fine for the skeleton, must be fixed with a real video
 backend): `open_frame` uses the decoder's RANDOM access path even during the
 sequential streaming pass.  See decoding/poodle.py for the two ways to close
-this (read-ahead cache inside the decoder, or iter_frames prefetch).
+this (a read-ahead cache inside the decoder, or prefetching via iter_frames).
 """
 
 from __future__ import annotations
@@ -116,7 +118,7 @@ class VideoStream(S.Stream):
             self._total = total
         return self._total
 
-    # ---- data plane ---------------------------------------------------------
+    # ---- reading pixels (refs become images only here) ----------------------
     def _locator_span(self, ref: ItemRef):
         loc = ref.locator
         if len(loc) == 2:  # (video_path, idx) -- point frame

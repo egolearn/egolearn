@@ -1,16 +1,16 @@
-# Offline IID upper bound on SAYCam -- the traditional training recipe.
+# Offline IID upper bound on SAYCam -- the conventional training recipe.
 #
-# driver.mode=offline is the PARALLEL mode to streaming (design decision,
-# 2026-08 working group): index every frame of the dataset up front, shuffle,
-# train in epochs.  No memory, no admission, no rate limiter -- declaring
-# `memories:` / `admission:` / `recipe:` here is a config error.
+# driver.mode=offline is a separate training mode that runs in parallel to streaming
+# (design decision, 2026-08 working group): index every frame of the dataset up front,
+# shuffle, train in epochs.  There is no memory, no admission, and no cap on training
+# steps per unit of stream data -- declaring `memories:` / `admission:` / `recipe:`
+# here is a config error.
 #
-# This is the offline SimCLR upper bound that streaming methods (Memory
-# Storyboard, BabyCL's visual side) are compared against, expressed inside
-# the framework instead of borrowed from another repo.  It shares the data
-# plane (sources/decoding/Loader/views), the model/losses/solver, hooks,
-# probes, and the latency ledger with the streaming configs -- only the
-# training loop differs.
+# This is the offline SimCLR upper bound that streaming methods (Memory Storyboard,
+# BabyCL's visual side) are compared against, expressed inside the framework instead
+# of borrowed from another repo.  It shares the data plane (sources/decoding/Loader/
+# views), the model/losses/solver, hooks, probes, and the per-stage timing report
+# with the streaming configs -- only the training loop differs.
 
 defaults:
   - /config          # packaged root: seed, wandb, dry_run, resume
@@ -46,8 +46,8 @@ solver:
   opt: sgd
   groups:
     - {match: ".*", lr: 0.05, weight_decay: 1.0e-4}
-  # in offline mode, progress = fraction of planned gradient steps, so the
-  # standard warmup+cosine schedule applies unchanged
+  # in offline mode, progress means the fraction of planned gradient steps (there is
+  # no stream to measure against), so the standard warmup+cosine schedule applies unchanged
   schedule: {warmup_frac: 0.02, warmup_min_steps: 100, floor: 0.0}
 
 driver:

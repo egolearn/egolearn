@@ -2,8 +2,9 @@
 
 1:1 port of mcl's eval_baby_winoground.py (protocol from Wang et al.,
 BabyVLM).  Each instance pairs (pos_image, positive_phrase) with a
-synthetically perturbed (neg_image, negative_phrase); a 2x2 cosine matrix is
-scored and the instance is GROUP-correct only when both hold (strict >):
+synthetically perturbed (neg_image, negative_phrase).  All four image-phrase
+cosine similarities are computed, and the instance is GROUP-correct only
+when both of these hold (strict >):
 
     sim(pos_img, pos_phrase) > sim(pos_img, neg_phrase)     # cond1 / Positive Ctx
     sim(neg_img, neg_phrase) > sim(neg_img, pos_phrase)     # cond2 / Negative Ctx
@@ -14,11 +15,12 @@ CSV format (mcl eval/baby_winoground.csv; rows grouped by instance_id)::
     0,see person,touch pillow,S_..._00.jpg,positive
     0,see person,touch pillow,S_..._00_neg.jpeg,negative
 
-Positive images resolve against `pos_dir` (SAYCam frames); negative images
-against `neg_dir` (the synthetic negatives directory).  Tokenization and
-preprocessing are shared verbatim with the VTWT probe (OOV -> padding index
-0, no sos/eos, per-family normalization); instances with a missing row or
-image are skipped and counted, as in the original.
+Positive images are looked up in `pos_dir` (SAYCam frames); negative images
+in `neg_dir` (the synthetic negatives directory).  Tokenization and
+preprocessing are shared verbatim with the VTWT probe (out-of-vocabulary
+words map to padding index 0, no <sos>/<eos>, normalization chosen per model
+family); instances with a missing row or image are skipped and counted, as
+in the original.
 """
 
 from __future__ import annotations

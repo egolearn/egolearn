@@ -1,10 +1,10 @@
-"""StageTimer: measure what the abstractions actually cost.
+"""StageTimer: records how long each stage of the training pipeline takes.
 
 Working-group requirement (2026-08): "measure how much latency is caused by
 the abstractions" and keep GPU utilization visible (reference point: BabyCL
 default run, 2x A100, ~48 h, ~70% util).  Every run therefore carries a
-per-stage wall-clock ledger with near-zero overhead (one perf_counter pair
-per measurement).
+per-stage timing report based on wall-clock time, with near-zero overhead
+(one perf_counter pair per measurement).
 
 Stages recorded by the LockstepDriver:
     stream.advance   pull observations + run admission components
@@ -15,9 +15,9 @@ Stages recorded by the LockstepDriver:
     optim.step       optimizer update
 
 `summary()` gives a one-line report; `report()` returns the raw numbers.
-GPU-side async work makes wall-clock a lower bound per stage -- for exact
-kernel timing use torch.profiler on top; this ledger is for spotting where
-the data pipeline, not the GPU, is the bottleneck.
+GPU work runs asynchronously, so wall-clock time is only a lower bound per
+stage -- for exact kernel timing add torch.profiler on top.  This report is
+for spotting when the data pipeline, not the GPU, is the bottleneck.
 """
 
 from __future__ import annotations

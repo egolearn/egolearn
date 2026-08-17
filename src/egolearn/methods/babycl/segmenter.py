@@ -1,23 +1,29 @@
 """Port of BabyCL's OnlineSegmenter (mcl utils/online_ms_refine.py) as a
 VisualSegment emitter.
 
-Algorithm 1:1 with the original: sliding window over embed_stride-subsampled
-frame embeddings; every utterance whose end is visible becomes an anchor
-chunk, expanded by similarity within neighbor bounds (2-12 s); gap regions
-are cut with cut_gap_region_by_similarity; small segments are packed into
-~T_frames big segments; only segments left of the watermark
-(win_right - seg_extend_max_sec * fps; everything on flush) are finalized;
-global ids are monotone with adjacent-merge (cos >= global_merge_cos) and
-carry across sessions (last_gid / last_rep_feat handover).
+The algorithm is 1:1 with the original.  It keeps a sliding window over frame
+embeddings (subsampled by embed_stride).  Each utterance whose end has already
+streamed past becomes an anchor chunk -- a short run of consecutive frames --
+which is then grown along the timeline wherever frames look similar, staying
+between its neighbor chunks and within 2-12 s.  The regions left between
+chunks are split with cut_gap_region_by_similarity, and the resulting small
+segments are packed into big segments of roughly T_frames each.  A segment (a
+time span of the video) is only finalized once the stream is far enough past
+its end that nothing can change it any more; the original calls that boundary
+the watermark (win_right - seg_extend_max_sec * fps; on flush everything is
+finalized).  Global segment ids only ever increase; a new segment reuses the
+previous id when their representative frames are similar enough
+(cos >= global_merge_cos), and ids carry across sessions (last_gid /
+last_rep_feat handover).
 
-Framework adaptations (everything else verbatim):
+Framework adaptations (everything else is verbatim):
   * frames arrive as Observations; embeddings come from the bound
     EmbeddingProvider in batches at recompute time -- identical values to the
     original's per-frame embedding with the same frozen encoder;
   * labels (global ids) are written once per emitted segment through the
     LabelStore instead of living inside the event;
-  * the original also computes similarity-expanded utterance chunks; the mcl
-    FEEDER discards them (`big, _ = seg.pop_ready_outputs()`) and emits AN
+  * the original also computes similarity-expanded utterance chunks, but the
+    mcl FEEDER discards them (`big, _ = seg.pop_ready_outputs()`) and emits AN
     chunks from raw timestamp runs instead -- so this component emits only
     VisualSegments, and admission:an_chunk_emitter reproduces the feeder path.
 """
@@ -280,7 +286,8 @@ class BabyCLOnlineSegmenter(EventBuilder):
                 rep = F.normalize(rep_feats[g].mean(dim=0, keepdim=True), dim=1).squeeze(0)
                 big_reps.append(rep)
 
-        # finalize left of the watermark
+        # finalize only segments left of the watermark, i.e. far enough behind
+        # the stream head that no later frame can still change them
         if force_flush:
             cutoff = len(self._times)
         else:

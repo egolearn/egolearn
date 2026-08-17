@@ -1,4 +1,6 @@
-"""Projection / classification heads attached to named taps."""
+"""Heads: small modules (projectors, classifiers) that sit on top of a
+trunk's tap (its named feature output).  Heads are attached by tap name in
+the model config; the trunk itself stays head-agnostic."""
 
 from __future__ import annotations
 
@@ -19,9 +21,10 @@ class LinearHead(nn.Module):
 
 @HEADS.register("mlp")
 class MLPHead(nn.Module):
-    """SimCLR-style projector / TCL classifier: Linear-ReLU-...-Linear.
+    """Multi-layer perceptron: Linear-ReLU-...-Linear.  Used as the
+    SimCLR-style projector and as the TCL classifier.
 
-    e.g. sizes [2048, 2048, 128] (BabyCL/MS projector),
+    e.g. sizes [2048, 2048, 128] (BabyCL / Memory Storyboard projector),
          sizes [2048, 2048, 2000] (TCL classifier).
     """
 

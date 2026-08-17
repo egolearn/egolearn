@@ -1,9 +1,10 @@
-"""FrameDirDecoder: a directory of pre-extracted frames, viewed as a video.
+"""FrameDirDecoder: treats a directory of pre-extracted frame images as if
+it were a video file.
 
-This is the legacy/live-camera path (SAYCam 5fps JPEG dumps) expressed as a
-decoding backend, so that video-native and frame-dump datasets share the
-same VideoStream source.  "Decoding" is just an image open; random and
-sequential access cost the same.
+It exists so datasets that come as frame dumps (the legacy/live-camera path,
+e.g. SAYCam's 5fps JPEG dumps) can go through the same VideoStream source as
+real video files.  Here "decoding" is just opening an image file, so random
+and sequential access cost the same.
 """
 
 from __future__ import annotations

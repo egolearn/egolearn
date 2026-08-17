@@ -10,8 +10,9 @@ to build training batches out of that memory, and how much compute to spend
 per unit of new data, and it gets evaluated continuously while it learns.
 
 A method here is a config file. It picks components from the shared toolbox,
-plus whatever novel algorithms it contributes itself. Two reproductions ship
-with the framework and were used to pressure-test the design:
+plus whatever novel algorithms it contributes itself. Two full paper
+reproductions ship with the framework; building them is how the design was
+checked against real methods:
 
 * **Memory Storyboard** — streaming visual SSL with temporal segmentation
   and a two-tier memory (`src/egolearn/methods/storyboard/`)
@@ -54,11 +55,11 @@ flowchart LR
   MODEL -.-> EVAL
 ```
 
-Not drawn: `training/driver.py` turns the streaming crank (advance the
-stream, admit, run k rate-limited gradient steps, repeat), and the solver,
-hooks and stage timer sit beside both loops. Method-owned research code (the
-segmenters) registers into the same admission slot as the built-in
-components.
+Not drawn: `training/driver.py` runs the streaming loop (pull new data from
+the stream, store what admission emits, run k training steps, repeat), and
+the optimizer setup, hooks and the timing report sit beside both loops.
+Method-owned research code (the segmenters) plugs into the same admission
+slot as the built-in components.
 
 One streaming cycle, concretely. The driver pulls the next observations in
 time order — a frame, or an utterance that just finished. At this point
@@ -90,10 +91,10 @@ Where code goes:
 
 A config lists `_imports_:`; importing a methods module registers its
 components. If a component turns into a de-facto standard it gets promoted
-out of `methods/` without changing its config-facing name. The acceptance
-test we hold ourselves to: a method should be fully expressed by its config
-plus its own `methods/` package. If a method has to patch the toolbox, some
-protocol is missing a piece.
+out of `methods/` without changing the name configs use for it. The bar the
+design aims for: a method should be fully expressed by its config plus its
+own `methods/` package. If a method has to patch the toolbox to work, some
+interface is missing a piece.
 
 ## Core vocabulary
 
@@ -106,10 +107,11 @@ Three small types from `src/egolearn/core/` show up everywhere:
   frame, K sampled frames, or a contiguous clip is the batch recipe's
   decision, not the ref's.
 * sample record — a plain dict whose keys are registered names (`time.t0`,
-  `video.ref`, `text.utterance`, `weight.sample`, ...). A typo'd key fails
-  loudly at first use. Components pass through keys they don't know, which
-  is how e.g. a per-sample importance weight travels untouched from the
-  dataset json to the loss.
+  `video.ref`, `text.utterance`, `weight.sample`, ...). Using a key that was
+  never registered raises an error immediately, so a typo can't silently
+  drop data. Components pass along keys they don't recognize, which is how
+  e.g. a per-sample importance weight travels untouched from the dataset
+  json all the way to the loss.
 * event — a named schema (a required key set) for records entering memory:
   `RawFrame`, `VisualSegment`, `AlignedPair`. `build()` checks all of these
   contracts at construction time.
@@ -136,8 +138,8 @@ video pipeline; its docstring lists what the integration has to provide.
 
 `loading.py` is the Loader, the only place refs become tensors. It serves
 every data unit — single frames, K frames sampled from a segment, pairs, and
-contiguous clips — and records its time under `data.load` in the stage
-ledger. `views.py` holds named augmentation pipelines (`center_crop`,
+contiguous clips — and its time shows up as `data.load` in the timing
+report. `views.py` holds named augmentation pipelines (`center_crop`,
 `simclr_strong`; method-tied recipes like `cvcl_aug` live in their methods
 package) plus clip-domain views that draw parameters once per clip so all T
 frames get the same crop/flip/jitter.
@@ -146,23 +148,24 @@ frames get the same crop/flip/jitter.
 slot names its source (a memory tier, a tier mix with fractions, or the
 newest events), a unit (`frame`, `segment`, `pair`, `clip`), views, and
 where labels come from. A recipe may carry a fallback — BabyCL uses this
-when the multimodal slot is starved early in the stream and the batch
-becomes all-visual. The composer draws every slot's refs before decoding a
-single pixel (a starved strict slot must not waste the other slots' decode
-work), then loads and collates. How a unit is *consumed* (which trunk, which
-loss) is the model side's business; the loading layer just has to support
-the shape.
+early in the stream, when there aren't enough utterance pairs yet and the
+batch becomes all-visual. The composer first checks that every slot can be
+filled before decoding a single image (so a half-buildable batch never
+wastes decode work), then loads and assembles the tensors. What happens to
+a unit afterwards (which encoder, which loss) is the model side's business;
+the loading layer just has to support the shape.
 
 ### `egolearn.memory`
 
 Streaming-mode machinery, all of it. `table.py` has `Table` (capacity,
 update policy, sampler; holds records with refs, never tensors) and
 `TieredMemory`, supporting the two topologies the reproductions needed:
-spill (new items enter short; FIFO overflow drains into a long reservoir —
-BabyCL) and parallel (new items enter short and long independently — Memory
-Storyboard). `update.py` has the standard update policies (`fifo`,
-`reservoir`, `reservoir_weighted`, `random_replace`); research policies
-belong in methods packages.
+spill (new items enter the short buffer, and whatever the full short
+buffer pushes out moves into the long one — BabyCL) and parallel (new items
+enter both buffers independently — Memory Storyboard). `update.py` has the
+standard update policies, i.e. what a full buffer does when a new item
+arrives (`fifo`, `reservoir`, `reservoir_weighted`, `random_replace`);
+research policies belong in methods packages.
 
 `labels.py` is the LabelStore. Stored items don't carry labels — they carry
 a key, and labels are resolved through the store at batch time. That way a
@@ -191,10 +194,12 @@ A method is which losses, at what weights, over which slots — all config.
 
 ### `egolearn.training`
 
-`driver.py` is the streaming loop, kept deliberately small. Advance the
-stream by a quantum (a fixed number of observations — MS uses 64 frames — or
-until N events of a schema appear — BabyCL waits for 1 finalized segment),
-route events to memories, then run `steps_per_admit` gradient steps. With
+`driver.py` is the streaming loop, kept deliberately small. Pull a chunk of
+new data from the stream (a fixed number of observations — MS uses 64
+frames — or until something specific appears — BabyCL waits for 1 finished
+segment), store what admission emits, then run `steps_per_admit` training
+steps. This ratio fixes how much training happens per unit of new data,
+which is what makes compute-matched comparisons a config knob. With
 `resample: true` each step composes a fresh batch (BabyCL's
 repeats_per_push); with `false` the same batch is reused (MS's num_grads).
 Warmup is an admit-only phase until a buffer tier fills. If a method needs a
@@ -205,28 +210,30 @@ Declaring memory/admission/recipe sections in an offline config is a
 validation error, on purpose.
 
 `solver.py` maps regex-matched parameter groups to (lr, weight decay), with
-optional BN/bias decay exemption. The LR schedule runs off the progress
-clock — the fraction of the stream consumed — anchored at the first gradient
-step, so buffer warmup doesn't eat into the LR warmup. No epochs, no
-total-step estimation.
+optional BN/bias decay exemption. The LR schedule has no epochs: it runs off
+progress, meaning the fraction of the stream consumed so far. It starts
+counting at the first training step rather than at the start of buffer
+filling, so filling the buffers doesn't eat into the LR warmup.
 
-`profiling.py` is the `StageTimer`. Every run measures `stream.advance`,
-`data.load`, `batch.compose`, `model.forward`, `model.backward` and
-`optim.step`, and prints the ledger, so "how much do the abstractions cost"
-is a number rather than an argument. `scripts/bench/` runs the ledger
-standalone: `bench_full_pipeline.py` over real training steps,
-`bench_dataloading.py` over the data plane alone. For calibration: the
+`profiling.py` is the `StageTimer`: every run times each stage
+(`stream.advance`, `data.load`, `batch.compose`, `model.forward`,
+`model.backward`, `optim.step`) and prints the breakdown, so it's always
+visible where a run actually spends its time. `scripts/bench/` runs the
+same measurement standalone: `bench_full_pipeline.py` over real training
+steps, `bench_dataloading.py` over data loading alone. For calibration: the
 original BabyCL holds roughly 70% GPU utilization on 2×A100, and a port
 should be compared against that before merging. Current single-thread
 measurements (one L40S, 2026-08): stream ingest runs at ~700× realtime and
 is nowhere near the bottleneck; batch composition takes ~1.4 s (about 80% of
 it in the ms-view Gaussian blur), capping a single-threaded run at ~0.7
-steps/s. The planned fix is to keep the control plane (sampling, RNG draws)
-serial and fan the order-free decode+augment work out to a worker pool.
+steps/s. The planned fix: keep the decision-making serial (which refs to
+sample, which augmentation parameters to use) and spread the actual
+decode+augment work, which has no ordering constraints, over a worker pool.
 
 Resume works in both modes: pass `resume=auto` (or a snapshot path) to the
-train entry point. A snapshot holds the whole world — model, optimizer,
-clocks and RNG states, memory tables, label stores, LR anchor. On restore,
+train entry point. A snapshot holds everything a run needs to continue —
+model, optimizer, clocks and RNG states, memory tables, label stores, the
+LR schedule's reference point. On restore,
 streaming mode replays the already-consumed stream deterministically to
 rebuild the admission components' internal state (replayed events don't
 touch memory; that comes from the snapshot). Offline mode regenerates the
@@ -284,7 +291,7 @@ hydra:
 
 | | `mode: streaming` | `mode: offline` |
 |---|---|---|
-| loop | advance → admit → rate-limited steps | shuffle → epochs |
+| loop | pull stream data → store admitted items → k training steps | shuffle → epochs |
 | data access | sequential, in order (+ random for replay) | random/shuffled |
 | memory / admission | bounded tiers, update policies, event builders | none |
 | progress clock | fraction of stream consumed | fraction of planned steps |
@@ -339,23 +346,25 @@ diffs — see `projects/babycl/README.md`.
 
 A few rules the codebase follows consistently:
 
-* Refs upstream, pixels downstream. Everything before the Loader manipulates
-  references and small metadata; decoding happens at batch time. This is
-  what makes on-the-fly video decoding a backend swap, and generative memory
-  "a Loader that synthesizes".
+* Everything before the Loader works with references and small metadata;
+  images are only decoded when a batch is built. This is what makes
+  on-the-fly video decoding a swappable backend, and generative memory "a
+  Loader that synthesizes".
 * Events are emitted once and never change; labels are revisable through the
   LabelStore. That split is exactly what both published systems need.
-* In the streaming loop, time is the only index — progress and step clocks,
-  media time inside records, no task ids. The offline loop has conventional
-  epochs, which is the point of it being the traditional baseline.
+* The streaming loop has no epochs and no task ids — everything is indexed
+  by time (media time inside records, stream progress and step count for
+  schedules). The offline loop has conventional epochs, which is the point
+  of it being the traditional baseline.
 * All randomness is named and seeded (`ctx.rng("memory.pairs.short")`), so
   runs are deterministic regardless of scheduling.
-* Every run carries the stage-latency ledger, and merges get validated by
-  real experiments. When the ledger shows an abstraction is the bottleneck,
-  the fix is a lower-level implementation behind the same protocol (native
-  decode, hot paths in C++), not living with it.
-* V1 is lockstep, single-process, deterministic. Async ingestion, DDP and
-  event-sourced resume are deferred; the interfaces keep those doors open.
+* Every run prints its per-stage timing, and merges get validated by real
+  experiments. When the timing shows some abstraction is the bottleneck, the
+  fix is a faster implementation behind the same interface (native decode,
+  hot paths in C++), not living with it.
+* V1 is single-process and deterministic: one fixed loop, no background
+  threads. Parallel data loading, DDP and other concurrency are deferred on
+  purpose; the interfaces keep those doors open.
 
 ## Extending
 
@@ -387,7 +396,7 @@ method = one paper's research code, eval = benchmark code.
 | `src/egolearn/pipeline.py` | shared | reads the composed config, builds the streaming or offline pipeline, validates every contract before any data is read |
 | `src/egolearn/configs/` | shared | packaged hydra tree: root config (seed, wandb, dry_run, resume) + the offline IID example |
 | `src/egolearn/core/keys.py` | shared | the key registry; every dict between modules uses keys registered here, typos fail at first use |
-| `src/egolearn/core/refs.py` | shared | `ItemRef` — the reference type the control plane passes around instead of pixels |
+| `src/egolearn/core/refs.py` | shared | `ItemRef` — the lightweight reference passed around everywhere instead of actual pixels |
 | `src/egolearn/core/events.py` | shared | event schemas (`RawFrame`, `VisualSegment`, `AlignedPair`) |
 | `src/egolearn/core/context.py` | shared | run context: progress/step clocks and named, seeded RNGs |
 | `src/egolearn/config/registry.py` | shared | per-kind component registries; configs address anything as `"kind:name"` |
@@ -414,11 +423,11 @@ method = one paper's research code, eval = benchmark code.
 | `src/egolearn/model/trunks.py` | shared | resnext50, resnet18, toy_cnn |
 | `src/egolearn/model/heads.py` | shared | linear, mlp |
 | `src/egolearn/model/losses/` | shared | loss protocol + ntxent, tcl, clip_infonce |
-| `src/egolearn/training/driver.py` | streaming | the lockstep loop: advance → admit → rate-limited steps |
+| `src/egolearn/training/driver.py` | streaming | the streaming loop: pull stream data → store admitted items → k training steps |
 | `src/egolearn/training/offline.py` | IID | index → shuffle per epoch → train |
 | `src/egolearn/training/solver.py` | shared | regex param groups, progress-clock cosine schedule |
 | `src/egolearn/training/hooks.py` | shared | logging, checkpoints, probes, snapshots, wandb |
-| `src/egolearn/training/profiling.py` | shared | the per-stage latency ledger |
+| `src/egolearn/training/profiling.py` | shared | the per-stage timing report |
 | `src/egolearn/utils/snapshot.py` | shared | save/restore the whole world; streaming resume replays the stream |
 | `src/egolearn/evaluation/probe.py` | shared | the `Probe` protocol |
 | `src/egolearn/evaluation/benchmarks/` | eval | 4AFC, visual two-word test, Baby Winoground probes |

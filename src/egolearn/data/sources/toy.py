@@ -1,14 +1,14 @@
-"""ToyStream: a synthetic 'clock video' with known ground truth.
+"""ToyStream: a synthetic video source with known ground truth, for tests.
 
-Purpose (design review, testing strategy): admission, memory and the driver
-are unit-testable against known event boundaries without touching real data.
+It exists so that admission, memory, and the training driver can be
+unit-tested against known event boundaries without touching real data.
 Each session is a sequence of solid-color blocks (`block_len` frames per
 color); an utterance naming the color is emitted once per block.  Ground
-truth: segment boundaries == color changes; each utterance aligns with its
-block.
+truth: segment boundaries == color changes, and each utterance aligns with
+its block.
 
-Everything is generated deterministically in memory; `open_frame` draws the
-image on demand.
+Everything is generated deterministically in memory; `open_frame` draws each
+image on demand instead of reading from disk.
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ class ToyStream(S.Stream):
     def total_observations(self):
         return self.n_sessions * (self.blocks * self.block_len + self.blocks)
 
-    # ---- data plane ---------------------------------------------------------
+    # ---- reading pixels (refs become images only here) ----------------------
     def _span(self, ref: ItemRef):
         loc = ref.locator
         if len(loc) == 2:

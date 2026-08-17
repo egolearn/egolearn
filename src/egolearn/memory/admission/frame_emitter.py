@@ -1,8 +1,9 @@
-"""FrameEmitter: pass every (subsampled) video frame through as a RawFrame.
+"""FrameEmitter: offer every (subsampled) video frame to memory as a RawFrame.
 
-Memory Storyboard admits frame-granularity items into both memory tiers; the
-storyboard structure lives entirely in the LabelStore maintained by labeler
-components.  This emitter is that admission path.
+Memory Storyboard stores individual frames in both memory tiers; the
+storyboard segment structure lives entirely in the LabelStore, which separate
+labeler components maintain.  This emitter (an admission component that
+produces events) is the path by which those frames enter memory.
 """
 
 from __future__ import annotations

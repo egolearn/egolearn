@@ -1,22 +1,24 @@
-"""SAYCam / BabyView stream adapters (dataset adapters are core tools:
-dataset-specific, method-agnostic -- any project training on these datasets
-uses the same adapter).
+"""Stream adapters for SAYCam and BabyView, read from directories of
+pre-extracted frames.  An adapter is dataset-specific but method-agnostic:
+any project training on these datasets uses the same adapter unchanged.
 
-Layout expectation: `root_dir/<video_dir>/<frame files>` where video_dir
-names sort chronologically (SAYCam S_YYYYMMDD_... does).  Frame naming:
+Expected layout: `root_dir/<video_dir>/<frame files>` where the video_dir
+names sort chronologically (SAYCam's S_YYYYMMDD_... names do).  Frame naming:
 
   * "timestamp":   S_20131130_1313_01_259.20.jpg -> t = 259.20 s  (SAYCam)
   * "frame_index": frame_00000123.jpg           -> t = (123-1)/fps (BabyView)
 
 The transcript channel is built from a CVCL-style "expand" json: a list of
 {video_filename, utterance, utterance_num, timestamps[, clip_importance]}.
-Each entry becomes one sparse interval [min(ts), max(ts)] surfaced at its end
-time (complete-visibility rule); the RAW timestamp list travels in the
-payload (text.timestamps) because BabyCL's AN chunk emitter splits
-non-contiguous runs into separate chunks.
+Each entry becomes one sparse interval [min(ts), max(ts)] that is surfaced
+only at its end time, so the learner never sees an utterance before it has
+finished.  The RAW timestamp list travels in the payload (text.timestamps)
+because BabyCL's AN chunk emitter splits non-contiguous runs into separate
+chunks.
 
-Dataset-level preprocessing (5fps decoding, orientation) is a prepare-stage
-concern; adapters only read what is on disk.
+Dataset-level preprocessing (5fps decoding, orientation fixes) happens in
+the prepare scripts before training; adapters only read what is already on
+disk.
 """
 
 from __future__ import annotations
@@ -61,9 +63,10 @@ class SaycamStream(S.Stream):
         sessions: list[str] | None = None,
         include: str | None = None,
     ):
-        """`include`: fnmatch pattern on session dir names ("S_*" selects the
-        SAYCam S child when root_dir holds all three children); `sessions`
-        (explicit list) wins over both `include` and the sorted scan."""
+        """`include` is an fnmatch pattern on session directory names (for
+        example "S_*" selects the SAYCam S child when root_dir holds all
+        three children).  If `sessions` (an explicit list) is given, it wins
+        over both `include` and the default sorted directory scan."""
         self.root = Path(root_dir)
         self.fps = float(fps)
         self.naming = naming
@@ -139,7 +142,7 @@ class SaycamStream(S.Stream):
             self._total = total
         return self._total
 
-    # ---- data plane ---------------------------------------------------------
+    # ---- reading pixels (refs become images only here) ----------------------
     def _locator_span(self, ref: ItemRef):
         loc = ref.locator
         if len(loc) == 2:  # (video_dir, idx) -- point frame
@@ -163,10 +166,12 @@ class SaycamStream(S.Stream):
 
 @STREAMS.register("babyview")
 class BabyViewStream(SaycamStream):
-    """BabyView: frame_index naming (frame_%08d.jpg -> t=(i-1)/fps).
+    """BabyView: same adapter as SAYCam, but frames are named by index
+    (frame_%08d.jpg -> t=(i-1)/fps).
 
-    The 9:16 portrait pre-crop (BabyView paper appendix) is a view/prepare
-    concern, not an adapter concern; pair it with a precrop-enabled view.
+    The 9:16 portrait pre-crop (BabyView paper appendix) is not done here:
+    it is handled either by a prepare script or by a precrop-enabled view
+    (a registered augmentation pipeline), so pair this adapter with one.
     """
 
     def __init__(

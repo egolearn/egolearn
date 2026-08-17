@@ -2,11 +2,14 @@
 
 Every piece of data flowing between EgoLearn modules is a plain dict
 (a "sample record") whose keys are namespaced strings registered here.
+This file exists so that all modules agree on what those keys are called
+and what they mean.
 
 Design rules (see README, "What flows between modules"):
-  * Structure is CLOSED: components communicate through registered keys and
-    named schemas (`egolearn.core.events`).  A typo'd or unregistered key fails
-    loudly at first use, not silently at step 40k.
+  * Structure is CLOSED: components communicate only through registered keys
+    and named schemas (`egolearn.core.events`).  A typo'd or unregistered key
+    raises an error the first time it is used, instead of silently producing
+    wrong data tens of thousands of steps into a run.
   * Extension is OPEN: projects may register new keys (e.g. a per-sample
     importance weight) without touching core code.  Downstream components
     ignore keys they did not declare.
@@ -61,10 +64,11 @@ def registered_keys() -> dict[str, KeySpec]:
 
 
 def require_keys(item: dict, keys: Iterable[str], component: str) -> None:
-    """Runtime first-use check: assert `item` carries all `keys`.
+    """Check at runtime that `item` carries all of `keys`.
 
-    This is the cheap 90% of static key-flow analysis: components declare
-    what they consume and this raises a one-line human error at step 0.
+    Components declare which keys they consume and call this on their first
+    input, so a missing key raises a clear error at the very start of the
+    run instead of surfacing much later as wrong results.
     """
     missing = [k for k in keys if k not in item]
     if missing:
@@ -85,8 +89,8 @@ TIME_T0 = register_key("time.t0", "meta", "Interval start, seconds of media time
 TIME_T1 = register_key("time.t1", "meta", "Interval end (>= t0). Point items have t1 == t0.")
 
 # vision
-VIDEO_REF = register_key("video.ref", "ref", "ItemRef into the video channel (control plane).")
-VIDEO_FRAMES = register_key("video.frames", "tensor", "[K,C,H,W] loaded frames (data plane).")
+VIDEO_REF = register_key("video.ref", "ref", "ItemRef into the video channel (no pixels yet).")
+VIDEO_FRAMES = register_key("video.frames", "tensor", "[K,C,H,W] decoded frames (actual pixels).")
 VIDEO_VIEWS = register_key("video.views", "tensor", "[V,C,H,W] augmented views of one frame.")
 VIDEO_CLIP = register_key(
     "video.clip",

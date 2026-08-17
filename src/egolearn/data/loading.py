@@ -1,11 +1,11 @@
-"""Loader: ItemRef -> tensors, as late as possible.
+"""Loader: turns an ItemRef into tensors, as late as possible.
 
-The single crossing point from the control plane (refs + metadata) to the
-data plane (pixels/tensors).  Everything upstream of the Loader manipulates
-references only; actual decoding and augmentation happen here, at batch
-composition time.  Alternative loaders (embedding caches, generative memory)
-implement the same small surface -- that is the entire "generative memory"
-extension surface.
+Everything upstream of the Loader passes around refs (lightweight pointers
+into the source data) plus metadata; images are only decoded and augmented
+here, when a batch is being built.  Alternative loaders (embedding caches,
+generative memory) implement this same small interface, so replacing how
+items become tensors -- e.g. a "generative memory" -- means implementing
+these few methods and touching nothing else.
 
 If a StageTimer is attached (`loader.timer`, set by the training driver),
 decode+augment time is recorded under "data.load" -- this is the number that
@@ -38,12 +38,14 @@ class Loader:
     def pick_frame_indices(self, ref, k: int, rng: random.Random) -> list[int]:
         """Choose k frame indices inside `ref`.
 
-        k == 1: uniform random within the interval (CVCL pair sampling).
-        k > 1 : equal bins with one draw per bin, bit-faithful to BabyCL's
-                online segment gather (_gather_segments_online): integer bin
-                edges via truncation (np.linspace(..., dtype=int)), INCLUSIVE
-                randint per bin, empty bins fall back to the whole interval,
-                and the pick is clamped to [0, n-1].
+        k == 1: one index drawn uniformly at random from the interval (this
+                is CVCL's pair sampling).
+        k > 1 : split the interval into k equal bins and draw one index per
+                bin.  The details are bit-faithful to BabyCL's online segment
+                gather (_gather_segments_online): integer bin edges computed
+                by truncation (np.linspace(..., dtype=int)), an INCLUSIVE
+                randint within each bin, empty bins fall back to drawing from
+                the whole interval, and every pick is clamped to [0, n-1].
         """
         n = self.stream.num_frames(ref)
         if n <= 0:
@@ -61,8 +63,9 @@ class Loader:
         return out
 
     def pick_clip_start(self, ref, clip_len: int, stride: int, rng: random.Random) -> int:
-        """Uniform-random start of a contiguous [clip_len x stride] window
-        inside `ref` (0 if the ref is shorter than the window)."""
+        """Pick a uniform-random start index for a contiguous window of
+        clip_len frames spaced `stride` apart inside `ref`.  Returns 0 when
+        the ref is shorter than the window."""
         n = self.stream.num_frames(ref)
         if n <= 0:
             raise ValueError(f"empty ref {ref!r}")
@@ -71,7 +74,8 @@ class Loader:
 
     # ---- loading ------------------------------------------------------------
     def frame_views(self, ref, index: int, view_names: list[str]):
-        """One frame of `ref` -> [V,C,H,W] (decode + augment)."""
+        """Decode one frame of `ref` and apply the named views (augmentation
+        pipelines), returning a [V,C,H,W] tensor with one row per view."""
         if self.timer is not None:
             with self.timer.measure("data.load"):
                 pil = self.stream.open_frame(ref, index)
@@ -82,18 +86,21 @@ class Loader:
     def clip_views(
         self, ref, view_names: list[str], clip_len: int, stride: int, rng: random.Random
     ) -> torch.Tensor:
-        """A contiguous clip of `ref` -> [V,T,C,H,W] (decode + augment).
+        """Decode a contiguous clip from `ref` and apply the named views,
+        returning a [V,T,C,H,W] tensor.
 
-        The clip unit: T=clip_len frames taken every `stride` frames from a
-        random start inside the ref; indices past the end clamp to the last
-        frame (short refs yield a padded-by-repetition clip, the common video
-        convention).  Augmentation is temporally consistent -- each clip view
-        pipe runs once on the whole [T,C,H,W] tensor (see views.apply_clip).
+        A clip is T=clip_len frames taken every `stride` frames from a random
+        start inside the ref; indices past the end clamp to the last frame,
+        so a short ref yields a clip padded by repeating that frame (the
+        common video convention).  Augmentation is temporally consistent:
+        each clip view pipeline runs once on the whole [T,C,H,W] tensor, so
+        all T frames get the same random crop etc. (see views.apply_clip).
 
         `view_names` must name clip-domain views (clip_simclr,
         clip_center_crop, ...).  Frames are decoded one by one through
         stream.open_frame; batching the decode through
-        VideoDecoder.read_window is a Poodle-integration optimization.
+        VideoDecoder.read_window is an optimization left for the Poodle
+        integration.
         """
 
         def _load() -> torch.Tensor:

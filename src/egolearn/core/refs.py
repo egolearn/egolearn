@@ -1,13 +1,15 @@
-"""ItemRef: the control-plane handle to a piece of stream data.
+"""ItemRef: a small reference that points at a piece of stream data.
 
-The control plane (admission decisions, memory tables, samplers) only ever
-holds ItemRefs plus small metadata -- never tensors.  The data plane
-(`egolearn.data.loading`) turns refs into tensors as late as possible.
+Everything that makes decisions -- admission components (the pieces that
+watch the stream and decide what enters memory), memory tables, samplers --
+passes around ItemRefs plus small metadata, never tensors.  Images are only
+decoded when a batch is built (`egolearn.data.loading`), as late as possible.
 
 A ref is a *timed interval* on one channel of one session.  A single frame
-is the degenerate interval t1 == t0.  What the interval loads into
-(one frame, K sampled frames, a contiguous clip, an audio window, ...) is
-decided by the batch recipe's view spec, not by the ref itself.
+is the special case t1 == t0.  What the interval loads into (one frame,
+K sampled frames, a contiguous clip, an audio window, ...) is decided by the
+batch recipe's view spec (the recipe describes how a batch is assembled;
+a view is an augmentation pipeline), not by the ref itself.
 """
 
 from __future__ import annotations

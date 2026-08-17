@@ -1,9 +1,10 @@
 """Pipeline builder + build-time validation.
 
-`build(cfg)` assembles the whole system from a plain config dict and runs
-`validate()` -- the set-algebra contract check that makes "seamless
-composition" mean something: type-compatible combinations wire up silently,
-incompatible ones die at t=0 with a one-line human error.
+`build(cfg)` assembles the whole system from a plain config dict and then
+runs `validate()`, which checks that every name the config references
+actually exists (memories, tiers, views, heads, taps, schemas, ...).
+Combinations that fit wire up without extra code; combinations that don't
+fail at build time with a clear error message, before any training happens.
 
 The acceptance test for the whole framework (README): a method is fully
 expressed by its config plus the method-novel components its project owns;
@@ -90,8 +91,8 @@ class Pipeline:
 def build(cfg: dict) -> Pipeline:
     # `_imports_`: modules whose import registers project-owned components
     # (admission components, losses, views, ...). This is how a config reaches
-    # code that lives in projects/ -- registries decouple addressing from
-    # location.
+    # code that lives in projects/ -- the config only names a component, and
+    # the registry finds it no matter which directory it lives in.
     import importlib
 
     for mod in cfg.get("_imports_", []):
@@ -99,8 +100,8 @@ def build(cfg: dict) -> Pipeline:
 
     ctx = Context(seed=cfg.get("seed", 1337), device=cfg.get("device", "cuda"))
 
-    # training mode: streaming (memory + admission) or offline (traditional
-    # IID -- parallel modes, see training/offline.py)
+    # training mode: streaming (memory + admission) or offline (a traditional
+    # IID loop -- two separate loops, see training/offline.py)
     mode = (cfg.get("driver") or {}).get("mode", "streaming")
     if mode not in ("streaming", "offline"):
         raise PipelineError(f"driver.mode must be 'streaming' or 'offline', got {mode!r}")
@@ -295,7 +296,9 @@ def build(cfg: dict) -> Pipeline:
 
 # ---------------------------------------------------------------------------
 def validate(pipe: Pipeline) -> None:
-    """Set-algebra contract check across all stage boundaries."""
+    """Check that every name the config references actually exists, at every
+    boundary between pipeline stages (routes, slots, views, heads, taps, ...).
+    """
     errs: list[str] = []
 
     if isinstance(pipe.driver, OfflineDriver):
