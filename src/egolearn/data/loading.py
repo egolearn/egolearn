@@ -1,11 +1,14 @@
 """Loader: turns an ItemRef into tensors, as late as possible.
 
-Everything upstream of the Loader passes around refs (lightweight pointers
-into the source data) plus metadata; images are only decoded and augmented
-here, when a batch is being built.  Alternative loaders (embedding caches,
-generative memory) implement this same small interface, so replacing how
-items become tensors -- e.g. a "generative memory" -- means implementing
-these few methods and touching nothing else.
+Everything else passes around refs (lightweight pointers into the source
+data) plus metadata; this is the only place images are decoded and augmented.
+Usually that happens while a batch is being built, but it is not the only
+caller: an admission component whose algorithm needs to look at image content
+pulls frames through the Loader too (see EmbeddingProvider -- BabyCL's
+segmenter embeds every 60th frame this way).  Alternative loaders (embedding
+caches, generative memory) implement this same small interface, so replacing
+how items become tensors means implementing these few methods and touching
+nothing else.
 
 If a StageTimer is attached (`loader.timer`, set by the training driver),
 decode+augment time is recorded under "data.load" -- this is the number that

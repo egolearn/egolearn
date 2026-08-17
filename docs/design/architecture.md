@@ -102,10 +102,10 @@ Three small types from `src/egolearn/core/` show up everywhere:
 
 * `ItemRef` — a reference to a time interval on one channel of one session:
   `(session, channel, t0, t1, locator)`. A single frame is the point
-  interval `t1 == t0`. Refs are cheap and immutable; pixels are decoded as
-  late as possible, only inside the Loader. Whether a ref loads as one
-  frame, K sampled frames, or a contiguous clip is the batch recipe's
-  decision, not the ref's.
+  interval `t1 == t0`. Refs are cheap and immutable, and the Loader is the
+  only place one becomes pixels. Whether a ref loads as one frame, K sampled
+  frames, or a contiguous clip is the batch recipe's decision, not the
+  ref's — the same stored record can be read either way.
 * sample record — a plain dict whose keys are registered names (`time.t0`,
   `video.ref`, `text.utterance`, `weight.sample`, ...). Using a key that was
   never registered raises an error immediately, so a typo can't silently
@@ -346,10 +346,14 @@ diffs — see `projects/babycl/README.md`.
 
 A few rules the codebase follows consistently:
 
-* Everything before the Loader works with references and small metadata;
-  images are only decoded when a batch is built. This is what makes
-  on-the-fly video decoding a swappable backend, and generative memory "a
-  Loader that synthesizes".
+* The Loader is the only place a reference turns into pixels. Storage and
+  sampling — memory tables, routing, batch draws — handle references and
+  small metadata only, which is what keeps buffers cheap and makes
+  on-the-fly video decoding a swappable backend (and generative memory "a
+  Loader that synthesizes"). Admission components are the exception that
+  proves the rule: when an algorithm needs to look at image content, it
+  pulls frames through that same Loader (see `EmbeddingProvider`), so there
+  is still exactly one decode path.
 * Events are emitted once and never change; labels are revisable through the
   LabelStore. That split is exactly what both published systems need.
 * The streaming loop has no epochs and no task ids — everything is indexed
