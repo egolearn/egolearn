@@ -39,7 +39,7 @@ class EmbeddingProvider:
     It is pluggable because the two published systems differ here (both
     code-verified):
       * Memory Storyboard clusters with the LEARNER'S OWN backbone
-        (`embedder: learner_tap`);
+        (`embedder: learner`);
       * BabyCL's online segmenter uses a FROZEN ImageNet encoder
         (`embedder: frozen_resnext50`).
     """

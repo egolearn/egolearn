@@ -230,10 +230,10 @@ def _toy_cfg(tmp_path):
             ]
         },
         "model": {
-            "vision": {"_target_": "trunk:toy_cnn", "dim": 64},
+            "encoders": {"vision": {"_target_": "encoder:toy_cnn", "dim": 64}},
             "heads": {
-                "proj": {"tap": "vision.feat", "_target_": "head:mlp", "sizes": [64, 64, 32]},
-                "cls": {"tap": "vision.feat", "_target_": "head:mlp", "sizes": [64, 64, 8]},
+                "proj": {"encoder": "vision", "_target_": "head:mlp", "sizes": [64, 64, 32]},
+                "cls": {"encoder": "vision", "_target_": "head:mlp", "sizes": [64, 64, 8]},
             },
         },
         "losses": [
@@ -305,7 +305,7 @@ def test_validation_rejects_unknown_view(tmp_path):
         egolearn.build(cfg)
 
 
-def test_validation_rejects_text_loss_without_text_trunk(tmp_path):
+def test_validation_rejects_text_loss_without_text_encoder(tmp_path):
     cfg = _toy_cfg(tmp_path)
     cfg["recipe"]["slots"][0]["strict"] = False
     cfg["losses"].append(
@@ -317,7 +317,7 @@ def test_validation_rejects_text_loss_without_text_trunk(tmp_path):
             "weight": 1.0,
         }
     )
-    with pytest.raises(egolearn.PipelineError, match="text trunk"):
+    with pytest.raises(egolearn.PipelineError, match="text encoder"):
         egolearn.build(cfg)
 
 
@@ -341,10 +341,8 @@ def _offline_cfg(tmp_path):
             "v2": {"name": "simclr_strong", "size": 64, "view_idx": 1},
         },
         "model": {
-            "vision": {"_target_": "trunk:toy_cnn", "dim": 64},
-            "heads": {
-                "proj": {"tap": "vision.feat", "_target_": "head:mlp", "sizes": [64, 64, 32]}
-            },
+            "encoders": {"vision": {"_target_": "encoder:toy_cnn", "dim": 64}},
+            "heads": {"proj": {"encoder": "vision", "_target_": "head:mlp", "sizes": [64, 64, 32]}},
         },
         "losses": [
             {
@@ -456,3 +454,303 @@ def test_offline_mode_rejects_unknown_view(tmp_path):
     cfg["driver"]["batch"]["views"] = ["v1", "nope"]
     with pytest.raises(egolearn.PipelineError, match="nope"):
         egolearn.build(cfg)
+
+
+# ---------------------------------------------------------------------------
+# composed model: encoders x heads x predictors, capabilities, eval compat
+# ---------------------------------------------------------------------------
+def test_composed_model_two_encoders_and_contract():
+    import torch.nn as nn
+
+    from egolearn.model.encoders.image import ToyCNNEncoder
+    from egolearn.model.model import ComposedModel
+
+    class TinyText(nn.Module):
+        modality = "text"
+        out_dim = 8
+
+        def __init__(self):
+            super().__init__()
+            self.emb = nn.Embedding(10, 8, padding_idx=0)
+
+        def forward(self, ids, lengths):
+            return self.emb(ids).sum(1) / lengths.clamp(min=1).unsqueeze(1).float()
+
+    model = ComposedModel(
+        {"vision": ToyCNNEncoder(dim=16), "text": TinyText()},
+        heads={"proj": {"encoder": "vision", "module": nn.Linear(16, 4)}},
+    )
+    assert model.head_encoder("proj") == "vision"
+    assert model.head_field("proj") == "pooled"
+    caps = model.capabilities()
+    assert {"image_representation", "text_representation", "multimodal"} <= caps
+
+    x = torch.rand(2, 3, 32, 32)
+    ids = torch.ones(2, 5, dtype=torch.long)
+    lens = torch.full((2,), 5, dtype=torch.long)
+    # by config name and by modality
+    assert model.encode("vision", x).pooled.shape == (2, 16)
+    assert torch.equal(model.encode("image", x).pooled, model.encode("vision", x).pooled)
+    assert model.encode("text", ids, lens).pooled.shape == (2, 8)
+    assert model.apply_head("proj", model.encode("vision", x).pooled).shape == (2, 4)
+
+    contract = model.export_contract()
+    assert contract["encoders"] == {"vision": "image", "text": "text"}
+    assert "multimodal" in contract["capabilities"]
+
+    # a slot with views must say what they are; no guessing from tensor shape
+    import pytest
+
+    with pytest.raises(KeyError, match="declares no modality"):
+        model.precompute_feats({"s": {"views": x.unsqueeze(1)}}, torch.device("cpu"))
+
+
+def test_video_encoder_trains_on_clip_slots(tmp_path):
+    # video SSL expressed purely in config: clip unit -> video encoder ->
+    # ntxent over the two clip views, end to end through the driver
+    cfg = _toy_cfg(tmp_path)
+    cfg["views"] = {
+        "cv1": {"name": "clip_simclr", "size": 48, "view_idx": 0},
+        "cv2": {"name": "clip_simclr", "size": 48, "view_idx": 1},
+    }
+    cfg["recipe"]["slots"] = [
+        {
+            "name": "clips",
+            "source": {"kind": "tier", "memory": "frames", "tier": "short"},
+            "n": 3,
+            "unit": "clip",
+            "clip_len": 4,
+            "clip_stride": 1,
+            "views": ["cv1", "cv2"],
+            "strict": True,
+        },
+    ]
+    cfg["model"] = {
+        "encoders": {"video": {"_target_": "encoder:toy_video", "dim": 32}},
+        "heads": {"proj": {"encoder": "video", "_target_": "head:mlp", "sizes": [32, 32, 16]}},
+    }
+    cfg["losses"] = [
+        {
+            "_target_": "loss:ntxent",
+            "name": "inst",
+            "slots": ["clips"],
+            "head": "proj",
+            "temperature": 0.2,
+            "weight": 1.0,
+        }
+    ]
+    pipe = egolearn.build(cfg)
+    assert "video_representation" in pipe.model.capabilities()
+    pipe.driver.fit()
+    assert pipe.ctx.clock.step == 2  # max_steps from _toy_cfg
+
+
+def test_predictor_wiring_and_validation(tmp_path):
+    import pytest
+
+    cfg = _toy_cfg(tmp_path)
+    cfg["model"]["predictors"] = {
+        "pred": {"inputs": ["vision"], "_target_": "predictor:mlp", "sizes": [64, 64, 64]}
+    }
+    pipe = egolearn.build(cfg)
+    assert "prediction" in pipe.model.capabilities()
+    out = pipe.model.encode("image", torch.rand(2, 3, 64, 64))
+    assert pipe.model.predict("pred", out.pooled).shape == (2, 64)
+    # heads and predictors eat tensors; the field choice stays at the call site
+    with pytest.raises(TypeError, match="pick a field"):
+        pipe.model.predict("pred", out)
+
+    cfg2 = _toy_cfg(tmp_path)
+    cfg2["model"]["predictors"] = {
+        "pred": {"inputs": ["video"], "_target_": "predictor:mlp", "sizes": [64, 64]}
+    }
+    with pytest.raises(egolearn.PipelineError, match=r"predictor .* reads encoder"):
+        egolearn.build(cfg2)
+
+
+def test_probe_capability_mismatch_fails_at_build(tmp_path):
+    import pytest
+
+    from egolearn.config.registry import PROBES
+    from egolearn.evaluation.probe import Probe
+
+    if "needs_text_probe" not in PROBES.names():
+
+        @PROBES.register("needs_text_probe")
+        class NeedsTextProbe(Probe):
+            name = "needs_text"
+            requires_capabilities = ("text_representation",)
+
+            def __init__(self, **kw):
+                pass
+
+            def run(self, model, ctx):
+                return {}
+
+    cfg = _toy_cfg(tmp_path)  # image-only model
+    cfg["probes"] = [{"_target_": "probe:needs_text_probe"}]
+    with pytest.raises(egolearn.PipelineError, match="needs capability"):
+        egolearn.build(cfg)
+
+
+def test_frozen_twin_encoder_stays_out_of_the_way(tmp_path):
+    # the JEPA EMA-target pattern: a frozen copy of an encoder is carried by
+    # the model (so it snapshots) but is excluded from the optimizer and
+    # never grabs modality-based routing
+    cfg = _toy_cfg(tmp_path)
+    cfg["model"]["encoders"] = {
+        "vision": {"_target_": "encoder:toy_cnn", "dim": 64},
+        "vision_target": {"_target_": "encoder:toy_cnn", "dim": 64, "frozen": True},
+    }
+    pipe = egolearn.build(cfg)
+    tgt = pipe.model.encoders["vision_target"]
+    assert not any(p.requires_grad for p in tgt.parameters())
+    opt_params = {id(p) for g in pipe.driver.optimizer.param_groups for p in g["params"]}
+    assert not any(id(p) in opt_params for p in tgt.parameters())
+    # modality routing resolves to the trainable twin
+    assert pipe.model.encoder_for("image") is pipe.model.encoders["vision"]
+    # train() must not pull the frozen twin out of eval mode (BatchNorm
+    # running stats would drift otherwise)
+    pipe.model.train()
+    assert not tgt.training
+    # routing is a construction-time fact: freezing everything for a linear
+    # probe must not change which encoder answers for "image"
+    pipe.model.requires_grad_(False)
+    assert pipe.model.encoder_for("image") is pipe.model.encoders["vision"]
+    # ...and a snapshot still carries the frozen weights
+    assert any(k.startswith("encoders.vision_target") for k in pipe.model.state_dict())
+
+
+def test_encoder_output_fields_are_additive():
+    # an encoder may return more than the pooled vector (token sequences,
+    # spatial maps, extras); pooled-only consumers keep working unchanged
+    # and richer consumers name the field they want
+    import pytest
+    import torch.nn as nn
+
+    from egolearn.model import EncoderOutput
+    from egolearn.model.model import ComposedModel
+
+    class RichEncoder(nn.Module):
+        modality = "image"
+        out_dim = 16
+
+        def __init__(self):
+            super().__init__()
+            self.proj = nn.Conv2d(3, 16, kernel_size=8, stride=8)
+
+        def forward(self, x):
+            spatial = self.proj(x)  # [B, 16, H/8, W/8]
+            tokens = spatial.flatten(2).transpose(1, 2)  # [B, N, 16]
+            return EncoderOutput(
+                pooled=tokens.mean(dim=1),
+                tokens=tokens,
+                spatial=spatial,
+                aux={"logit_scale": torch.tensor(4.6)},
+            )
+
+    model = ComposedModel(
+        {"vision": RichEncoder()},
+        heads={"proj": {"encoder": "vision", "module": nn.Linear(16, 4)}},
+    )
+    x = torch.rand(2, 3, 32, 32)
+
+    out = model.encode("vision", x)
+    assert out.pooled.shape == (2, 16)
+    assert out.tokens is not None and out.tokens.shape == (2, 16, 16)
+    assert out.spatial is not None and out.spatial.shape == (2, 16, 4, 4)
+    assert "logit_scale" in out.aux
+
+    # pooled shortcut and shared-feature path see only the pooled field
+    batch: dict = {"s": {"views": x.unsqueeze(1), "modality": "image"}}
+    model.precompute_feats(batch, torch.device("cpu"))
+    feats = batch["s"]["feats"]
+    assert isinstance(feats, torch.Tensor)
+    assert torch.allclose(feats[:, 0], out.pooled)
+
+    # handing the whole wrapper to a head is refused with a clear message
+    # (cast: this call is wrong on purpose)
+    from typing import cast
+
+    with pytest.raises(TypeError, match="pick a field"):
+        model.apply_head("proj", cast(torch.Tensor, out))
+    assert model.apply_head("proj", out.pooled).shape == (2, 4)
+
+
+def test_head_unknown_encoder_fails_at_build(tmp_path):
+    # a head reading a nonexistent encoder is caught even when no loss
+    # requires that head (probe-only heads used to slip through)
+    import pytest
+
+    cfg = _toy_cfg(tmp_path)
+    cfg["model"]["heads"]["orphan"] = {
+        "encoder": "backbone",  # no encoder has this name
+        "_target_": "head:mlp",
+        "sizes": [64, 32, 16],
+    }
+    with pytest.raises(egolearn.PipelineError, match="reads encoder"):
+        egolearn.build(cfg)
+
+
+def test_slot_modality_without_encoder_warns(tmp_path):
+    # a clip slot on an image-only model: no video encoder will ever fill
+    # slot["feats"], so the build surfaces a warning instead of leaving the
+    # mismatch to explode at the first batch
+    cfg = _toy_cfg(tmp_path)
+    cfg["views"]["cv"] = {"name": "clip_simclr", "size": 48, "view_idx": 0}
+    cfg["recipe"]["slots"].append(
+        {
+            "name": "clips",
+            "source": {"kind": "tier", "memory": "frames", "tier": "short"},
+            "n": 2,
+            "unit": "clip",
+            "clip_len": 4,
+            "views": ["cv"],
+            "strict": False,
+        }
+    )
+    pipe = egolearn.build(cfg)
+    assert any("clips" in w and "video" in w for w in pipe.warnings)
+
+
+def test_probes_null_key_means_no_probes(tmp_path):
+    # `probes:` present but empty (yaml null) disables evaluation, as before
+    cfg = _toy_cfg(tmp_path)
+    cfg["probes"] = None
+    pipe = egolearn.build(cfg)
+    assert pipe.probes == []
+
+
+def test_two_trainable_same_modality_encoders_rejected_at_build(tmp_path):
+    import pytest
+
+    cfg = _toy_cfg(tmp_path)
+    cfg["model"]["encoders"] = {
+        "vision_a": {"_target_": "encoder:toy_cnn", "dim": 64},
+        "vision_b": {"_target_": "encoder:toy_cnn", "dim": 64},
+    }
+    with pytest.raises(egolearn.PipelineError, match="compete for modality"):
+        egolearn.build(cfg)
+
+
+def test_encode_rejects_unknown_names():
+    import pytest
+
+    from egolearn.model.encoders.image import ToyCNNEncoder
+    from egolearn.model.model import ComposedModel
+
+    model = ComposedModel({"vision": ToyCNNEncoder(dim=16)})
+    x = torch.rand(2, 3, 32, 32)
+    assert model.encode("vision", x).pooled.shape == (2, 16)
+    with pytest.raises(KeyError, match="no encoder named"):
+        model.encode("text", torch.ones(2, 5, dtype=torch.long), torch.full((2,), 5))
+
+
+def test_solver_warns_on_group_matching_nothing(tmp_path):
+    cfg = _toy_cfg(tmp_path)
+    cfg["solver"]["groups"] = [
+        {"match": r"^backbone\.", "lr": 1e-3},  # matches nothing: params are encoders.*
+        {"match": ".*", "lr": 1e-4},
+    ]
+    pipe = egolearn.build(cfg)
+    assert any("matched no parameters" in w for w in pipe.warnings)

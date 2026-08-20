@@ -16,11 +16,17 @@ from typing import Any
 
 import torch
 
-_NO_DECAY_DEFAULT = r"(\.bias$|\bbn\b|norm|\bgn\b|downsample\.1)"
+# substring semantics exactly as ms_train._split_decay_named_params_cnn:
+# .bias suffix, or "bn"/"norm"/"gn"/"downsample.1" anywhere in the name
+_NO_DECAY_DEFAULT = r"(\.bias$|bn|norm|gn|downsample\.1)"
 
 
 def build_optimizer(
-    model: torch.nn.Module, groups: list[dict], opt: str = "adamw", momentum: float = 0.9
+    model: torch.nn.Module,
+    groups: list[dict],
+    opt: str = "adamw",
+    momentum: float = 0.9,
+    warnings: list[str] | None = None,
 ):
     """groups: [{match, lr, weight_decay, split_no_decay?, no_decay_pattern?}]
 
@@ -58,6 +64,13 @@ def build_optimizer(
                 break
         else:
             unmatched.append(name)
+    if warnings is not None:
+        for g, spec in zip(compiled, groups, strict=True):
+            if not g["decay_params"] and not g["no_decay_params"]:
+                warnings.append(
+                    f"solver group {spec['match']!r} matched no parameters -- "
+                    "stale regex? (parameter names look like encoders.vision.*)"
+                )
     if unmatched:
         raise ValueError(
             f"solver: {len(unmatched)} parameters matched no group rule, "

@@ -52,8 +52,10 @@ UPDATE_POLICIES = Registry("update")  # buffer update policies (memory/update)
 SAMPLERS = Registry("sampler")  # buffer sampling policies
 EMBEDDERS = Registry("embedder")  # ref -> embedding providers
 # model
-TRUNKS = Registry("trunk")
+ENCODERS = Registry("encoder")  # modality -> representation (model/encoders)
 HEADS = Registry("head")
+PREDICTORS = Registry("predictor")  # representation(s) -> predicted representation
+GENERATIVE = Registry("generative")  # generative/autoregressive components (interface)
 LOSSES = Registry("loss")  # model/losses
 # evaluation
 PROBES = Registry("probe")
@@ -68,8 +70,10 @@ _ALL = {
         UPDATE_POLICIES,
         SAMPLERS,
         EMBEDDERS,
-        TRUNKS,
+        ENCODERS,
         HEADS,
+        PREDICTORS,
+        GENERATIVE,
         LOSSES,
         PROBES,
     ]

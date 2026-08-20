@@ -2,7 +2,7 @@
 
 `build(cfg)` assembles the whole system from a plain config dict and then
 runs `validate()`, which checks that every name the config references
-actually exists (memories, tiers, views, heads, taps, schemas, ...).
+actually exists (memories, tiers, views, heads, encoders, schemas, ...).
 Combinations that fit wire up without extra code; combinations that don't
 fail at build time with a clear error message, before any training happens.
 
@@ -16,7 +16,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .config.instantiate import instantiate
+from .config.registry import ENCODERS
 from .core import events as E
+from .core import keys as K
 from .core.context import Context
 from .data.batching.composer import Composer
 from .data.batching.recipe import Recipe
@@ -27,7 +29,7 @@ from .data.views import ViewBank
 from .memory.admission.base import EmbeddingProvider, EventBuilder
 from .memory.labels import LabelStore
 from .memory.table import TieredMemory
-from .model.model import EgoModel
+from .model.model import ComposedModel
 from .training.driver import LockstepDriver
 from .training.hooks import CheckpointHook, Hook, LogHook, ProbeHook, SnapshotHook, WandbHook
 from .training.offline import OfflineDriver
@@ -52,9 +54,10 @@ class Pipeline:
     routes: dict[str, str]
     recipe: Recipe | None  # None in offline (IID) mode
     composer: Composer | None  # None in offline (IID) mode
-    model: EgoModel
+    model: ComposedModel
     losses: list
     driver: LockstepDriver | OfflineDriver
+    probes: list = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -81,7 +84,9 @@ class Pipeline:
         lines.append(
             "  losses    : " + ", ".join(f"{fn.name}(w={fn.weight:.2g})" for fn in self.losses)
         )
-        lines.append(f"  model taps: {self.model.taps()}  heads: {self.model.head_names()}")
+        lines.append(
+            f"  model     : encoders {self.model.modalities()}  heads {self.model.head_names()}"
+        )
         for w in self.warnings:
             lines.append(f"  WARNING   : {w}")
         return "\n".join(lines)
@@ -171,24 +176,56 @@ def build(cfg: dict) -> Pipeline:
         composer = Composer(loader, tokenizer=tokenizer, label_stores=label_stores)
 
     # model ------------------------------------------------------------------
-    mcfg = cfg["model"]
-    vision = instantiate(mcfg["vision"])
-    text = None
-    if mcfg.get("text"):
-        tcfg = dict(mcfg["text"])
-        if tcfg.get("vocab_size") == "auto":
+    build_warnings: list[str] = []
+    mcfg = dict(cfg["model"])
+    enc_modules: dict = {}
+    frozen_names: list[str] = []
+    for name, spec in (mcfg.get("encoders") or {}).items():
+        spec = dict(spec)
+        if spec.pop("frozen", False):
+            # e.g. a JEPA EMA target: kept in the model (and in snapshots)
+            # but never trained; ComposedModel records this and keeps the
+            # module out of routing, out of the optimizer and in eval mode
+            frozen_names.append(name)
+        if spec.get("vocab_size") == "auto":
+            # "auto" is wired to THE TEXT TOKENIZER, so it is only honored
+            # for text encoders; a video tokenizer's vocab is a different
+            # thing and must be given explicitly
+            kind, _, reg_name = str(spec.get("_target_", "")).partition(":")
+            cls = ENCODERS.get(reg_name) if kind == "encoder" else None
+            if cls is None or getattr(cls, "modality", None) != "text":
+                raise PipelineError(
+                    f"encoder {name!r}: vocab_size=auto fills in the text "
+                    "tokenizer's vocab size and only applies to text encoders"
+                )
             if tokenizer is None:
-                raise PipelineError("model.text vocab_size=auto needs a tokenizer")
-            tcfg["vocab_size"] = tokenizer.vocab_size
-        text = instantiate(tcfg)
+                raise PipelineError(f"encoder {name!r}: vocab_size=auto needs a tokenizer")
+            spec["vocab_size"] = tokenizer.vocab_size
+        enc_modules[name] = instantiate(spec)
+    if not enc_modules:
+        raise PipelineError("model needs at least one entry under model.encoders")
+
     heads = {}
     for name, spec in (mcfg.get("heads") or {}).items():
         spec = dict(spec)
-        tap = spec.pop("tap")
-        heads[name] = {"tap": tap, "module": instantiate(spec)}
-    model = EgoModel(vision, text=text, heads=heads)
+        head = {"encoder": spec.pop("encoder"), "module": None}
+        if "field" in spec:
+            head["field"] = spec.pop("field")
+        head["module"] = instantiate(spec)
+        heads[name] = head
 
-    # give learner-tap embedders access to the model
+    predictors = {}
+    for name, spec in (mcfg.get("predictors") or {}).items():
+        spec = dict(spec)
+        inputs = spec.pop("inputs", [])
+        predictors[name] = {"inputs": list(inputs), "module": instantiate(spec)}
+
+    try:
+        model = ComposedModel(enc_modules, heads=heads, predictors=predictors, frozen=frozen_names)
+    except (TypeError, ValueError) as e:
+        raise PipelineError(str(e)) from e
+
+    # give learner embedders access to the model
     for emb in embedders.values():
         emb.model = model
 
@@ -197,7 +234,11 @@ def build(cfg: dict) -> Pipeline:
     scfg = dict(cfg["solver"])
     schedule_cfg = scfg.pop("schedule", None)
     optimizer = build_optimizer(
-        model, scfg["groups"], opt=scfg.get("opt", "adamw"), momentum=scfg.get("momentum", 0.9)
+        model,
+        scfg["groups"],
+        opt=scfg.get("opt", "adamw"),
+        momentum=scfg.get("momentum", 0.9),
+        warnings=build_warnings,
     )
     schedule = ProgressCosine(**schedule_cfg) if schedule_cfg else None
 
@@ -209,8 +250,8 @@ def build(cfg: dict) -> Pipeline:
     ]
     if hcfg.get("checkpoint_every"):
         hooks.append(CheckpointHook(run_dir, every_steps=hcfg["checkpoint_every"]))
-    if cfg.get("probes"):
-        probes = [instantiate(p) for p in cfg["probes"]]
+    probes = [instantiate(p) for p in (cfg.get("probes") or [])]
+    if probes:
         hooks.append(ProbeHook(probes, every_steps=hcfg.get("probe_every", 500)))
     if hcfg.get("snapshot_milestones") or hcfg.get("snapshot_every"):
         hooks.append(
@@ -288,8 +329,10 @@ def build(cfg: dict) -> Pipeline:
         composer=composer,
         model=model,
         losses=losses,
+        probes=probes,
         driver=driver,
     )
+    pipe.warnings.extend(build_warnings)
     validate(pipe)
     return pipe
 
@@ -297,13 +340,14 @@ def build(cfg: dict) -> Pipeline:
 # ---------------------------------------------------------------------------
 def validate(pipe: Pipeline) -> None:
     """Check that every name the config references actually exists, at every
-    boundary between pipeline stages (routes, slots, views, heads, taps, ...).
+    boundary between pipeline stages (routes, slots, views, heads, encoders, ...).
     """
     errs: list[str] = []
 
     if isinstance(pipe.driver, OfflineDriver):
         _validate_offline(pipe, pipe.driver, errs)
         _validate_losses(pipe, {pipe.driver.slot}, errs)
+        _validate_model_consumers(pipe, errs)
         if errs:
             raise PipelineError("pipeline validation failed:\n  - " + "\n  - ".join(errs))
         return
@@ -353,6 +397,12 @@ def validate(pipe: Pipeline) -> None:
                     )
             if slot.text and pipe.tokenizer is None:
                 errs.append(f"{tag} slot {slot.name!r}: text=true but no tokenizer configured")
+            if slot.modality not in pipe.model.modalities().values():
+                pipe.warnings.append(
+                    f"{tag} slot {slot.name!r} declares modality "
+                    f"{slot.modality!r} but no encoder has it; the slot gets "
+                    "no precomputed feats, so its loss must work from raw views"
+                )
             if slot.labels_from and slot.labels_from not in pipe.label_stores:
                 errs.append(f"{tag} slot {slot.name!r}: unknown label store {slot.labels_from!r}")
         if recipe.fallback:
@@ -361,6 +411,7 @@ def validate(pipe: Pipeline) -> None:
     check_recipe(pipe.recipe, "recipe")
 
     _validate_losses(pipe, set(pipe.recipe.slot_names()), errs)
+    _validate_model_consumers(pipe, errs)
 
     # driver wiring
     assert isinstance(pipe.driver, LockstepDriver)
@@ -382,8 +433,46 @@ def validate(pipe: Pipeline) -> None:
         raise PipelineError("pipeline validation failed:\n  - " + "\n  - ".join(errs))
 
 
+def _validate_model_consumers(pipe: Pipeline, errs: list[str]) -> None:
+    """Model <-> evaluation compatibility, plus predictor wiring.
+
+    A probe declares which capabilities the model must have (see
+    evaluation/probe.py); the model derives its capabilities from its
+    components.  Comparing the two here means an incompatible model x
+    evaluation pair fails at build time with one message, instead of each
+    pair needing an adapter."""
+    caps = pipe.model.capabilities()
+    for probe in pipe.probes:
+        for c in getattr(probe, "requires_capabilities", ()):
+            if c in caps:
+                continue
+            if c in K.KNOWN_CAPABILITIES or c.endswith("_representation"):
+                errs.append(
+                    f"probe {probe.name!r} needs capability {c!r}; model has {sorted(caps)}"
+                )
+            else:
+                errs.append(
+                    f"probe {probe.name!r} requires {c!r}, which is not a "
+                    f"capability name (known: {sorted(K.KNOWN_CAPABILITIES)})"
+                )
+    encoder_names = set(pipe.model.encoders.keys())
+    for hname in pipe.model.head_names():
+        if pipe.model.head_encoder(hname) not in encoder_names:
+            errs.append(
+                f"head {hname!r} reads encoder {pipe.model.head_encoder(hname)!r}; "
+                f"model has {sorted(encoder_names)}"
+            )
+    for pname in pipe.model.predictor_names():
+        for ename in pipe.model.predictor_inputs(pname):
+            if ename not in encoder_names:
+                errs.append(
+                    f"predictor {pname!r} reads encoder {ename!r}; "
+                    f"model has {sorted(encoder_names)}"
+                )
+
+
 def _validate_losses(pipe: Pipeline, slot_names, errs: list[str]) -> None:
-    """Loss contracts (shared by both modes): slots, heads, taps, text."""
+    """Loss contracts (shared by both modes): slots, heads, text."""
     for loss_fn in pipe.losses:
         for s in loss_fn.requires_slots:
             if s not in slot_names:
@@ -397,17 +486,14 @@ def _validate_losses(pipe: Pipeline, slot_names, errs: list[str]) -> None:
                     f"loss {loss_fn.name!r} requires head {h!r}; "
                     f"model has {pipe.model.head_names()}"
                 )
-            elif pipe.model.head_tap(h) not in pipe.model.taps():
-                errs.append(
-                    f"loss {loss_fn.name!r}: head {h!r} hangs off "
-                    f"unknown tap {pipe.model.head_tap(h)!r}"
-                )
-        if loss_fn.requires_text and pipe.model.text is None:
-            errs.append(f"loss {loss_fn.name!r} needs a text trunk; model has none")
+        if loss_fn.requires_text and K.CAP_TEXT_REPRESENTATION not in pipe.model.capabilities():
+            errs.append(f"loss {loss_fn.name!r} needs a text encoder; model has none")
 
 
 def _validate_offline(pipe: Pipeline, driver: OfflineDriver, errs: list[str]) -> None:
     """Offline (IID) mode: views must exist; v1 batches carry no text/labels."""
+    if "image" not in pipe.model.modalities().values():
+        errs.append("offline v1 batches are image frames, but no encoder has modality 'image'")
     for v in driver.views:
         if v not in pipe.views.names():
             errs.append(f"driver.batch: unknown view {v!r} (declared: {pipe.views.names()})")

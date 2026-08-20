@@ -8,6 +8,14 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Composable model layer: named encoders (image/video/text) + heads +
+  predictors behind one `ComposedModel` surface; encoder outputs wrapped in
+  `EncoderOutput` (pooled always; tokens/spatial/aux fields are additive);
+  batch slots declare their modality and route to the matching encoder
+  (routing is fixed at construction: one trainable encoder per modality,
+  frozen copies stay in eval mode and out of the optimizer); capability
+  set derived from components and checked against probe requirements at
+  build time; reserved generative interface.
 - Streaming learning framework: stream adapters (SAYCam/BabyView/video/toy),
   tiered memories with revisable labels, admission event builders, slot-based
   batch recipes, SSL + multimodal losses, lockstep streaming driver and

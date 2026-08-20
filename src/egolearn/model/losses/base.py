@@ -1,7 +1,7 @@
 """Loss protocol: the interface every training loss implements.
 
 A loss reads the slots it declared (slots are the named groups of items
-inside one batch) and the model's taps/heads, and returns named scalar
+inside one batch) and the model's encoders/heads, and returns named scalar
 values:
 
     values = loss.compute(batch, model, ctx)   # {name: scalar tensor}

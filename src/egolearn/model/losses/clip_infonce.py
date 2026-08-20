@@ -16,6 +16,7 @@ import torch
 import torch.nn.functional as F
 
 from egolearn.config.registry import LOSSES
+from egolearn.core import keys as K
 
 from .base import Loss
 
@@ -43,26 +44,28 @@ class ClipInfoNCE(Loss):
 
     def compute(self, batch, model, ctx) -> dict[str, torch.Tensor]:
         slot = self._slot(batch, self.slot)
-        for need in ("text_ids", "text_len"):
+        for need in (K.SLOT_TEXT_IDS, K.SLOT_TEXT_LEN):
             if need not in slot:
                 raise KeyError(
                     f"clip_infonce: slot {self.slot!r} has no {need} -- set text: true in the "
                     "recipe (and configure a tokenizer)"
                 )
 
-        if "feats" in slot:
-            img = model.apply_head(self.vision_head, slot["feats"][:, 0])
+        if K.SLOT_FEATS in slot:
+            img = model.apply_head(self.vision_head, slot[K.SLOT_FEATS][:, 0])
         else:
-            x = slot["views"][:, 0].to(ctx.device, non_blocking=True)
-            img = model.apply_head(self.vision_head, model.vision_tap(x))
-        txt = model.text_tap(slot["text_ids"].to(ctx.device), slot["text_len"].to(ctx.device))
+            x = slot[K.SLOT_VIEWS][:, 0].to(ctx.device, non_blocking=True)
+            img = model.apply_head(self.vision_head, model.encode("image", x).pooled)
+        txt = model.encode(
+            "text", slot[K.SLOT_TEXT_IDS].to(ctx.device), slot[K.SLOT_TEXT_LEN].to(ctx.device)
+        ).pooled
         img = F.normalize(img, dim=1)
         txt = F.normalize(txt, dim=1)
 
         logits = img @ txt.t() / self.temperature
         target = torch.arange(logits.size(0), device=ctx.device)
 
-        weights: torch.Tensor | None = slot.get("weights")
+        weights: torch.Tensor | None = slot.get(K.SLOT_WEIGHTS)
         if self.use_sample_weights and weights is not None:
             w = weights.to(ctx.device)
             per = (

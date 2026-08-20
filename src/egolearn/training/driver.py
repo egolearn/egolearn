@@ -256,7 +256,7 @@ class LockstepDriver:
             logs: dict[str, float] = {}
             total = None
             with self.timer.measure("model.forward"):
-                # trunk runs once per slot/view; losses share the features
+                # each encoder runs once per slot/view; losses share the features
                 self.model.precompute_feats(batch, self.ctx.device)
                 for loss_fn in self.losses:
                     # A fallback recipe may drop slots (BabyCL: multimodal slot

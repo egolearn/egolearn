@@ -9,20 +9,19 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from egolearn.config.registry import TRUNKS
+from egolearn.config.registry import ENCODERS
 
 
-@TRUNKS.register("text_bow")
-class TextBowTrunk(nn.Module):
+@ENCODERS.register("text_bow")
+class TextBowEncoder(nn.Module):
     """CVCL text encoder: an utterance is encoded as the mean of its learned word
     embeddings.
 
-    Output tap (the named feature other components read): text.embed [B, dim].
-    Matches multimodel.TextEncoder (flat/embedding path): sum(embeddings) / length,
-    padding_idx = 0.
+    Matches multimodel.TextEncoder (flat/embedding path):
+    sum(embeddings) / length, padding_idx = 0.
     """
 
-    tap = "text.embed"
+    modality = "text"
 
     def __init__(self, vocab_size: int, dim: int = 512, pad_id: int = 0):
         super().__init__()

@@ -24,12 +24,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
+def modality_for_unit(unit: str) -> str:
+    """What a unit's views are: clips are video, everything else loads
+    frames.  The single home of this rule -- the offline driver and the
+    slot default both call it."""
+    return "video" if unit == "clip" else "image"
+
+
 @dataclass
 class SlotSpec:
     name: str
     source: dict  # {"kind": "tier"|"mix"|"stream_head", ...}
     n: int
     unit: str = "frame"  # "frame" | "segment" | "pair" | "clip"
+    modality: str | None = None  # of the views; defaults from unit (clip -> video, else image)
     frames_per_item: int = 1  # frames sampled per item (segment unit)
     clip_len: int = 16  # frames per clip (clip unit)
     clip_stride: int = 1  # take every k-th frame (clip unit)
@@ -51,6 +59,8 @@ class SlotSpec:
             raise ValueError(f"slot {self.name!r}: clip_len/clip_stride must be >= 1")
         if not self.views:
             raise ValueError(f"slot {self.name!r} declares no views")
+        if self.modality is None:
+            self.modality = modality_for_unit(self.unit)
 
 
 @dataclass

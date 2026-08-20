@@ -44,7 +44,7 @@ flowchart LR
   IDX["training/offline.py<br/>offline mode:<br/>index all → shuffle → epochs"]
 
   LOAD["data/loading · views<br/>refs → pixels"]
-  MODEL["model<br/>trunks · heads · losses"]
+  MODEL["model<br/>encoders · heads · predictors · losses"]
   EVAL["evaluation + benchmarks"]
 
   SRC -->|observations, in order| ADM
@@ -70,7 +70,7 @@ tables by schema; when a table is full, its update policy decides who stays.
 To train, the composer follows the batch recipe and samples references from
 memory ("3 segments × 32 frames + 32 utterance–frame pairs, 25% short / 75%
 long"), and only then does the Loader decode and augment anything. Each loss
-reads model features through named taps/heads, the weighted sum
+reads model features through named encoders/heads, the weighted sum
 backpropagates, and after k gradient steps the driver goes back to the
 stream. The run ends when the stream is exhausted — never at a precomputed
 step count. Probes can score the model at any point along the way.
@@ -181,16 +181,81 @@ method-owned builders that do.
 
 ### `egolearn.model`
 
-`EgoModel` wraps trunks that expose named taps (`vision.pool2048`,
-`text.embed`) and heads that hang off taps (`proj128`, `cls`, `embed512`).
-Losses and probes touch the model only through taps and heads, and every
-checkpoint carries this contract, so a trained encoder drops into any probe
-by tap name. Trunks: `resnext50` (both papers train it from scratch),
-`resnet18`, `toy_cnn`. Losses: `ntxent` (accepts several slots and
-concatenates — MS computes it over current+replay jointly), `tcl`
-(segment-label cross-entropy with optional masking of unseen classes),
-`clip_infonce` (symmetric image–text InfoNCE, optional per-sample weights).
-A method is which losses, at what weights, over which slots — all config.
+A model is a composition declared in the config, not one backbone class.
+The parts, one line each:
+
+* **encoder** — one modality's tensor in, a representation out. An encoder
+  declares its modality (`image`, `video`, `text`) and its output width;
+  everything else addresses it by the name the config gave it. Shipped:
+  `resnext50`, `resnet18`, `toy_cnn` (image), `toy_video` (video); BabyCL's
+  bag-of-words text encoder lives in its method package.
+* **encoder output** — what `encode()` returns is a wrapper, not a bare
+  tensor: `pooled` (always, `[B, D]`), plus optional `tokens` (a ViT's patch
+  sequence, for token-space prediction and masking), `spatial` (the feature
+  map before pooling, for dense heads and attribution maps) and an `aux`
+  dict. Consumers name the field they read, so an encoder that starts
+  returning tokens changes no signature and breaks nobody.
+* **head** — a small module (projector, classifier); names the encoder it
+  sits on and consumes its pooled output.
+* **predictor** — representation(s) in, predicted representation out; the
+  JEPA-style component. Names the encoders it reads.
+* **generative component** — interface reserved (`generate` / `score`),
+  nothing built yet.
+* **loss** — consumes representations by slot and head name: `ntxent`
+  (accepts several slots and concatenates — MS computes it over
+  current+replay jointly), `tcl` (segment-label cross-entropy with optional
+  masking of unseen classes), `clip_infonce` (symmetric image–text InfoNCE,
+  optional per-sample weights).
+
+```mermaid
+flowchart LR
+  subgraph CM["ComposedModel (from config)"]
+    direction LR
+    ENC1["encoder 'vision'<br/>image → [B, 2048]"]
+    ENC2["encoder 'text'<br/>text → [B, 512]"]
+    H1["heads<br/>proj128 · cls · embed512"]
+    P1["predictors<br/>(optional, JEPA)"]
+    ENC1 -->|pooled| H1
+    ENC1 -->|pooled| P1
+    ENC2 -->|pooled| H1
+  end
+  B["batch"] --> ENC1
+  B --> ENC2
+  H1 --> L["losses / probes"]
+  P1 --> L
+```
+
+The composed model exposes everything by name — `encode(name, x)`,
+`apply_head(name, feats)`, `predict(name, reps)` — and derives a set of
+**capabilities** from its parts (`image_representation`,
+`video_representation`, `text_representation`, `multimodal`, `prediction`,
+`generation` reserved). Two things hang off that:
+
+* **Config swapping.** `resnext50` → a ViT, image encoder → video encoder,
+  one text encoder → another: each is one line in `model.encoders:`, because
+  every batch slot carries the modality its spec declares, the model routes
+  each slot to the encoder of that modality, and losses read representations
+  by name, never by class.
+* **Model ↔ evaluation compatibility.** A probe declares
+  `requires_capabilities`; `build()` compares that against the model's set.
+  An image–text retrieval probe wired against a vision-only model fails at
+  startup with one message, so model × evaluation pairs need no adapters.
+
+Every checkpoint records the full name→role mapping (encoders and their
+modalities, heads, predictors, capabilities), so a trained encoder
+reloads elsewhere by name.
+
+Design check against models the framework doesn't ship yet (interfaces
+only — the point was to make sure none of them is blocked):
+
+| future model | as a composition |
+|---|---|
+| CLIP-style dual encoder | `encoders: {vision, text}` + heads into a shared space + `clip_infonce` — this is BabyCL's cross-modal half, already running |
+| video encoder (VideoMAE-class) | one `video`-modality encoder; clip slots route to it automatically (covered by a unit test with `toy_video`) |
+| V-JEPA | video encoder + a second frozen copy (`frozen: true` — carried in snapshots, kept in eval mode, excluded from the optimizer and from modality routing, all recorded at construction) + predictor + a latent loss that updates the EMA copy in `on_step_end`; token-space prediction reads the output's `tokens` field, which is additive to add |
+| language-conditioned JEPA | the same, with `inputs: [video.clip_feat, text.embed]` on the predictor |
+| autoregressive / generative | registers as a `generative` component; the capability name and eval hook exist, the module does not |
+| attribution / dense evals (GradCAM-class) | read the output's `spatial` field; adding it to an encoder breaks no pooled consumer |
 
 ### `egolearn.training`
 
@@ -265,7 +330,7 @@ defaults lists, `--config-dir`/`--config-name`, CLI overrides
 resolved config to `.hydra/config.yaml` (the reproduction truth). **The
 registries own how that dict becomes objects**: `_target_: "kind:name"`
 resolves through per-kind registries (`stream`, `decoder`, `view`,
-`admission`, `update`, `sampler`, `embedder`, `trunk`, `head`, `loss`,
+`admission`, `update`, `sampler`, `embedder`, `encoder`, `head`, `predictor`, `loss`,
 `probe`), nested nodes instantiate recursively, `_imports_:` pulls in
 methods/benchmark modules.
 
@@ -310,7 +375,7 @@ uv run python -m egolearn.train --config-name offline_iid_saycam \
 `greedy_hierarchical_clustering` and `get_cluster_score` verbatim from the
 public repo (including the quirk of forcing K−1 cuts even when the score
 drops), the recluster-on-window-turnover admission builder with retroactive
-relabeling through the LabelStore, and `embedder:learner_tap` (MS segments
+relabeling through the LabelStore, and `embedder:learner` (MS segments
 with the learner's own backbone).
 
 `methods/babycl/` carries BabyCL's: the segmentation math from
@@ -319,7 +384,7 @@ utterance-anchored expansion, ~3-minute packing, watermark finalize-once,
 global-id merge with cross-session handover), the multimodal admission path
 (raw timestamp runs, atomic complete-visibility emission, dedup — and no
 similarity expansion, because the original feeder discards the segmenter's
-expanded chunks), the frozen ResNeXt embedder, the bag-of-words text trunk,
+expanded chunks), the frozen ResNeXt embedder, the bag-of-words text encoder,
 and both augmentation recipes (`cvcl_aug` with the original's PIL radius
 blur; `babycl_ms_aug`, which fuses the original's two-stage center-crop-then
 -strong-SimCLR segment augmentation into one pipeline).
@@ -423,8 +488,10 @@ method = one paper's research code, eval = benchmark code.
 | `src/egolearn/memory/admission/base.py` | streaming | `EventBuilder` + `EmbeddingProvider` protocols |
 | `src/egolearn/memory/admission/frame_emitter.py` | streaming | every (subsampled) frame becomes a `RawFrame` event |
 | `src/egolearn/memory/admission/fixed_window.py` | streaming | fixed-window labeler (MS's prior labels / trivial chunking baseline) |
-| `src/egolearn/model/model.py` | shared | `EgoModel`: taps + heads, export contract in every checkpoint |
-| `src/egolearn/model/trunks.py` | shared | resnext50, resnet18, toy_cnn |
+| `src/egolearn/model/model.py` | shared | `ComposedModel`: named encoders + heads + predictors; capabilities; export contract |
+| `src/egolearn/model/encoders/` | shared | encoder contract (base.py) + image encoders (resnext50, resnet18, toy_cnn) + video (toy_video) |
+| `src/egolearn/model/predictors.py` | shared | predictor contract + `predictor:mlp` |
+| `src/egolearn/model/generative.py` | shared | reserved generative/autoregressive interface |
 | `src/egolearn/model/heads.py` | shared | linear, mlp |
 | `src/egolearn/model/losses/` | shared | loss protocol + ntxent, tcl, clip_infonce |
 | `src/egolearn/training/driver.py` | streaming | the streaming loop: pull stream data → store admitted items → k training steps |
@@ -435,12 +502,12 @@ method = one paper's research code, eval = benchmark code.
 | `src/egolearn/utils/snapshot.py` | shared | save/restore the whole world; streaming resume replays the stream |
 | `src/egolearn/evaluation/probe.py` | shared | the `Probe` protocol |
 | `src/egolearn/evaluation/benchmarks/` | eval | 4AFC, visual two-word test, Baby Winoground probes |
-| `src/egolearn/methods/storyboard/` | method | verbatim clustering + recluster admission + learner-tap embedder |
+| `src/egolearn/methods/storyboard/` | method | verbatim clustering + recluster admission + learner embedder |
 | `src/egolearn/methods/babycl/refine.py` | method | verbatim segmentation math from `online_ms_refine.py` |
 | `src/egolearn/methods/babycl/segmenter.py` | method | the OnlineSegmenter, 1:1 |
 | `src/egolearn/methods/babycl/an_chunks.py` | method | the multimodal admission path, 1:1 |
 | `src/egolearn/methods/babycl/data.py` | method | `cvcl_aug`, `babycl_ms_aug`, frozen ResNeXt embedder |
-| `src/egolearn/methods/babycl/model.py` | method | the CVCL bag-of-words text trunk |
+| `src/egolearn/methods/babycl/model.py` | method | the CVCL bag-of-words text encoder |
 | `projects/babycl/configs/saycam_default.yaml` | method | the paper's default run as config |
 | `projects/storyboard/configs/saycam.yaml` | method | the MS reproduction as config |
 | `scripts/slurm/` | ops | cluster-independent sbatch templates + minimal cluster setup docs |

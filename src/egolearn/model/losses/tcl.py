@@ -20,6 +20,7 @@ import torch
 import torch.nn.functional as F
 
 from egolearn.config.registry import LOSSES
+from egolearn.core import keys as K
 
 from .base import Loss
 
@@ -53,8 +54,8 @@ class TemporalClassification(Loss):
                     f"tcl: slot {s!r} carries no labels -- set labels_from "
                     "(LabelStore) or batch_label in the recipe"
                 )
-            views_list.append(slot["views"])
-            labels_list.append(slot["labels"])
+            views_list.append(slot[K.SLOT_VIEWS])
+            labels_list.append(slot[K.SLOT_LABELS])
         views = torch.cat(views_list, dim=0)  # [B, V, C, H, W]
         labels = torch.cat(labels_list, dim=0).to(ctx.device)
         if int(labels.max()) >= self.num_classes:
@@ -70,9 +71,9 @@ class TemporalClassification(Loss):
             ce_weight[self.max_label_seen + 1 :] = 0.0
 
         feats = None
-        if all("feats" in self._slot(batch, s) for s in self.slots):
-            # trunk features precomputed by the driver (one forward per slot/view)
-            feats = torch.cat([self._slot(batch, s)["feats"] for s in self.slots], dim=0)
+        if all(K.SLOT_FEATS in self._slot(batch, s) for s in self.slots):
+            # encoder features precomputed by the driver (one forward per slot/view)
+            feats = torch.cat([self._slot(batch, s)[K.SLOT_FEATS] for s in self.slots], dim=0)
 
         n_views = min(2, views.size(1))
         total: torch.Tensor | float = 0.0
@@ -82,7 +83,7 @@ class TemporalClassification(Loss):
                 f = feats[:, v]
             else:
                 x = views[:, v].to(ctx.device, non_blocking=True)
-                f = model.vision_tap(x)
+                f = model.encode("image", x).pooled
             logits = model.apply_head(self.head, f)
             total = total + F.cross_entropy(logits, labels, weight=ce_weight, reduction="sum")
             count += labels.size(0)

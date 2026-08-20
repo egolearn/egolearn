@@ -139,3 +139,49 @@ WEIGHT_SAMPLE = register_key(
 EVENT_SCHEMA = register_key(
     "event.schema", "meta", "Name of the EventSchema this item conforms to."
 )
+
+# --------------------------------------------------------------------------
+# Batch slot fields.  A composed batch is dict[slot_name -> slot dict]; the
+# slot dict's fields are the vocabulary below.  Code refers to these
+# constants instead of retyping the strings, so a typo fails at import time
+# rather than producing a silently empty lookup.  (These are batch-level
+# names, distinct from the item-record keys above: an item key travels with
+# one sample through admission and memory, a slot field describes one
+# collated group inside a batch.)
+# --------------------------------------------------------------------------
+
+SLOT_VIEWS = "views"  # FloatTensor [B, V, C, H, W]; clip slots [B, V, T, C, H, W]
+SLOT_MODALITY = "modality"  # what the views are ("image"/"video"); routes to an encoder
+SLOT_FEATS = "feats"  # FloatTensor [B, V, D] pooled features (model.precompute_feats)
+SLOT_LABELS = "labels"  # LongTensor [B]
+SLOT_TEXT_IDS = "text_ids"  # LongTensor [B, T]
+SLOT_TEXT_LEN = "text_len"  # LongTensor [B]
+SLOT_WEIGHTS = "weights"  # FloatTensor [B] or None
+SLOT_META = "meta"  # list of source items (refs + payload; read-only)
+
+# --------------------------------------------------------------------------
+# Capability names.  A composed model derives its capability set from its
+# parts (model.capabilities()); probes declare what they require and the
+# pipeline compares the two at build time.  Modality-derived names follow
+# the pattern "<modality>_representation", so new modalities mint their
+# capability without touching this file; the constants below are the ones
+# framework code spells out.
+# --------------------------------------------------------------------------
+
+CAP_IMAGE_REPRESENTATION = "image_representation"
+CAP_VIDEO_REPRESENTATION = "video_representation"
+CAP_TEXT_REPRESENTATION = "text_representation"
+CAP_MULTIMODAL = "multimodal"
+CAP_PREDICTION = "prediction"
+CAP_GENERATION = "generation"
+
+KNOWN_CAPABILITIES = frozenset(
+    {
+        CAP_IMAGE_REPRESENTATION,
+        CAP_VIDEO_REPRESENTATION,
+        CAP_TEXT_REPRESENTATION,
+        CAP_MULTIMODAL,
+        CAP_PREDICTION,
+        CAP_GENERATION,
+    }
+)

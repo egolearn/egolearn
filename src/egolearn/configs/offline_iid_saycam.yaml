@@ -34,9 +34,10 @@ views:
   v2: {name: simclr_strong, size: 224, view_idx: 1, scale_min: 0.2}
 
 model:
-  vision: {_target_: "trunk:resnext50", pretrained: false}
+  encoders:
+    vision: {_target_: "encoder:resnext50", pretrained: false}
   heads:
-    proj128: {tap: vision.pool2048, _target_: "head:mlp", sizes: [2048, 2048, 128]}
+    proj128: {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 128]}
 
 losses:
   - {_target_: "loss:ntxent", name: instance,

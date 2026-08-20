@@ -11,7 +11,7 @@ comes from the core toolbox:
   * admission:storyboard_recluster -- port of the recluster + prototype-merge
     logic embedded in train_storyboard_merging.py (cluster_shortmem +
     merge_labels);
-  * embedder:learner_tap -- MS clusters with the learner's own backbone
+  * embedder:learner -- MS clusters with the learner's own backbone
     (cluster_shortmem runs self.model.backbone).
 
 Framework adaptations (documented here; everything else is verbatim):
@@ -89,21 +89,21 @@ def get_cluster_score(similarity_matrix, change_points):
 
 
 # ---------------------------------------------------------------------------
-@EMBEDDERS.register("learner_tap")
-class LearnerTapEmbedder(EmbeddingProvider):
-    """Embeds frames with the training model's own backbone, read at a named tap
-    (an intermediate feature output).  This matches MS's cluster_shortmem, which
-    runs self.model.backbone on the short window with eval transforms."""
+@EMBEDDERS.register("learner")
+class LearnerEmbedder(EmbeddingProvider):
+    """Embeds frames with one of the training model's own encoders, named in
+    the config.  This matches MS's cluster_shortmem, which runs
+    self.model.backbone on the short window with eval transforms."""
 
-    def __init__(self, tap: str = "vision.pool2048", view: str = "eval", batch_size: int = 64):
-        self.tap = tap
+    def __init__(self, encoder: str = "vision", view: str = "eval", batch_size: int = 64):
+        self.encoder = encoder
         self.view = view
         self.batch_size = batch_size
 
     @torch.no_grad()
     def embed_refs(self, refs: list[ItemRef], normalize: bool = True) -> torch.Tensor:
         if self.model is None:
-            raise RuntimeError("learner_tap embedder requires the pipeline model")
+            raise RuntimeError("learner embedder requires the pipeline model")
         was_training = self.model.training
         self.model.eval()
         outs = []
@@ -112,7 +112,7 @@ class LearnerTapEmbedder(EmbeddingProvider):
                 self.loader.frame_views(r, 0, [self.view])[0] for r in refs[i : i + self.batch_size]
             ]
             x = torch.stack(imgs, dim=0).to(self.ctx.device)
-            outs.append(self.model.vision_tap(x, self.tap).cpu())
+            outs.append(self.model.encode(self.encoder, x).pooled.cpu())
         if was_training:
             self.model.train()
         feats = torch.cat(outs, dim=0)

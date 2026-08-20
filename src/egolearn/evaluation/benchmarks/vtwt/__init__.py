@@ -37,6 +37,7 @@ import torchvision.transforms as T
 from PIL import Image
 
 from egolearn.config.registry import PROBES
+from egolearn.core import keys as K
 from egolearn.evaluation.probe import Probe
 
 NORMS = {
@@ -74,6 +75,8 @@ def eval_transform(size: int, image_norm: str) -> T.Compose:
 
 @PROBES.register("vtwt")
 class VTWTProbe(Probe):
+    requires_capabilities = (K.CAP_IMAGE_REPRESENTATION, K.CAP_TEXT_REPRESENTATION)
+
     def __init__(
         self,
         name: str,
@@ -108,12 +111,14 @@ class VTWTProbe(Probe):
             with Image.open(img_path) as f:
                 x = self.transform(f).unsqueeze(0).to(ctx.device)
 
-            img_feat = F.normalize(model.apply_head(self.vision_head, model.vision_tap(x)), dim=-1)
+            img_feat = F.normalize(
+                model.apply_head(self.vision_head, model.encode("image", x).pooled), dim=-1
+            )
 
             sims = []
             for phrase in (row["positive_phrase"].strip(), row["negative_phrase"].strip()):
                 ids, lens = encode_phrase(phrase, self.word2idx, ctx.device)
-                txt = F.normalize(model.text_tap(ids, lens), dim=-1)
+                txt = F.normalize(model.encode("text", ids, lens).pooled, dim=-1)
                 sims.append(float((img_feat * txt).sum()))
             correct = sims[0] > sims[1]  # strict >
             n_correct += int(correct)

@@ -16,7 +16,7 @@ config's `_imports_` list makes them register themselves on import):
   are sampled ≤32/class **from the long-term buffer** (the component binds
   `memory: frames`), embedded raw, averaged, then normalized, with a dynamic
   quantile threshold deciding merges
-* `embedder:learner_tap` — MS segments the stream with the learner's own backbone
+* `embedder:learner` — MS segments the stream with the learner's own backbone
 
 Everything else in the config is the core toolbox: saycam adapter,
 ntxent/tcl, simclr views, resnext50, fifo/reservoir_weighted tables with

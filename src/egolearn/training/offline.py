@@ -38,7 +38,9 @@ from typing import cast
 
 import torch
 
+from egolearn.core import keys as K
 from egolearn.core.context import Context
+from egolearn.data.batching.recipe import modality_for_unit
 from egolearn.data.loading import Loader
 from egolearn.data.sources.base import DenseFrameChannel, Stream
 
@@ -84,6 +86,7 @@ class OfflineDriver:
         self.schedule = schedule
         self.ctx = ctx
         self.slot = slot
+        self.unit = unit
         self.n = int(n)
         self.views = list(views)
         self.epochs = None if epochs is None else int(epochs)
@@ -113,7 +116,13 @@ class OfflineDriver:
     # ------------------------------------------------------------------
     def _compose(self, refs) -> dict:
         views = torch.stack([self.loader.frame_views(r, 0, self.views) for r in refs], dim=0)
-        return {self.slot: {"views": views, "meta": list(refs), "weights": None}}
+        slot = {
+            K.SLOT_VIEWS: views,
+            K.SLOT_MODALITY: modality_for_unit(self.unit),
+            K.SLOT_META: list(refs),
+            K.SLOT_WEIGHTS: None,
+        }
+        return {self.slot: slot}
 
     def _train_step(self, batch: dict) -> bool:
         logs: dict[str, float] = {}

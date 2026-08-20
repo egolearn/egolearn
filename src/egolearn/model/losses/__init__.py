@@ -1,5 +1,5 @@
 """Standard loss library (losses are a submodule of the model: they are the
-model's training signals, addressed through its taps and heads)."""
+model's training signals, addressed through its encoders and heads)."""
 
 from .base import Loss
 from .clip_infonce import ClipInfoNCE

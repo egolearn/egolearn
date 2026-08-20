@@ -15,6 +15,7 @@ import torch.nn.functional as F
 from PIL import Image
 
 from egolearn.config.registry import PROBES, VIEWS
+from egolearn.core import keys as K
 from egolearn.data.text import VocabTokenizer
 from egolearn.evaluation.probe import Probe
 
@@ -34,6 +35,8 @@ class FourAFCProbe(Probe):
     Eval preprocessing is an explicit config field (`view`/`size`) because
     mixing preprocessing across model families was a documented pitfall.
     """
+
+    requires_capabilities = (K.CAP_IMAGE_REPRESENTATION, K.CAP_TEXT_REPRESENTATION)
 
     def __init__(
         self,
@@ -61,10 +64,14 @@ class FourAFCProbe(Probe):
                 with Image.open(path) as f:
                     imgs.append(self.transform(f.convert("RGB")))
             x = torch.stack(imgs, dim=0).to(ctx.device)
-            img_feats = F.normalize(model.apply_head(self.vision_head, model.vision_tap(x)), dim=1)
+            img_feats = F.normalize(
+                model.apply_head(self.vision_head, model.encode("image", x).pooled), dim=1
+            )
 
             ids, lens = self.tokenizer.batch([trial["text"]])
-            txt = F.normalize(model.text_tap(ids.to(ctx.device), lens.to(ctx.device)), dim=1)
+            txt = F.normalize(
+                model.encode("text", ids.to(ctx.device), lens.to(ctx.device)).pooled, dim=1
+            )
             pred = int(torch.argmax(img_feats @ txt.t()))
             correct += int(pred == int(trial.get("answer", 0)))
         return {"four_afc_acc": correct / max(1, len(self.trials))}

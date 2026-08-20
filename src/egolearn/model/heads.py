@@ -1,6 +1,6 @@
-"""Heads: small modules (projectors, classifiers) that sit on top of a
-trunk's tap (its named feature output).  Heads are attached by tap name in
-the model config; the trunk itself stays head-agnostic."""
+"""Heads: small modules (projectors, classifiers) that sit on top of an
+encoder's pooled output.  Heads name their encoder in the model config; the
+encoder itself stays head-agnostic."""
 
 from __future__ import annotations
 
@@ -19,6 +19,18 @@ class LinearHead(nn.Module):
         return self.fc(x)
 
 
+def build_mlp(sizes: list[int]) -> nn.Sequential:
+    """Linear-ReLU-...-Linear from a size list; shared by MLPHead and
+    MLPPredictor so the recipe can only ever change in one place."""
+    if len(sizes) < 2:
+        raise ValueError(f"an MLP needs at least [in, out] sizes, got {sizes}")
+    layers: list[nn.Module] = []
+    for i in range(len(sizes) - 2):
+        layers += [nn.Linear(sizes[i], sizes[i + 1]), nn.ReLU(inplace=True)]
+    layers.append(nn.Linear(sizes[-2], sizes[-1]))
+    return nn.Sequential(*layers)
+
+
 @HEADS.register("mlp")
 class MLPHead(nn.Module):
     """Multi-layer perceptron: Linear-ReLU-...-Linear.  Used as the
@@ -30,11 +42,7 @@ class MLPHead(nn.Module):
 
     def __init__(self, sizes: list[int]):
         super().__init__()
-        layers: list[nn.Module] = []
-        for i in range(len(sizes) - 2):
-            layers += [nn.Linear(sizes[i], sizes[i + 1]), nn.ReLU(inplace=True)]
-        layers.append(nn.Linear(sizes[-2], sizes[-1]))
-        self.net = nn.Sequential(*layers)
+        self.net = build_mlp(sizes)
 
     def forward(self, x):
         return self.net(x)

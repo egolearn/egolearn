@@ -10,6 +10,8 @@ Two label fields are computed here at batch time instead of being stored:
 
 Batch layout: ``batch[slot_name]`` is a dict with
   views    FloatTensor [B, V, C, H, W]  (clip slots: [B, V, T, C, H, W])
+  modality str, what the views are ("image", "video", ...); the model routes
+           each slot to the encoder of this modality
   labels   LongTensor  [B]            (present iff labels_from/batch_label)
   text_ids LongTensor  [B, T], text_len LongTensor [B]   (iff slot.text)
   weights  FloatTensor [B] or None    (from weight.sample if any item has it)
@@ -144,17 +146,18 @@ class Composer:
 
         out = {
             # [B, V, C, H, W]; clip slots: [B, V, T, C, H, W]
-            "views": torch.stack(views, dim=0),
-            "meta": metas,
-            "weights": torch.tensor(weights) if any_weight else None,
+            K.SLOT_VIEWS: torch.stack(views, dim=0),
+            K.SLOT_MODALITY: slot.modality,  # what the views are; encoder routing reads this
+            K.SLOT_META: metas,
+            K.SLOT_WEIGHTS: torch.tensor(weights) if any_weight else None,
         }
         if labels:
-            out["labels"] = torch.tensor(labels, dtype=torch.long)
+            out[K.SLOT_LABELS] = torch.tensor(labels, dtype=torch.long)
         if slot.text:
             if self.tokenizer is None:
                 raise K.KeyFlowError(
                     f"slot {slot.name!r} sets text=true but no tokenizer is configured"
                 )
             ids, lens = self.tokenizer.batch(texts)
-            out["text_ids"], out["text_len"] = ids, lens
+            out[K.SLOT_TEXT_IDS], out[K.SLOT_TEXT_LEN] = ids, lens
         return out

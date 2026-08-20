@@ -49,10 +49,11 @@ recipe:
        n: 4, unit: frame, views: [v1, v2], labels_from: fixed, strict: true}
 
 model:
-  vision: {_target_: "trunk:toy_cnn", dim: 64}
+  encoders:
+    vision: {_target_: "encoder:toy_cnn", dim: 64}
   heads:
-    proj: {tap: vision.feat, _target_: "head:mlp", sizes: [64, 64, 32]}
-    cls:  {tap: vision.feat, _target_: "head:linear", in_dim: 64, out_dim: 8}
+    proj: {encoder: vision, _target_: "head:mlp", sizes: [64, 64, 32]}
+    cls:  {encoder: vision, _target_: "head:linear", in_dim: 64, out_dim: 8}
 
 losses:
   - {_target_: "loss:ntxent", name: inst,

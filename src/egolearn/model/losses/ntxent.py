@@ -17,6 +17,7 @@ import torch
 import torch.nn.functional as F
 
 from egolearn.config.registry import LOSSES
+from egolearn.core import keys as K
 
 from .base import Loss
 
@@ -59,11 +60,11 @@ class NTXent(Loss):
         self.requires_heads = [head]
 
     def compute(self, batch, model, ctx) -> dict[str, torch.Tensor]:
-        if all("feats" in self._slot(batch, s) for s in self.slots):
-            # trunk features precomputed by the driver (one forward per slot/view)
+        if all(K.SLOT_FEATS in self._slot(batch, s) for s in self.slots):
+            # encoder features precomputed by the driver (one forward per slot/view)
             f1s, f2s = [], []
             for s in self.slots:
-                feats = self._slot(batch, s)["feats"]  # [B, V, D]
+                feats = self._slot(batch, s)[K.SLOT_FEATS]  # [B, V, D]
                 if feats.size(1) < 2:
                     raise ValueError(f"ntxent needs >=2 views in slot {s!r}")
                 f1s.append(feats[:, 0])
@@ -73,13 +74,13 @@ class NTXent(Loss):
             return {"ntxent": _nt_xent(z1, z2, self.temperature)}
         v1s, v2s = [], []
         for s in self.slots:
-            views = self._slot(batch, s)["views"]  # [B, V, C, H, W]
+            views = self._slot(batch, s)[K.SLOT_VIEWS]  # [B, V, C, H, W]
             if views.size(1) < 2:
                 raise ValueError(f"ntxent needs >=2 views in slot {s!r}")
             v1s.append(views[:, 0])
             v2s.append(views[:, 1])
         x1 = torch.cat(v1s, dim=0).to(ctx.device, non_blocking=True)
         x2 = torch.cat(v2s, dim=0).to(ctx.device, non_blocking=True)
-        z1 = model.apply_head(self.head, model.vision_tap(x1))
-        z2 = model.apply_head(self.head, model.vision_tap(x2))
+        z1 = model.apply_head(self.head, model.encode("image", x1).pooled)
+        z2 = model.apply_head(self.head, model.encode("image", x2).pooled)
         return {"ntxent": _nt_xent(z1, z2, self.temperature)}

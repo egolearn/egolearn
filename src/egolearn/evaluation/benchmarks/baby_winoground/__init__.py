@@ -35,6 +35,7 @@ import torch.nn.functional as F
 from PIL import Image
 
 from egolearn.config.registry import PROBES
+from egolearn.core import keys as K
 from egolearn.evaluation.probe import Probe
 
 from ..vtwt import encode_phrase, eval_transform
@@ -42,6 +43,8 @@ from ..vtwt import encode_phrase, eval_transform
 
 @PROBES.register("baby_winoground")
 class BabyWinogroundProbe(Probe):
+    requires_capabilities = (K.CAP_IMAGE_REPRESENTATION, K.CAP_TEXT_REPRESENTATION)
+
     def __init__(
         self,
         name: str,
@@ -76,7 +79,9 @@ class BabyWinogroundProbe(Probe):
     def _image_feat(self, model, ctx, path: str) -> torch.Tensor:
         with Image.open(path) as f:
             x = self.transform(f).unsqueeze(0).to(ctx.device)
-        return F.normalize(model.apply_head(self.vision_head, model.vision_tap(x)), dim=-1)
+        return F.normalize(
+            model.apply_head(self.vision_head, model.encode("image", x).pooled), dim=-1
+        )
 
     @torch.no_grad()
     def run(self, model, ctx) -> dict[str, float]:
@@ -98,7 +103,7 @@ class BabyWinogroundProbe(Probe):
             txts = []
             for phrase in (inst["positive_phrase"], inst["negative_phrase"]):
                 ids, lens = encode_phrase(phrase, self.word2idx, ctx.device)
-                txts.append(F.normalize(model.text_tap(ids, lens), dim=-1))
+                txts.append(F.normalize(model.encode("text", ids, lens).pooled, dim=-1))
             pos_txt, neg_txt = txts
 
             s_i1_c1 = float((pos_img * pos_txt).sum())

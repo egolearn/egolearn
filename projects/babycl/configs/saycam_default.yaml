@@ -135,12 +135,13 @@ recipe:
          views: [ms_v1, ms_v2], batch_label: true, strict: true}
 
 model:
-  vision: {_target_: "trunk:resnext50", pretrained: false}   # from scratch
-  text:   {_target_: "trunk:text_bow", vocab_size: auto, dim: 512}
+  encoders:
+    vision: {_target_: "encoder:resnext50", pretrained: false}   # from scratch
+    text:   {_target_: "encoder:text_bow", vocab_size: auto, dim: 512}
   heads:
-    proj128:  {tap: vision.pool2048, _target_: "head:mlp", sizes: [2048, 2048, 128]}
-    cls:      {tap: vision.pool2048, _target_: "head:mlp", sizes: [2048, 2048, 2000]}
-    embed512: {tap: vision.pool2048, _target_: "head:linear", in_dim: 2048, out_dim: 512}
+    proj128:  {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 128]}
+    cls:      {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 2000]}
+    embed512: {encoder: vision, _target_: "head:linear", in_dim: 2048, out_dim: 512}
 
 losses:
   # total = 0.5*(L_I + L_S) + 0.5*L_C   (paper eq. 1)
@@ -155,9 +156,9 @@ losses:
 solver:
   opt: adamw
   groups:
-    # tier 1: shared conv trunk + the 2048->512 embed head @ 1e-3,
+    # tier 1: shared conv backbone + the 2048->512 embed head @ 1e-3,
     #         BN/bias exempt from decay
-    - {match: "^vision\\.|^heads\\.embed512\\.", lr: 1.0e-3,
+    - {match: "^encoders\\.vision\\.|^heads\\.embed512\\.", lr: 1.0e-3,
        weight_decay: 1.0e-4, split_no_decay: true}
     # tier 2: everything else (projector, classifier, word embeddings) @ 1e-4
     - {match: ".*", lr: 1.0e-4, weight_decay: 1.0e-4}
