@@ -10,9 +10,10 @@ runs the training loop) to continue:
     observations to rebuild the admission components' internal state (sliding
     windows, watermark, global-id handover) -- with event routing turned off
     during the replay, since the memories themselves come from the snapshot.
-    Memory tables and label stores are restored AFTER the replay, so any
-    label writes the replay makes are overwritten by the snapshot's saved
-    values.
+    The replay starts from fresh seed-derived RNGs and consumes them exactly
+    like the original pass; the snapshot's saved RNG states are restored
+    AFTER it, as are memory tables and label stores, so anything the replay
+    touched ends up at the snapshot's authoritative values.
   * offline (OfflineDriver): no replay needed; fit() continues from
     `clock.step` (per-epoch shuffles are derived from (seed, epoch), so the
     epoch order regenerates exactly).
@@ -39,6 +40,15 @@ def save_snapshot(path: str, driver) -> str:
     state = {
         "model": driver.model.state_dict(),
         "optimizer": driver.optimizer.state_dict(),
+        # gradients accumulated but not yet applied (grad_accumulation > 1,
+        # snapshot mid-window): without them a resumed run's next optimizer
+        # step would see fewer micro-steps than the uninterrupted run's
+        "grads": {
+            n: p.grad.detach().cpu()
+            for n, p in driver.model.named_parameters()
+            if p.grad is not None
+        },
+        "driver": {"exhausted": bool(getattr(driver, "_exhausted", False))},
         "context": driver.ctx.state_dict(),
         "memories": {
             name: mem.state_dict() for name, mem in getattr(driver, "memories", {}).items()
@@ -65,13 +75,28 @@ def load_snapshot(path: str, driver) -> None:
     driver.model.to(driver.ctx.device)
     driver.model.load_state_dict(state["model"])
     driver.optimizer.load_state_dict(state["optimizer"])
-    driver.ctx.load_state_dict(state["context"])
     if state.get("schedule") is not None and getattr(driver, "schedule", None) is not None:
         driver.schedule.load_state_dict(state["schedule"])
 
-    # streaming: rebuild admission-internal state by deterministic replay
+    # Order matters: clock first (the replay below needs to know how far to
+    # go), RNG states LAST.  The replay re-runs admission from the start of
+    # the stream, consuming RNGs exactly like the original pass did -- if the
+    # saved states were restored first, the replay would consume them a
+    # second time and the resumed run would diverge from an uninterrupted
+    # one.
+    driver.ctx.load_clock(state["context"])
     if hasattr(driver, "_resume_replay"):
-        driver._resume_replay()
+        # exhausted: the snapshot was taken after the stream ran dry, so the
+        # replay must also consume the final session-end flush -- otherwise
+        # the resumed fit() would re-run it for real, duplicating events the
+        # restored memories already hold and training an extra quantum the
+        # uninterrupted run never had
+        driver._resume_replay(exhausted=state.get("driver", {}).get("exhausted", False))
+    driver.ctx.load_state_dict(state["context"])
+    if state.get("grads"):
+        params = dict(driver.model.named_parameters())
+        for n, g in state["grads"].items():
+            params[n].grad = g.to(driver.ctx.device)
 
     # memories/labels restored AFTER replay -- any label writes the replay
     # made are overwritten by the snapshot's saved values

@@ -385,9 +385,18 @@ def test_offline_mode_is_deterministic_under_seed(tmp_path):
         pipe = egolearn.build(_offline_cfg(tmp_path))
         refs = pipe.driver._build_index()
         order = list(range(len(refs)))
-        pipe.ctx.rng("offline.shuffle.epoch0").shuffle(order)
+        pipe.ctx.fresh_rng("offline.shuffle.epoch0").shuffle(order)
         idx.append(order[:10])
     assert idx[0] == idx[1]
+    # fresh_rng is one-shot derived randomness: asking again regenerates the
+    # SAME order (a cached rng would have advanced) -- this is what keeps a
+    # resumed run's epoch shuffle identical to the original's
+    pipe = egolearn.build(_offline_cfg(tmp_path))
+    a = list(range(50))
+    b = list(range(50))
+    pipe.ctx.fresh_rng("offline.shuffle.epoch0").shuffle(a)
+    pipe.ctx.fresh_rng("offline.shuffle.epoch0").shuffle(b)
+    assert a == b
 
 
 def test_offline_resume_continues_from_snapshot(tmp_path):
@@ -754,3 +763,318 @@ def test_solver_warns_on_group_matching_nothing(tmp_path):
     ]
     pipe = egolearn.build(cfg)
     assert any("matched no parameters" in w for w in pipe.warnings)
+
+
+# ---------------------------------------------------------------------------
+# determinism: the three guarantees the framework exists to provide
+# ---------------------------------------------------------------------------
+def test_same_seed_twice_gives_identical_weights(tmp_path):
+    # weight init, augmentations and sampling all pin to the configured seed,
+    # so two full runs from the same config end bit-identical (BN running
+    # statistics included)
+    states = []
+    for _ in range(2):
+        pipe = egolearn.build(_toy_cfg(tmp_path))
+        pipe.driver.fit()  # max_steps: 2
+        states.append({k: v.clone() for k, v in pipe.model.state_dict().items()})
+    assert states[0].keys() == states[1].keys()
+    for k in states[0]:
+        assert torch.equal(states[0][k], states[1][k]), f"weights differ at {k}"
+
+
+def test_resumed_run_matches_uninterrupted(tmp_path):
+    from egolearn.utils.snapshot import load_snapshot, save_snapshot
+
+    # straight run to 4 steps
+    cfg = _toy_cfg(tmp_path)
+    cfg["driver"]["max_steps"] = 4
+    ref = egolearn.build(cfg)
+    ref.driver.fit()
+
+    # same run interrupted at 2, snapshotted, resumed in a fresh process
+    # stand-in (fresh build), continued to 4
+    p1 = egolearn.build(_toy_cfg(tmp_path))
+    p1.driver.fit()  # max_steps: 2
+    snap = str(tmp_path / "det_snap.pth")
+    save_snapshot(snap, p1.driver)
+
+    cfg2 = _toy_cfg(tmp_path)
+    cfg2["driver"]["max_steps"] = 4
+    p2 = egolearn.build(cfg2)
+    load_snapshot(snap, p2.driver)
+    p2.driver.fit()
+
+    resumed = p2.model.state_dict()
+    for k, v in ref.model.state_dict().items():
+        assert torch.equal(v, resumed[k]), f"resume diverged at {k}"
+
+
+def test_stream_tail_trains_when_ending_mid_quantum(tmp_path):
+    # the toy stream has 160 observations and warmup consumes 20; with an
+    # advance quantum larger than the rest of the stream, the final partial
+    # quantum must still get its training steps
+    cfg = _toy_cfg(tmp_path)
+    cfg["driver"]["advance"] = {"kind": "observations", "n": 100000}
+    cfg["driver"]["max_steps"] = None
+    pipe = egolearn.build(cfg)
+    pipe.driver.fit()
+    assert pipe.ctx.clock.step >= 1  # the tail trained
+    assert pipe.driver._exhausted  # and the whole stream was consumed
+
+
+def test_same_timestamp_observations_keep_channel_order():
+    # ties at equal media time surface in channel declaration order: the
+    # frame comes before the utterance that ends at the same instant
+    from egolearn.data.sources.base import DenseFrameChannel, Session, SparseIntervalChannel
+
+    video = DenseFrameChannel("video", "s", times=[0.0, 1.0], locators=[("f", 0, 1), ("f", 1, 2)])
+    text = SparseIntervalChannel("transcript", "s", items=[{"t0": 0.5, "t1": 1.0, "payload": {}}])
+    sess = Session("s", {"video": video, "transcript": text})
+    seq = [(o.channel, o.t) for o in sess.observations()]
+    assert seq == [("video", 0.0), ("video", 1.0), ("transcript", 1.0)]
+
+
+def test_final_partial_grad_accumulation_is_applied(tmp_path):
+    # the stream ends after an odd number of micro-steps with
+    # grad_accumulation=2: the pending gradients must reach the optimizer
+    # (counted through a recording wrapper -- asserting on p.grad alone
+    # cannot tell "applied" from "silently zeroed")
+    cfg = _toy_cfg(tmp_path)
+    cfg["driver"]["advance"] = {"kind": "observations", "n": 100000}
+    cfg["driver"]["max_steps"] = None
+    cfg["driver"]["grad_accumulation"] = 2
+    pipe = egolearn.build(cfg)
+
+    calls = []
+    orig_step = pipe.driver.optimizer.step
+
+    def counting_step(*a, **kw):
+        calls.append(1)
+        return orig_step(*a, **kw)
+
+    pipe.driver.optimizer.step = counting_step
+    pipe.driver.fit()
+    assert pipe.driver._exhausted
+    assert pipe.ctx.clock.step % 2 == 1  # an odd tail was left pending...
+    assert len(calls) == pipe.ctx.clock.step // 2 + 1  # ...and flushed
+    assert all(p.grad is None for p in pipe.model.parameters())
+
+
+def test_mid_window_snapshot_resume_matches_uninterrupted(tmp_path):
+    # grad_accumulation=2, snapshot after 3 micro-steps (mid-window: one
+    # backward pending).  Pending gradients travel inside the snapshot and
+    # no phantom flush runs at the max_steps stop, so the continuation folds
+    # micro-steps 3+4 into one optimizer step exactly like the straight run.
+    from egolearn.utils.snapshot import load_snapshot, save_snapshot
+
+    cfg = _toy_cfg(tmp_path)
+    cfg["driver"]["max_steps"] = 4
+    cfg["driver"]["grad_accumulation"] = 2
+    ref = egolearn.build(cfg)
+    ref.driver.fit()
+
+    cfg1 = _toy_cfg(tmp_path)
+    cfg1["driver"]["max_steps"] = 3
+    cfg1["driver"]["grad_accumulation"] = 2
+    p1 = egolearn.build(cfg1)
+    p1.driver.fit()
+    assert any(p.grad is not None for p in p1.model.parameters())  # mid-window
+    snap = str(tmp_path / "ga_snap.pth")
+    save_snapshot(snap, p1.driver)
+
+    cfg2 = _toy_cfg(tmp_path)
+    cfg2["driver"]["max_steps"] = 4
+    cfg2["driver"]["grad_accumulation"] = 2
+    p2 = egolearn.build(cfg2)
+    load_snapshot(snap, p2.driver)
+    p2.driver.fit()
+
+    resumed = p2.model.state_dict()
+    for k, v in ref.model.state_dict().items():
+        assert torch.equal(v, resumed[k]), f"mid-window resume diverged at {k}"
+
+
+def test_resume_after_stream_end_adds_nothing(tmp_path):
+    # a snapshot taken after the stream ran dry: resuming must not re-admit
+    # the final session-end flush or train an extra quantum
+    from egolearn.utils.snapshot import load_snapshot, save_snapshot
+
+    cfg = _toy_cfg(tmp_path)
+    cfg["driver"]["advance"] = {"kind": "observations", "n": 100000}
+    cfg["driver"]["max_steps"] = None
+    ref = egolearn.build(cfg)
+    ref.driver.fit()
+    steps, events = ref.ctx.clock.step, ref.ctx.clock.events_emitted
+    sizes = {t: len(tab) for t, tab in ref.memories["frames"].tiers.items()}
+    snap = str(tmp_path / "end_snap.pth")
+    save_snapshot(snap, ref.driver)
+
+    cfg2 = _toy_cfg(tmp_path)
+    cfg2["driver"]["advance"] = {"kind": "observations", "n": 100000}
+    cfg2["driver"]["max_steps"] = None
+    p2 = egolearn.build(cfg2)
+    load_snapshot(snap, p2.driver)
+    p2.driver.fit()
+    assert p2.ctx.clock.step == steps
+    assert p2.ctx.clock.events_emitted == events
+    assert {t: len(tab) for t, tab in p2.memories["frames"].tiers.items()} == sizes
+
+
+def test_snapshot_restores_rng_states_after_replay():
+    # the resume order is clock -> replay -> RNG states: a replay that
+    # consumes named RNGs must not advance them past the snapshot's values
+    import tempfile
+
+    from egolearn.core.context import Context
+    from egolearn.utils.snapshot import load_snapshot, save_snapshot
+
+    class StubDriver:
+        def __init__(self, ctx):
+            self.ctx = ctx
+            self.model = torch.nn.Linear(2, 2)
+            self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.1)
+            self.memories = {}
+
+        def _resume_replay(self, exhausted: bool = False):
+            # replay consumes admission randomness, like the segmenters do
+            for _ in range(self.ctx.clock.admitted):
+                self.ctx.rng("admission.stub").random()
+
+    # original run: consume the rng 5 times, snapshot
+    ctx1 = Context(seed=11, device="cpu")
+    d1 = StubDriver(ctx1)
+    for _ in range(5):
+        ctx1.rng("admission.stub").random()
+    ctx1.clock.admitted = 5
+    saved_state = ctx1.rng("admission.stub").getstate()
+
+    with tempfile.TemporaryDirectory() as td:
+        sp = f"{td}/s.pth"
+        save_snapshot(sp, d1)
+        ctx2 = Context(seed=11, device="cpu")
+        d2 = StubDriver(ctx2)
+        load_snapshot(sp, d2)
+    # replay consumed 5 draws, but the snapshot state was restored AFTER it
+    assert ctx2.rng("admission.stub").getstate() == saved_state
+
+
+def test_first_step_uses_warmup_lr(tmp_path):
+    # the schedule is applied before optimizer.step, so gradient step 1 runs
+    # at the warmup multiplier instead of the full base LR
+    cfg = _toy_cfg(tmp_path)
+    cfg["solver"]["schedule"] = {"warmup_min_steps": 100}
+    cfg["driver"]["max_steps"] = 1
+    pipe = egolearn.build(cfg)
+    base = pipe.driver._base_lrs[0]
+
+    seen = []
+    orig_step = pipe.driver.optimizer.step
+
+    def recording_step(*a, **kw):
+        seen.append(pipe.driver.optimizer.param_groups[0]["lr"])
+        return orig_step(*a, **kw)
+
+    pipe.driver.optimizer.step = recording_step
+    pipe.driver.fit()
+    assert len(seen) == 1
+    assert seen[0] < base  # warmup multiplier, not full LR
+
+
+def test_an_chunk_covers_final_frame_at_tied_timestamp():
+    # SAYCam transcript timestamps are frame-aligned, so EVERY utterance ends
+    # exactly on a frame time.  The merge surfaces that frame before the
+    # utterance (channel order), so the chunk includes its final step --
+    # matching mcl, whose step2first is prebuilt over the whole video.
+    from egolearn.core.refs import ItemRef
+    from egolearn.data.sources.base import (
+        DenseFrameChannel,
+        Session,
+        SparseIntervalChannel,
+    )
+    from egolearn.methods.babycl.an_chunks import ANChunkEmitter
+
+    times = [i * 0.2 for i in range(6)]  # 5 fps: steps 0..5
+    video = DenseFrameChannel(
+        "video", "s", times=times, locators=[("d", i, i + 1) for i in range(6)]
+    )
+    text = SparseIntervalChannel(
+        "transcript",
+        "s",
+        items=[
+            {
+                "t0": 0.6,
+                "t1": 1.0,
+                "payload": {
+                    K.TEXT_UTTERANCE: "look at the doggie",
+                    K.TEXT_TIMESTAMPS: [0.6, 0.8, 1.0],
+                    K.UTTERANCE_NUM: 1,
+                },
+            }
+        ],
+    )
+    sess = Session("s", {"video": video, "transcript": text})
+
+    em = ANChunkEmitter(fps=5.0)
+    em.start_session("s")
+    events = []
+    for obs in sess.observations():
+        if obs.channel in em.subscribes:
+            em.ingest(obs)
+        events.extend(em.poll())
+    em.end_session()
+    events.extend(em.poll())
+
+    assert len(events) == 1
+    ref: ItemRef = events[0][K.VIDEO_REF]
+    # frames at steps 3..5 -> indices [3, 6): the tied final frame included
+    assert ref.locator[1:] == (3, 6)
+    assert ref.t1 == 1.0
+
+
+def test_an_chunk_waits_for_rounded_up_final_frame():
+    # a final timestamp that rounds UP to a frame step the stream has not
+    # reached yet: the chunk must wait for that frame instead of dropping
+    # the step (mcl's step2first is prebuilt, so it never drops it)
+    from egolearn.core.refs import ItemRef
+    from egolearn.data.sources.base import (
+        DenseFrameChannel,
+        Session,
+        SparseIntervalChannel,
+    )
+    from egolearn.methods.babycl.an_chunks import ANChunkEmitter
+
+    times = [i * 0.2 for i in range(6)]  # steps 0..5
+    video = DenseFrameChannel(
+        "video", "s", times=times, locators=[("d", i, i + 1) for i in range(6)]
+    )
+    text = SparseIntervalChannel(
+        "transcript",
+        "s",
+        items=[
+            {
+                "t0": 0.31,
+                "t1": 0.51,  # surfaces between frames 0.4 and 0.6...
+                "payload": {
+                    K.TEXT_UTTERANCE: "hi",
+                    # ...but its last timestamp rounds to step 3 (frame 0.6)
+                    K.TEXT_TIMESTAMPS: [0.31, 0.51],
+                    K.UTTERANCE_NUM: 2,
+                },
+            }
+        ],
+    )
+    sess = Session("s", {"video": video, "transcript": text})
+    em = ANChunkEmitter(fps=5.0)
+    em.start_session("s")
+    events = []
+    for obs in sess.observations():
+        if obs.channel in em.subscribes:
+            em.ingest(obs)
+        events.extend(em.poll())
+    em.end_session()
+    events.extend(em.poll())
+
+    assert len(events) == 1
+    ref: ItemRef = events[0][K.VIDEO_REF]
+    # steps round(0.31*5)=2 and round(0.51*5)=3 -> frames [2, 4)
+    assert ref.locator[1:] == (2, 4)

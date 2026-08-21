@@ -21,8 +21,9 @@ Config switch:
 Clocks: in streaming runs, progress = the fraction of the stream consumed so far, used instead
 of epochs.  In offline mode `progress` instead means the fraction of planned gradient steps
 (epochs are conventional here; the "no epochs" rule applies to the streaming loop only).
-Epoch e's shuffle order comes from the named RNG "offline.shuffle.epoch<e>" -- derived from
-(seed, epoch), never consumed across epochs -- so runs are deterministic AND resumable:
+Epoch e's shuffle order comes from a fresh RNG derived from (seed, epoch) each time it
+is needed (ctx.fresh_rng), never cached or snapshotted, so runs are deterministic AND
+resumable:
 `load_snapshot` restores the clock and fit() continues from step % batches_per_epoch of the
 regenerated epoch order.
 
@@ -146,6 +147,10 @@ class OfflineDriver:
         with self.timer.measure("model.backward"):
             (total / self.grad_accumulation).backward()
         if (self.ctx.clock.step + 1) % self.grad_accumulation == 0:
+            # schedule for THIS step is applied before stepping (adjust then
+            # step, so warmup covers step 1 too)
+            if self.schedule is not None:
+                apply_lr(self.optimizer, self._base_lrs, self.schedule.multiplier(self.ctx))
             with self.timer.measure("optim.step"):
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
@@ -154,8 +159,6 @@ class OfflineDriver:
 
         self.ctx.clock.step += 1
         self.ctx.clock.admitted += 1  # offline: both clocks tick per step
-        if self.schedule is not None:
-            apply_lr(self.optimizer, self._base_lrs, self.schedule.multiplier(self.ctx))
         for h in self.hooks:
             h.on_step(self, logs)
         return True
@@ -193,7 +196,9 @@ class OfflineDriver:
             # from step % batches_per_epoch
             epoch = self.ctx.clock.step // batches_per_epoch
             order = list(range(len(refs)))
-            self.ctx.rng(f"offline.shuffle.epoch{epoch}").shuffle(order)
+            # fresh_rng, not rng: the cached generator would be restored
+            # already-consumed on resume and shuffle a different order
+            self.ctx.fresh_rng(f"offline.shuffle.epoch{epoch}").shuffle(order)
             for b in range(self.ctx.clock.step % batches_per_epoch, batches_per_epoch):
                 if self.ctx.clock.step >= planned:
                     break
@@ -201,6 +206,12 @@ class OfflineDriver:
                 with self.timer.measure("batch.compose"):
                     batch = self._compose(picked)
                 self._train_step(batch)
+        if self.grad_accumulation > 1 and self.ctx.clock.step % self.grad_accumulation != 0:
+            # apply the tail of an unfinished accumulation window
+            if self.schedule is not None:
+                apply_lr(self.optimizer, self._base_lrs, self.schedule.multiplier(self.ctx))
+            self.optimizer.step()
+            self.optimizer.zero_grad(set_to_none=True)
         for h in self.hooks:
             h.on_end(self)
         print(f"[offline] done: steps={self.ctx.clock.step}", flush=True)

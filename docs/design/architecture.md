@@ -297,7 +297,7 @@ decode+augment work, which has no ordering constraints, over a worker pool.
 
 Resume works in both modes: pass `resume=auto` (or a snapshot path) to the
 train entry point. A snapshot holds everything a run needs to continue —
-model, optimizer, clocks and RNG states, memory tables, label stores, the
+model, optimizer, clocks and RNG states (named and global), memory tables, label stores, the
 LR schedule's reference point. On restore,
 streaming mode replays the already-consumed stream deterministically to
 rebuild the admission components' internal state (replayed events don't
@@ -425,8 +425,12 @@ A few rules the codebase follows consistently:
   by time (media time inside records, stream progress and step count for
   schedules). The offline loop has conventional epochs, which is the point
   of it being the traditional baseline.
-* All randomness is named and seeded (`ctx.rng("memory.pairs.short")`), so
-  runs are deterministic regardless of scheduling.
+* All framework randomness is named and seeded
+  (`ctx.rng("memory.pairs.short")`), and the Context also seeds the global
+  torch/python RNGs (weight init and torchvision augmentations draw from
+  those) and carries their state through snapshots — so the same seed gives
+  bit-identical weights, and a resumed run matches an uninterrupted one.
+  Both guarantees are tested at weight level in `tests/test_core.py`.
 * Every run prints its per-stage timing, and merges get validated by real
   experiments. When the timing shows some abstraction is the bottleneck, the
   fix is a faster implementation behind the same interface (native decode,

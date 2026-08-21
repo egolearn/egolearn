@@ -121,10 +121,17 @@ class Session:
         self.channels = channels
 
     def observations(self) -> Iterator[Observation]:
-        """Merge all channels into one time-ordered iterator (heap merge)."""
-        iters = []
-        for order, ch in enumerate(self.channels.values()):
-            iters.append(((obs.t, order, i), obs) for i, obs in enumerate(iter(ch)))
+        """Merge all channels into one time-ordered iterator (heap merge).
+        Observations at the same media time surface in channel declaration
+        order (a frame before the utterance ending at that instant).  The
+        helper binds `order` eagerly -- a generator expression would read
+        the loop variable lazily and give every channel the same rank."""
+
+        def keyed(order: int, ch: Channel):
+            for i, obs in enumerate(iter(ch)):
+                yield (obs.t, order, i), obs
+
+        iters = [keyed(order, ch) for order, ch in enumerate(self.channels.values())]
         return (obs for _, obs in heapq.merge(*iters, key=lambda pair: pair[0]))
 
     def __len__(self):

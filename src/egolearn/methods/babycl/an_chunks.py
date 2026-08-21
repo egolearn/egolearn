@@ -43,6 +43,11 @@ class ANChunkEmitter(EventBuilder):
         self._refs: list[ItemRef] = []
         self._step2first: dict[int, int] = {}
         self._pending: list[dict] = []  # chunks waiting for all their frames to stream past
+        # utterances waiting for the frame of their LAST timestamp: mcl
+        # builds step2first over the whole video before splitting, so an
+        # utterance whose final timestamp rounds to a frame step the stream
+        # has not reached yet must wait, not lose that step
+        self._raw_pending: list[dict] = []
 
     def start_session(self, sid: str) -> None:
         self._reset(sid)
@@ -59,11 +64,13 @@ class ANChunkEmitter(EventBuilder):
             self._refs.append(obs.ref)
             self._drain()
         elif obs.channel == "transcript":
-            self._prepare_chunks(obs.payload)
+            self._raw_pending.append(dict(obs.payload))
             self._drain()
 
     def end_session(self) -> None:
-        # all frames ingested -> every well-formed chunk is complete
+        # all frames ingested -> every step that will ever exist is known,
+        # and every well-formed chunk is complete
+        self._split_ready(final=True)
         self._drain()
 
     def poll(self) -> list[dict]:
@@ -102,8 +109,27 @@ class ANChunkEmitter(EventBuilder):
                 }
             )
 
+    def _split_ready(self, final: bool) -> None:
+        """Run the verbatim run-splitting for utterances whose last
+        timestamped frame has streamed past (or unconditionally at session
+        end).  Splitting earlier would silently drop the not-yet-seen steps,
+        which mcl -- with its whole-video step2first -- never does."""
+        if not self._raw_pending:
+            return
+        last = round(self._times[-1] * self.fps) if self._times else -1
+        still = []
+        for payload in self._raw_pending:
+            raw_ts = payload.get(K.TEXT_TIMESTAMPS) or []
+            max_step = max((round(float(t) * self.fps) for t in raw_ts), default=-1)
+            if final or max_step <= last:
+                self._prepare_chunks(payload)
+            else:
+                still.append(payload)
+        self._raw_pending = still
+
     def _drain(self) -> None:
         """Emit chunks whose end index the stream has fully passed."""
+        self._split_ready(final=False)
         if not self._pending:
             return
         n = len(self._times)

@@ -157,26 +157,35 @@ class LockstepDriver:
         return events
 
     def _advance_once(self) -> bool:
-        """One advance quantum. Returns False when the stream is exhausted."""
+        """One advance quantum.  Returns True if anything new arrived -- a
+        partial quantum at the end of the stream still counts, so the tail
+        of the stream (and events flushed at the final session end) get the
+        same training as any other data.  False means the stream is done
+        and nothing new was admitted."""
+        events_before = self.ctx.clock.events_emitted
         kind = self.advance["kind"]
         if kind == "observations":
-            return all(self._step_stream() is not None for _ in range(int(self.advance["n"])))
-        if kind == "events":
+            consumed = 0
+            while consumed < int(self.advance["n"]) and self._step_stream() is not None:
+                consumed += 1
+        elif kind == "events":
             target_schema = self.advance["schema"]
             want = int(self.advance.get("n", 1))
-            got = 0
+            consumed = got = 0
             while got < want:
                 events = self._step_stream()
                 if events is None:
-                    return False
+                    break
+                consumed += 1
                 got += sum(1 for e in events if e[K.EVENT_SCHEMA] == target_schema)
-            return True
-        raise ValueError(f"unknown advance kind {kind!r}")
+        else:
+            raise ValueError(f"unknown advance kind {kind!r}")
+        return consumed > 0 or self.ctx.clock.events_emitted > events_before
 
     # ------------------------------------------------------------------
     # resume
     # ------------------------------------------------------------------
-    def _resume_replay(self) -> None:
+    def _resume_replay(self, exhausted: bool = False) -> None:
         """Rebuild the admission components' internal state after a snapshot restore.
 
         The stream and the admission algorithms are deterministic, so replaying the first
@@ -184,8 +193,9 @@ class LockstepDriver:
         position (how far past a segment's end the stream must be before the segment is
         finalized), and the global-id handover, with no extra bookkeeping.  During replay,
         emitted events refresh the stream_head but are NOT admitted to memory (memories come
-        from the snapshot), and no memory/composer RNG is consumed.  Label writes made during
-        replay are overwritten by the snapshot's label stores afterwards (see utils.snapshot).
+        from the snapshot).  The replay consumes admission RNGs exactly like the original
+        pass did, starting from fresh seed-derived state; the snapshot's saved RNG states,
+        label stores and memories are all restored after it (see utils.snapshot).
 
         Cost: one pass over the already-consumed stream, including any frozen-embedder work the
         admission components do -- proportional to the resume position.  A future version could
@@ -207,6 +217,12 @@ class LockstepDriver:
                         f"({self.ctx.clock.admitted}/{target})"
                     )
                     break
+            if exhausted:
+                # the original run had consumed the stream to the end,
+                # including the final session-end flush -- do the same here
+                # (still replaying, so nothing is admitted twice)
+                while self._step_stream() is not None:
+                    pass
         finally:
             self._replaying = False
             self.ctx.clock.events_emitted = events_before
@@ -280,6 +296,10 @@ class LockstepDriver:
             with self.timer.measure("model.backward"):
                 (total / self.grad_accumulation).backward()
             if (self.ctx.clock.step + 1) % self.grad_accumulation == 0:
+                # schedule for THIS step is applied before stepping (the
+                # originals adjust then step, so warmup covers step 1 too)
+                if self.schedule is not None:
+                    apply_lr(self.optimizer, self._base_lrs, self.schedule.multiplier(self.ctx))
                 with self.timer.measure("optim.step"):
                     self.optimizer.step()
                     self.optimizer.zero_grad(set_to_none=True)
@@ -287,10 +307,35 @@ class LockstepDriver:
                 loss_fn.on_step_end(self.model, self.ctx)
 
             self.ctx.clock.step += 1
-            if self.schedule is not None:
-                apply_lr(self.optimizer, self._base_lrs, self.schedule.multiplier(self.ctx))
             for h in self.hooks:
                 h.on_step(self, logs)
+
+    def _flush_grad_accumulation(self) -> None:
+        """The loop steps the optimizer every `grad_accumulation` backwards;
+        when the STREAM ends between optimizer steps, apply what accumulated
+        instead of silently dropping those gradients.
+
+        Deliberately not done on a max_steps stop: a capped run may be
+        snapshotted and continued, and the continuation must fold these
+        micro-steps into one full window exactly like an uninterrupted run
+        (pending gradients travel inside the snapshot).  A capped run that
+        is never continued leaves them unapplied, and says so."""
+        pending = self.grad_accumulation > 1 and self.ctx.clock.step % self.grad_accumulation != 0
+        if not pending:
+            return
+        if not self._exhausted:
+            n = self.ctx.clock.step % self.grad_accumulation
+            print(
+                f"[driver] stopped at max_steps with {n} accumulated micro-step(s) "
+                "pending; they apply on resume (or align max_steps to "
+                "grad_accumulation)",
+                flush=True,
+            )
+            return
+        if self.schedule is not None:
+            apply_lr(self.optimizer, self._base_lrs, self.schedule.multiplier(self.ctx))
+        self.optimizer.step()
+        self.optimizer.zero_grad(set_to_none=True)
 
     # ------------------------------------------------------------------
     def fit(self) -> None:
@@ -307,6 +352,7 @@ class LockstepDriver:
             for h in self.hooks:
                 h.on_admit(self, len(self.stream_head))
             self._train_steps()
+        self._flush_grad_accumulation()
         for h in self.hooks:
             h.on_end(self)
         print(
