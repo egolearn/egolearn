@@ -117,4 +117,3 @@ driver:
 hooks:
   log_every: 100
   checkpoint_every: 10000
- 

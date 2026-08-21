@@ -67,6 +67,23 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
 - [ ] Per-run code snapshotting
 - [ ] Hub-hosted checkpoints and split files; retire Drive links
 
+## Performance ledger (from PR review, 2026-08)
+
+Deliberately NOT addressed yet: the determinism tests (same seed = same
+weights; resumed = uninterrupted; stream tail trains) are the safety net,
+and pipelining is exactly where determinism tends to break.  With those
+tests green, run the bench scripts on real data first and let the numbers
+decide the order.
+
+- [ ] The training loop is fully serial (stream advance, then
+      decode/augment, then GPU step), so the GPU idles during data work and
+      vice versa.  Double-buffering the batch composer against the GPU step
+      is probably the biggest win.
+- [ ] Replay re-decodes the same frames every time it samples them (memory
+      stores refs) — a small LRU cache of decoded tensors would help a lot.
+- [ ] bf16 and channels_last on the backbone.
+- [ ] poodle's seek-per-frame issue waits for the poodle integration.
+
 ## Ongoing
 
 - BabyCL — continual visual and verbal learning, successor of Memory

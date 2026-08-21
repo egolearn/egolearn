@@ -34,7 +34,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --locked
+      # train extra: mypy should see the real torch types, not Any stubs
+      - run: uv sync --locked --extra train
       - run: uv run mypy
 
   test:

@@ -3,7 +3,8 @@
 Reproduces [Memory Storyboard](https://arxiv.org/abs/2501.12254) (streaming
 visual SSL with temporal segmentation and a two-tier memory).
 
-**This project owns the paper's contribution, as 1:1 ports** (`components.py`; the
+**This project owns the paper's contribution, as 1:1 ports** (in
+`src/egolearn/methods/storyboard/`; the
 config's `_imports_` list makes them register themselves on import):
 
 * `greedy_hierarchical_clustering` / `get_cluster_score` — **verbatim** from
@@ -26,13 +27,13 @@ takes all — as in the original samplers).
 Run:
 
 ```bash
-python tools/train.py --config projects/storyboard/configs/saycam.yaml --dry-run
-python tools/train.py --config projects/storyboard/configs/saycam.yaml
+python -m egolearn.train --config-dir projects/storyboard/configs --config-name saycam dry_run=true
+python -m egolearn.train --config-dir projects/storyboard/configs --config-name saycam
 ```
 
 Documented framework adaptations (algorithms untouched): label writes go
 through the LabelStore (the original's separate short-window and long-buffer
-relabel paths write the same mapping — see `components.py` docstring); the
+relabel paths write the same mapping — see the `storyboard_recluster` docstring); the
 recluster trigger is checked per frame instead of per training step (fires
 at the same threshold crossing).
 

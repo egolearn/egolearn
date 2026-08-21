@@ -6,6 +6,27 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ## [Unreleased]
 
+### Fixed
+
+- Determinism (from PR review): the configured seed now also seeds the
+  global torch/python RNGs and snapshots carry their state, so the same
+  seed gives bit-identical weights and a resumed run matches an
+  uninterrupted one; resume restores RNG states after the stream replay
+  instead of before it; the stream's tail (a partial advance quantum, and
+  events flushed at the final session end) still trains; the channel
+  tie-break in the session merge binds eagerly, so an utterance ending
+  exactly on a frame time surfaces after that frame and its chunk keeps
+  its final step; the LR schedule applies before the optimizer step, so
+  warmup covers step 1; an unfinished gradient-accumulation window is
+  applied when the stream ends, and on a max_steps stop its pending
+  gradients travel inside the snapshot so a continued run folds them into
+  one full window; snapshots taken after the stream ran dry resume without
+  re-admitting the final session flush. All covered by weight-level tests.
+- TCL no longer materializes the raw pixel tensor when precomputed
+  features are used; W&B runs start on first use, so dry runs never open
+  one; text slots with several frames per item are rejected at build; the
+  mypy CI job type-checks against real torch.
+
 ### Added
 
 - Composable model layer: named encoders (image/video/text) + heads +
@@ -29,9 +50,6 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 - `video`/`train` extras; CI test job installs the train extra.
 - Generic Slurm launchers and data-plane/full-pipeline benchmarks under
   `scripts/`.
-
-### Added
-
 - Repository scaffold: src-layout package with packaged hydra configs, tiered test
   setup, CI gates (lint/types/test/lock/gitleaks), pre-commit hooks, branch
   protection script, and governance docs.

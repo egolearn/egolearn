@@ -197,4 +197,3 @@ probes:
      neg_dir: /path/to/eval/baby_winoground_neg_samples,
      vocab_json: /path/to/vocab.json,
      vision_head: embed512, image_norm: imagenet}
- 

@@ -10,6 +10,7 @@ driver instead of stacking more hooks.
 from __future__ import annotations
 
 import os
+from typing import Any
 
 import torch
 
@@ -143,22 +144,34 @@ class WandbHook(Hook):
     def __init__(
         self, entity=None, project=None, mode="online", run_name=None, config=None, every: int = 1
     ):
-        import wandb
-
         self.every = max(1, int(every))
-        self._run = wandb.init(
-            entity=entity, project=project, mode=mode, name=run_name, config=config
-        )
+        self._init_kw = {
+            "entity": entity,
+            "project": project,
+            "mode": mode,
+            "name": run_name,
+            "config": config,
+        }
+        self._run: Any = None  # started on first use: dry runs never open a W&B run
+
+    def _ensure_run(self):
+        if self._run is None:
+            import wandb
+
+            self._run = wandb.init(**self._init_kw)
+        return self._run
 
     def on_step(self, driver, logs):
-        step = driver.ctx.clock.step
+        run = self._ensure_run()  # first training step opens the run, even
+        step = driver.ctx.clock.step  # when every=N would skip its logging
         if step % self.every:
             return
         payload = dict(logs)
         prog = driver.ctx.clock.progress
         if prog is not None:
             payload["progress"] = prog
-        self._run.log(payload, step=step)
+        run.log(payload, step=step)
 
     def on_end(self, driver):
-        self._run.finish()
+        if self._run is not None:
+            self._run.finish()

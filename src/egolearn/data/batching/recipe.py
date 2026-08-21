@@ -59,6 +59,11 @@ class SlotSpec:
             raise ValueError(f"slot {self.name!r}: clip_len/clip_stride must be >= 1")
         if not self.views:
             raise ValueError(f"slot {self.name!r} declares no views")
+        if self.text and self.frames_per_item != 1:
+            raise ValueError(
+                f"slot {self.name!r}: text=true with frames_per_item>1 would "
+                "collate one utterance against several frames; not supported"
+            )
         if self.modality is None:
             self.modality = modality_for_unit(self.unit)
 

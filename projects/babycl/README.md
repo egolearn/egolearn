@@ -3,8 +3,9 @@
 Reproduces the BabyCLIP default run (continual visual + verbal learning on
 SAYCam, single chronological pass).
 
-**This project owns the paper's contribution, as 1:1 ports** (`components/`; the
-config's `_imports_` list makes them register themselves on import):
+**This project owns the paper's contribution, as 1:1 ports** (in
+`src/egolearn/methods/babycl/`; the config's `_imports_` list makes them
+register themselves on import):
 
 * `refine.py` — **verbatim** segmentation math from mcl's
   `utils/online_ms_refine.py` (prefix sums, chunk expansion 2–12 s,
@@ -32,8 +33,8 @@ solver/driver) plus `benchmarks/labeled_s_4afc`.
 Run:
 
 ```bash
-python tools/train.py --config projects/babycl/configs/saycam_default.yaml --dry-run
-python tools/train.py --config projects/babycl/configs/saycam_default.yaml
+python -m egolearn.train --config-dir projects/babycl/configs --config-name saycam_default dry_run=true
+python -m egolearn.train --config-dir projects/babycl/configs --config-name saycam_default
 ```
 
 Published ablations as config diffs:
