@@ -135,6 +135,11 @@ class ComposedModel(nn.Module):
         """encoder name -> modality."""
         return {name: str(enc.modality) for name, enc in self.encoders.items()}
 
+    def frozen_names(self) -> frozenset[str]:
+        """Encoders carried but never trained (`frozen: true`), e.g. a JEPA
+        EMA target.  A construction-time fact -- see __init__."""
+        return self._frozen
+
     def capabilities(self) -> frozenset[str]:
         """What this composition can do, derived from its parts.  Evaluation
         requirements are checked against this set at build time, so a probe
@@ -222,14 +227,18 @@ class ComposedModel(nn.Module):
         return self.predictors[name](*reps, **kw)
 
     # ---- shared per-step features ---------------------------------------------
-    def precompute_feats(self, batch: dict, device) -> None:
+    def precompute_feats(self, batch: dict, device, skip: frozenset[str] = frozenset()) -> None:
         """Run the right encoder once per slot and view, storing the result in
         `slot["feats"]` as [B, V, D]; losses read these instead of re-running
         encoders.  Each slot declares what its views are (`slot["modality"]`,
         stamped by the composer from the slot spec) and is routed to the
         encoder of that modality.  Slots whose modality has no encoder are
-        skipped (their loss, if any, computes what it needs itself)."""
+        skipped (their loss, if any, computes what it needs itself), as are
+        slots named in `skip` (the drivers pass the slots whose only declared
+        consumers run their own forwards -- see losses/base.own_forward_slots)."""
         for name, slot in batch.items():
+            if name in skip:
+                continue
             views = slot.get(K.SLOT_VIEWS)
             if views is None:
                 continue

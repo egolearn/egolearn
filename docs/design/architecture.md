@@ -191,7 +191,9 @@ The parts, one line each:
 * **encoder** — one modality's tensor in, a representation out. An encoder
   declares its modality (`image`, `video`, `text`) and its output width;
   everything else addresses it by the name the config gave it. Shipped:
-  `resnext50`, `resnet18`, `toy_cnn` (image), `toy_video` (video); BabyCL's
+  `resnext50`, `resnet18`, `toy_cnn` (image), `video_vit` (V-JEPA 2's design:
+  tubelet embedding, 3D rotary positions, and an optional visible-token
+  forward for masked prediction) and `toy_video` (video); BabyCL's
   bag-of-words text encoder lives in its method package.
 * **encoder output** — what `encode()` returns is a wrapper, not a bare
   tensor: `pooled` (always, `[B, D]`), plus optional `tokens` (a ViT's patch
@@ -202,14 +204,21 @@ The parts, one line each:
 * **head** — a small module (projector, classifier); names the encoder it
   sits on and consumes its pooled output.
 * **predictor** — representation(s) in, predicted representation out; the
-  JEPA-style component. Names the encoders it reads.
+  JEPA-style component. Names the encoders it reads. Shipped: `mlp` and
+  `vjepa` (a narrow transformer that fills mask tokens in at target
+  positions).
 * **generative component** — interface reserved (`generate` / `score`),
   nothing built yet.
 * **loss** — consumes representations by slot and head name: `ntxent`
   (accepts several slots and concatenates — MS computes it over
   current+replay jointly), `tcl` (segment-label cross-entropy with optional
   masking of unseen classes), `clip_infonce` (symmetric image–text InfoNCE,
-  optional per-sample weights).
+  optional per-sample weights), `vjepa` (masked prediction in representation
+  space: multiblock masks on the token grid, a frozen EMA-target encoder
+  updated in `on_step_end`, L1 to its tokens at the masked positions). A
+  loss that runs its own encoder forwards, as `vjepa` does, declares
+  `own_forward`; the drivers then skip the shared pooled precompute for its
+  slots instead of computing features nobody reads.
 
 ```mermaid
 flowchart LR
@@ -249,15 +258,15 @@ Every checkpoint records the full name→role mapping (encoders and their
 modalities, heads, predictors, capabilities), so a trained encoder
 reloads elsewhere by name.
 
-Design check against models the framework doesn't ship yet (interfaces
-only — the point was to make sure none of them is blocked):
+Design check against the model families beyond the founding reproductions
+(the point was to make sure none of them is blocked):
 
-| future model | as a composition |
+| model family | as a composition |
 |---|---|
 | CLIP-style dual encoder | `encoders: {vision, text}` + heads into a shared space + `clip_infonce` — this is BabyCL's cross-modal half, already running |
-| video encoder (VideoMAE-class) | one `video`-modality encoder; clip slots route to it automatically (covered by a unit test with `toy_video`) |
-| V-JEPA | video encoder + a second frozen copy (`frozen: true` — carried in snapshots, kept in eval mode, excluded from the optimizer and from modality routing, all recorded at construction) + predictor + a latent loss that updates the EMA copy in `on_step_end`; token-space prediction reads the output's `tokens` field, which is additive to add |
-| language-conditioned JEPA | the same, with `inputs: [video.clip_feat, text.embed]` on the predictor |
+| V-JEPA | **shipped**: `video_vit` + a second frozen copy (`frozen: true` — carried in snapshots, kept in eval mode, excluded from the optimizer and from modality routing) + `predictor:vjepa` + `loss:vjepa`; trains on clip slots in the streaming loop and on `unit: clip` batches in the offline loop, with the same determinism guarantees (same seed = same weights, resumed = uninterrupted, EMA target included) |
+| masked video modeling (VideoMAE-class) | the same sockets V-JEPA uses: mask samplers on the token grid (`model/masking.py`), the encoder's visible-token forward and `tokens` output; what's left to add is the pixel decoder and reconstruction loss |
+| language-conditioned JEPA | `predictor:vjepa` with a second input (`inputs: [video, text]`) — conditioning enters as extra tokens |
 | autoregressive / generative | registers as a `generative` component; the capability name and eval hook exist, the module does not |
 | attribution / dense evals (GradCAM-class) | read the output's `spatial` field; adding it to an encoder breaks no pooled consumer |
 

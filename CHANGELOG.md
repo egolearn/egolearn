@@ -8,6 +8,18 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- V-JEPA video pretraining, with V-JEPA 2 as the reference design:
+  `encoder:video_vit` (tubelet embedding, 3D rotary positions, and a
+  visible-token forward so the context pass only pays for unmasked tokens),
+  `predictor:vjepa`, `loss:vjepa` (multiblock masks on the token grid, a
+  frozen EMA-target twin updated after each step, L1 in representation
+  space), the `clip_rrc` view, and `unit: clip` offline batches
+  (non-overlapping windows, the conventional video pretraining epoch).
+  Mask randomness derives from (seed, step), so the determinism guarantees
+  extend to it: same seed = same weights and resumed = uninterrupted, EMA
+  target included, both covered by tests. Losses that run their own encoder
+  forwards declare `own_forward`, and the drivers skip the shared pooled
+  precompute for slots only such losses read.
 - Parallel decode+augment: `loader.workers: N` fans stage two of batch
   loading (refs -> tensors) out to a spawn process pool. Every frame's
   augmentation randomness comes from its own derived seed, so the worker

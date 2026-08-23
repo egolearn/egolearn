@@ -117,6 +117,32 @@ def clip_center_crop(size: int = 224):
     )
 
 
+@VIEWS.register("clip_rrc")
+def clip_rrc(
+    size: int = 224,
+    scale_min: float = 0.3,
+    scale_max: float = 1.0,
+    ratio_min: float = 0.75,
+    ratio_max: float = 1.35,
+):
+    """Random resized crop + horizontal flip, temporally consistent -- the
+    V-JEPA pretraining augmentation (deliberately no color jitter: masked
+    prediction supplies the invariance pressure that contrastive pipelines
+    get from photometric augmentation)."""
+    return T.Compose(
+        [
+            T.RandomResizedCrop(
+                size,
+                scale=(scale_min, scale_max),
+                ratio=(ratio_min, ratio_max),
+                interpolation=T.InterpolationMode.BILINEAR,
+            ),
+            T.RandomHorizontalFlip(p=0.5),
+            T.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+        ]
+    )
+
+
 @VIEWS.register("clip_simclr")
 def clip_simclr(size: int = 224, view_idx: int = 0, scale_min: float = 0.2, scale_max: float = 1.0):
     """SimCLR-style clip augmentation; random parameters are drawn once per

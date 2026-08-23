@@ -31,6 +31,13 @@ class Loss:
     requires_slots: Sequence[str] = ()
     requires_heads: Sequence[str] = ()
     requires_text: bool = False
+    requires_encoders: Sequence[str] = ()  # encoder names read via model.encode
+    requires_frozen_encoders: Sequence[str] = ()  # must also be `frozen: true` (EMA targets)
+    requires_predictors: Sequence[str] = ()
+    # True: this loss runs its own encoder forwards (masked prediction and the
+    # like), so the shared per-slot pooled precompute would be wasted work for
+    # its slots -- see own_forward_slots below
+    own_forward: bool = False
 
     def compute(self, batch: dict, model, ctx) -> dict[str, torch.Tensor]:
         raise NotImplementedError  # pragma: no cover
@@ -45,3 +52,13 @@ class Loss:
                 f"composed batch has {sorted(batch)} (strict slot fell back?)"
             )
         return batch[name]
+
+
+def own_forward_slots(losses: list) -> frozenset[str]:
+    """Slots whose every declared consumer runs its own encoder forwards:
+    the drivers hand exactly these to `precompute_feats(skip=...)`, so the
+    shared pooled forward is not computed on top of the loss's own.  A slot
+    that a standard loss also reads keeps its precomputed feats."""
+    own = {s for fn in losses if fn.own_forward for s in fn.requires_slots}
+    shared = {s for fn in losses if not fn.own_forward for s in fn.requires_slots}
+    return frozenset(own - shared)

@@ -490,14 +490,41 @@ def _validate_losses(pipe: Pipeline, slot_names, errs: list[str]) -> None:
                     f"loss {loss_fn.name!r} requires head {h!r}; "
                     f"model has {pipe.model.head_names()}"
                 )
+        encoder_names = set(pipe.model.encoders.keys())
+        frozen = pipe.model.frozen_names()
+        for e in loss_fn.requires_encoders:
+            if e not in encoder_names:
+                errs.append(
+                    f"loss {loss_fn.name!r} requires encoder {e!r}; "
+                    f"model has {sorted(encoder_names)}"
+                )
+        for e in loss_fn.requires_frozen_encoders:
+            if e not in encoder_names:
+                errs.append(
+                    f"loss {loss_fn.name!r} requires encoder {e!r}; "
+                    f"model has {sorted(encoder_names)}"
+                )
+            elif e not in frozen:
+                errs.append(
+                    f"loss {loss_fn.name!r} needs encoder {e!r} declared "
+                    "frozen: true -- it updates it outside the optimizer "
+                    "(an EMA target), so the optimizer must not train it"
+                )
+        for p in loss_fn.requires_predictors:
+            if p not in pipe.model.predictor_names():
+                errs.append(
+                    f"loss {loss_fn.name!r} requires predictor {p!r}; "
+                    f"model has {pipe.model.predictor_names()}"
+                )
         if loss_fn.requires_text and K.CAP_TEXT_REPRESENTATION not in pipe.model.capabilities():
             errs.append(f"loss {loss_fn.name!r} needs a text encoder; model has none")
 
 
 def _validate_offline(pipe: Pipeline, driver: OfflineDriver, errs: list[str]) -> None:
-    """Offline (IID) mode: views must exist; v1 batches carry no text/labels."""
-    if "image" not in pipe.model.modalities().values():
-        errs.append("offline v1 batches are image frames, but no encoder has modality 'image'")
+    """Offline (IID) mode: views must exist; batches carry no text/labels."""
+    need = "video" if driver.unit == "clip" else "image"
+    if need not in pipe.model.modalities().values():
+        errs.append(f"offline batches are {driver.unit}s, but no encoder has modality {need!r}")
     for v in driver.views:
         if v not in pipe.views.names():
             errs.append(f"driver.batch: unknown view {v!r} (declared: {pipe.views.names()})")

@@ -44,6 +44,7 @@ from egolearn.data.batching.recipe import Recipe
 from egolearn.data.sources.base import Observation, Stream
 from egolearn.memory.admission.base import EventBuilder
 from egolearn.memory.table import TieredMemory
+from egolearn.model.losses.base import own_forward_slots
 
 from .profiling import StageTimer
 from .solver import ProgressCosine, apply_lr
@@ -89,6 +90,7 @@ class LockstepDriver:
         self.max_steps = max_steps
         self.grad_accumulation = max(1, int(grad_accumulation))
         self._base_lrs = [g["lr"] for g in optimizer.param_groups]
+        self._skip_feats = own_forward_slots(losses)
         self.timer = StageTimer()
         if getattr(composer, "loader", None) is not None:
             composer.loader.timer = self.timer  # data.load measurements
@@ -273,7 +275,7 @@ class LockstepDriver:
             total = None
             with self.timer.measure("model.forward"):
                 # each encoder runs once per slot/view; losses share the features
-                self.model.precompute_feats(batch, self.ctx.device)
+                self.model.precompute_feats(batch, self.ctx.device, skip=self._skip_feats)
                 for loss_fn in self.losses:
                     # A fallback recipe may drop slots (BabyCL: multimodal slot
                     # starved -> all-visual batch). Losses whose slots are

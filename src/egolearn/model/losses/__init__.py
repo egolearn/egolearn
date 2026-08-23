@@ -5,5 +5,6 @@ from .base import Loss
 from .clip_infonce import ClipInfoNCE
 from .ntxent import NTXent
 from .tcl import TemporalClassification
+from .vjepa import VJEPA
 
-__all__ = ["ClipInfoNCE", "Loss", "NTXent", "TemporalClassification"]
+__all__ = ["VJEPA", "ClipInfoNCE", "Loss", "NTXent", "TemporalClassification"]

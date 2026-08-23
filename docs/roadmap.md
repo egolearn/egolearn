@@ -41,6 +41,10 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
 
 - [ ] Embedding and text interface boundaries per design/streaming.md §5
 - [ ] Backbones with attribution headers; ViT sibling
+- [x] Video model path: V-JEPA (video ViT + predictor + EMA loss, V-JEPA 2
+      as the reference) trains on clip slots in both loops; VideoMAE-class
+      masked modeling reuses the same sockets (mask samplers, visible-token
+      forward, token outputs) and needs only its decoder + pixel loss
 - [x] Composable `SSLModel(backbone, heads, losses)` replacing per-ablation
       classes
 - [x] One streaming trainer — seeded, resumable, state-dict checkpoints —

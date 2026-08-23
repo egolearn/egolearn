@@ -15,6 +15,9 @@ answered by class attributes:
 Everything else addresses an encoder by the name the config gave it under
 `model.encoders:` -- heads and predictors declare `encoder: vision`, and
 which form of the output they consume is an EncoderOutput field name.
+`model.encode()` passes extra keyword arguments through, so an encoder may
+accept optional ones (the video ViT's `visible=` token indices for masked
+prediction) without that widening anyone else's signature.
 
 The output is wrapped.  `forward` may return either a plain [B, out_dim]
 tensor (most encoders; it is treated as the pooled field) or an
