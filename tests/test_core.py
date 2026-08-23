@@ -1099,3 +1099,22 @@ def test_worker_pool_matches_serial_loading(tmp_path):
         assert torch.equal(serial[name]["views"], pooled[name]["views"]), name
         if "labels" in serial[name]:
             assert torch.equal(serial[name]["labels"], pooled[name]["labels"])
+
+
+def test_worker_pool_registers_project_views(tmp_path):
+    # a spawned worker starts from a bare interpreter, so the config's
+    # `_imports_` (which register project-owned views) must run in the
+    # worker too before it can rebuild the view pipelines
+    cfg = _toy_cfg(tmp_path)
+    cfg["_imports_"] = ["egolearn.methods.babycl"]
+    cfg["views"] = {
+        "v1": {"name": "babycl_ms_aug", "size": 64, "view_idx": 0},
+        "v2": {"name": "babycl_ms_aug", "size": 64, "view_idx": 1},
+    }
+    cfg["loader"] = {"workers": 1}
+    pipe = egolearn.build(cfg)
+    pipe.driver._run_warmup()
+    batch = pipe.composer.compose(pipe.recipe, pipe.memories, {}, pipe.ctx)
+    pipe.loader.close()
+    assert batch is not None
+    assert batch["curr"]["views"].shape[1] == 2

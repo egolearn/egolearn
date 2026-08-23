@@ -48,8 +48,15 @@ WorkItem = tuple
 _WORKER: dict = {}  # per-process state, filled by _pool_init in each worker
 
 
-def _pool_init(stream: Stream, view_specs: dict) -> None:
+def _pool_init(stream: Stream, view_specs: dict, imports: list[str]) -> None:
+    import importlib
+
     torch.set_num_threads(1)
+    # project components (views, ...) register themselves at import time; a
+    # spawned worker starts from a bare interpreter, so the config's
+    # `_imports_` must run here too before view pipelines can be rebuilt
+    for mod in imports:
+        importlib.import_module(mod)
     _WORKER["stream"] = stream
     _WORKER["views"] = ViewBank(view_specs)
 
@@ -64,10 +71,17 @@ def _pool_task(item: WorkItem) -> torch.Tensor:
 
 
 class Loader:
-    def __init__(self, stream: Stream, views: ViewBank, workers: int = 0):
+    def __init__(
+        self,
+        stream: Stream,
+        views: ViewBank,
+        workers: int = 0,
+        imports: list[str] | None = None,
+    ):
         self.stream = stream
         self.views = views
         self.workers = int(workers)
+        self.imports = list(imports or [])  # modules workers import to register views
         self._pool: ProcessPoolExecutor | None = None
         # optional StageTimer (egolearn.training.profiling); the driver attaches it
         self.timer: StageTimer | None = None
@@ -84,7 +98,7 @@ class Loader:
                 max_workers=self.workers,
                 mp_context=mp.get_context("spawn"),
                 initializer=_pool_init,
-                initargs=(self.stream, self.views.specs),
+                initargs=(self.stream, self.views.specs, self.imports),
             )
         return self._pool
 
