@@ -98,6 +98,7 @@ class Composer:
                 raise KeyError(f"slot {slot.name!r}: unknown label store {slot.labels_from!r}")
 
         views, labels, texts, weights, metas = [], [], [], [], []
+        work: list[tuple] = []  # (ref, frame_idx, view_names, seed) for batch loading
         any_weight = False
         for pos, item in enumerate(items):
             K.require_keys(item, [K.VIDEO_REF], f"composer slot {slot.name!r}")
@@ -134,7 +135,11 @@ class Composer:
                 k = slot.frames_per_item if slot.unit == "segment" else 1
                 frame_idx = self.loader.pick_frame_indices(ref, k, rng)
                 for fi in frame_idx:
-                    views.append(self.loader.frame_views(ref, fi, slot.views))
+                    # each frame's augmentation seed depends on what the item
+                    # IS (step, slot, position), so worker-pool loading gives
+                    # the same tensors as in-process loading
+                    seed = ctx.derive_seed(f"aug:{ctx.clock.step}:{slot.name}:{len(work)}")
+                    work.append((ref, fi, slot.views, seed))
                     if label is not None:
                         labels.append(label)
                     metas.append(item)
@@ -143,6 +148,10 @@ class Composer:
                         any_weight = True
             if slot.text:
                 texts.append(item.get(K.TEXT_UTTERANCE, "") or " ")
+        if work:
+            # refs were picked above in deterministic order; only the
+            # decode+augment work fans out (possibly to worker processes)
+            views.extend(self.loader.frame_views_batch(work))
 
         out = {
             # [B, V, C, H, W]; clip slots: [B, V, T, C, H, W]

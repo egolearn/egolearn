@@ -115,7 +115,10 @@ def build(cfg: dict) -> Pipeline:
     stream: Stream = instantiate(cfg["stream"])
     ctx.clock.total_observations = stream.total_observations()
     views = ViewBank(cfg.get("views", {}))
-    loader = Loader(stream, views)
+    workers = int((cfg.get("loader") or {}).get("workers", 0))
+    if workers < 0:
+        raise PipelineError(f"loader.workers must be >= 0, got {workers}")
+    loader = Loader(stream, views, workers=workers)
 
     tokenizer = None
     if cfg.get("tokenizer"):

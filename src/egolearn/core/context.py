@@ -71,6 +71,13 @@ class Context:
         random.seed(_stable_seed(self.seed, "global.python"))
         torch.manual_seed(_stable_seed(self.seed, "global.torch"))
 
+    def derive_seed(self, name: str) -> int:
+        """A stable integer seed from (run seed, name).  Parallel work items
+        (e.g. one frame's decode+augment) each get their own derived seed, so
+        their randomness depends only on what the item IS, never on which
+        worker ran it or in what order."""
+        return _stable_seed(self.seed, name)
+
     def rng(self, name: str) -> random.Random:
         """Named python RNG, e.g. ctx.rng('memory.segments.sampler').
         Cached: the same name returns the same stateful generator, and its

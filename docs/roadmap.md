@@ -75,10 +75,10 @@ and pipelining is exactly where determinism tends to break.  With those
 tests green, run the bench scripts on real data first and let the numbers
 decide the order.
 
-- [ ] The training loop is fully serial (stream advance, then
-      decode/augment, then GPU step), so the GPU idles during data work and
-      vice versa.  Double-buffering the batch composer against the GPU step
-      is probably the biggest win.
+- [x] Decode+augment now fans out to worker processes (`loader.workers`),
+      with per-item seeds so the worker count never changes what a run
+      computes.  Still open: double-buffering the (now parallel) batch
+      composer against the GPU step, so data work and the GPU overlap too.
 - [ ] Replay re-decodes the same frames every time it samples them (memory
       stores refs) — a small LRU cache of decoded tensors would help a lot.
 - [ ] bf16 and channels_last on the backbone.

@@ -353,6 +353,7 @@ class LockstepDriver:
                 h.on_admit(self, len(self.stream_head))
             self._train_steps()
         self._flush_grad_accumulation()
+        self.composer.loader.close()
         for h in self.hooks:
             h.on_end(self)
         print(

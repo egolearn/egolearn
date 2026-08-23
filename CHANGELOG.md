@@ -6,6 +6,14 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ## [Unreleased]
 
+### Added
+
+- Parallel decode+augment: `loader.workers: N` fans stage two of batch
+  loading (refs -> tensors) out to a spawn process pool. Every frame's
+  augmentation randomness comes from its own derived seed, so the worker
+  count never changes what a run computes (covered by a serial-vs-pool
+  equality test); stream order and ref picking stay sequential.
+
 ### Fixed
 
 - Determinism (from PR review): the configured seed now also seeds the

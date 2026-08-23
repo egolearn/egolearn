@@ -9,3 +9,5 @@ wandb:
   mode: disabled
 dry_run: false     # build and validate the whole pipeline, then exit without training
 resume: null       # path to a snapshot (saved run state), or "auto" for the newest in run_dir
+loader:
+  workers: 0       # decode+augment worker processes; 0 = load in-process

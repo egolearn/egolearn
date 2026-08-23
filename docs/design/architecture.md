@@ -136,7 +136,11 @@ access (replay: seek to keyframe, decode one window) as separately
 optimizable paths. `decoder:poodle` is the stub for the lab's efficient
 video pipeline; its docstring lists what the integration has to provide.
 
-`loading.py` is the Loader, the only place refs become tensors. It serves
+`loading.py` is the Loader, the only place refs become tensors. Decode and
+augmentation can fan out to worker processes (`loader.workers`); each
+frame's augmentation seed derives from what the item is (step, slot,
+position), so the worker count is a throughput knob that never changes what
+a run computes. It serves
 every data unit — single frames, K frames sampled from a segment, pairs, and
 contiguous clips — and its time shows up as `data.load` in the timing
 report. `views.py` holds named augmentation pipelines (`center_crop`,

@@ -116,7 +116,12 @@ class OfflineDriver:
 
     # ------------------------------------------------------------------
     def _compose(self, refs) -> dict:
-        views = torch.stack([self.loader.frame_views(r, 0, self.views) for r in refs], dim=0)
+        step = self.ctx.clock.step
+        work = [
+            (r, 0, self.views, self.ctx.derive_seed(f"aug:{step}:{self.slot}:{i}"))
+            for i, r in enumerate(refs)
+        ]
+        views = torch.stack(self.loader.frame_views_batch(work), dim=0)
         slot = {
             K.SLOT_VIEWS: views,
             K.SLOT_MODALITY: modality_for_unit(self.unit),
@@ -212,6 +217,7 @@ class OfflineDriver:
                 apply_lr(self.optimizer, self._base_lrs, self.schedule.multiplier(self.ctx))
             self.optimizer.step()
             self.optimizer.zero_grad(set_to_none=True)
+        self.loader.close()
         for h in self.hooks:
             h.on_end(self)
         print(f"[offline] done: steps={self.ctx.clock.step}", flush=True)

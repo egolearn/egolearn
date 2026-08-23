@@ -1078,3 +1078,24 @@ def test_an_chunk_waits_for_rounded_up_final_frame():
     ref: ItemRef = events[0][K.VIDEO_REF]
     # steps round(0.31*5)=2 and round(0.51*5)=3 -> frames [2, 4)
     assert ref.locator[1:] == (2, 4)
+
+
+def test_worker_pool_matches_serial_loading(tmp_path):
+    # the worker count is a throughput knob only: same seed, same batches,
+    # whether decode+augment ran in-process or in a spawn pool
+    def first_batch(workers):
+        cfg = _toy_cfg(tmp_path / f"w{workers}")
+        cfg["loader"] = {"workers": workers}
+        pipe = egolearn.build(cfg)
+        pipe.driver._run_warmup()
+        batch = pipe.composer.compose(pipe.recipe, pipe.memories, {}, pipe.ctx)
+        pipe.loader.close()
+        assert batch is not None
+        return batch
+
+    serial, pooled = first_batch(0), first_batch(2)
+    assert sorted(serial) == sorted(pooled)
+    for name in serial:
+        assert torch.equal(serial[name]["views"], pooled[name]["views"]), name
+        if "labels" in serial[name]:
+            assert torch.equal(serial[name]["labels"], pooled[name]["labels"])

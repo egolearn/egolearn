@@ -149,6 +149,9 @@ class ViewBank:
     """
 
     def __init__(self, specs: dict[str, dict]):
+        # kept so a worker process can rebuild the bank: the built pipelines
+        # are closures and do not pickle
+        self.specs = {alias: dict(spec) for alias, spec in specs.items()}
         self._pipes: dict[str, Callable] = {}
         for alias, spec in specs.items():
             spec = dict(spec)
