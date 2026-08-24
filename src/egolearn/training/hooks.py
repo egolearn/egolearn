@@ -130,10 +130,14 @@ class SnapshotHook(Hook):
         for m in self.milestones:
             if m not in self._done and prog + 1e-9 >= m:
                 self._done.add(m)
+                path = os.path.join(self.run_dir, f"snapshot_{int(m * 100):03d}pct.pth")
+                if os.path.exists(path):
+                    # `_done` is per-process, so a RESUMED run re-crosses
+                    # milestones the original already recorded; milestone
+                    # snapshots are write-once archives, never overwritten
+                    continue
                 os.makedirs(self.run_dir, exist_ok=True)
-                save_snapshot(
-                    os.path.join(self.run_dir, f"snapshot_{int(m * 100):03d}pct.pth"), driver
-                )
+                save_snapshot(path, driver)
 
 
 class WandbHook(Hook):

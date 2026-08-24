@@ -782,6 +782,32 @@ def test_same_seed_twice_gives_identical_weights(tmp_path):
         assert torch.equal(states[0][k], states[1][k]), f"weights differ at {k}"
 
 
+def test_resumed_run_does_not_overwrite_milestone_snapshots(tmp_path):
+    # SnapshotHook's fired-milestones set is per-process, so a resumed run
+    # re-crosses milestones the original run already recorded; those files
+    # are write-once archives and must survive the resume untouched
+    from egolearn.training.hooks import SnapshotHook
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    marker = run_dir / "snapshot_005pct.pth"
+    marker.write_bytes(b"original milestone state")
+
+    class _Clock:
+        step, progress = 10, 0.2  # far past the 5% milestone
+
+    class _Ctx:
+        clock = _Clock()
+
+    class _Driver:
+        ctx = _Ctx()
+
+    hook = SnapshotHook(str(run_dir), milestones=[0.05])
+    hook.on_step(_Driver(), {})
+    assert marker.read_bytes() == b"original milestone state"
+    assert 0.05 in hook._done  # marked handled, so it is not re-checked
+
+
 def test_resumed_run_matches_uninterrupted(tmp_path):
     from egolearn.utils.snapshot import load_snapshot, save_snapshot
 
