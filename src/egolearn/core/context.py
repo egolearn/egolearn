@@ -44,6 +44,14 @@ class Clock:
         self.step = 0
         self.admitted = 0
         self.events_emitted = 0
+        # count of batches composed so far; every batch's sampling and
+        # augmentation randomness derives from its own sequence number, so a
+        # batch is a pure function of (seed, compose_seq, memory contents) --
+        # composing it early (prefetch), late, or twice (a resumed run
+        # recomposing what a crashed prefetch had in flight) gives the same
+        # tensors.  Committed only when a batch is handed to training, never
+        # while a prefetch is in flight, so snapshots stay consistent.
+        self.compose_seq = 0
         self.total_observations = total_observations
 
     @property
@@ -109,6 +117,7 @@ class Context:
                 "step": self.clock.step,
                 "admitted": self.clock.admitted,
                 "events_emitted": self.clock.events_emitted,
+                "compose_seq": self.clock.compose_seq,
                 "total_observations": self.clock.total_observations,
             },
             "rngs": {k: v.getstate() for k, v in self._rngs.items()},
@@ -135,4 +144,5 @@ class Context:
         self.clock.step = c["step"]
         self.clock.admitted = c["admitted"]
         self.clock.events_emitted = c["events_emitted"]
+        self.clock.compose_seq = c["compose_seq"]
         self.clock.total_observations = c["total_observations"]

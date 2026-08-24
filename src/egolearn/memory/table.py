@@ -119,11 +119,16 @@ class TieredMemory:
                 src = dst
 
     # ---- sampling -----------------------------------------------------------
-    def sample_tier(self, tier: str, n: int, ctx: Context) -> list[dict]:
+    # Sampling draws from the rng the CALLER hands in -- the composer derives
+    # one per batch from (seed, compose_seq) -- so what a batch samples is a
+    # pure function of the batch's identity and the memory contents, never of
+    # how many draws happened before.  Admission keeps its own cached streams
+    # (self._rng above): its randomness is inherently sequential.
+    def sample_tier(self, tier: str, n: int, rng: random.Random) -> list[dict]:
         self._check_tier(tier)
-        return self.tiers[tier].sample(n, self._rng(ctx, tier + ".sample"))
+        return self.tiers[tier].sample(n, rng)
 
-    def sample_mix(self, n: int, fractions: dict[str, float], ctx: Context) -> list[dict]:
+    def sample_mix(self, n: int, fractions: dict[str, float], rng: random.Random) -> list[dict]:
         """Sample n items with a per-tier quota, topping up when a tier runs
         short.  This matches BabyCL's TwoTierBuffer.sample: integer quotas
         come from `fractions`; if a tier has too few entries, the shortfall
@@ -139,13 +144,12 @@ class TieredMemory:
         picked_ids = set()
         for t, q in quotas.items():
             self._check_tier(t)
-            for e in self.tiers[t].sample(q, self._rng(ctx, t + ".sample")):
+            for e in self.tiers[t].sample(q, rng):
                 if id(e) not in picked_ids:
                     picked.append(e)
                     picked_ids.add(id(e))
         if len(picked) < n:  # a tier ran short: top up from all tiers' leftovers
             pool = [e for t in self.tiers for e in self.tiers[t].entries if id(e) not in picked_ids]
-            rng = self._rng(ctx, "backfill")
             take = min(n - len(picked), len(pool))
             for e in rng.sample(pool, take) if take < len(pool) else pool:
                 picked.append(e)

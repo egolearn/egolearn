@@ -82,7 +82,7 @@ def test_mix_sampling_backfills_deficit():
     )
     for i in range(6):  # long stays empty
         mem.admit({"i": i}, ctx)
-    got = mem.sample_mix(4, {"short": 0.25, "long": 0.75}, ctx)
+    got = mem.sample_mix(4, {"short": 0.25, "long": 0.75}, ctx.fresh_rng("compose.0"))
     assert len(got) == 4  # deficit backfilled from short
 
 
@@ -1125,6 +1125,102 @@ def test_worker_pool_matches_serial_loading(tmp_path):
         assert torch.equal(serial[name]["views"], pooled[name]["views"]), name
         if "labels" in serial[name]:
             assert torch.equal(serial[name]["labels"], pooled[name]["labels"])
+
+
+def _prefetch_cfg(tmp_path, prefetch):
+    # quanta of 4 steps (prefetch only ever composes ahead WITHIN a quantum,
+    # so steps_per_admit must be > 1 for it to engage at all)
+    cfg = _toy_cfg(tmp_path / f"p{int(prefetch)}")
+    cfg["loader"] = {"workers": 2}
+    cfg["driver"]["rate"] = {"steps_per_admit": 4, "resample": True}
+    cfg["driver"]["max_steps"] = 8
+    cfg["driver"]["prefetch"] = prefetch
+    return cfg
+
+
+def test_prefetch_matches_serial_streaming(tmp_path):
+    # prefetch is a pure throughput knob: batches derive from (seed,
+    # compose_seq, memory contents), so composing ahead changes nothing
+    states = []
+    for prefetch in (False, True):
+        pipe = egolearn.build(_prefetch_cfg(tmp_path, prefetch))
+        pipe.driver.fit()
+        assert pipe.ctx.clock.step == 8
+        states.append({k: v.clone() for k, v in pipe.model.state_dict().items()})
+    for k in states[0]:
+        assert torch.equal(states[0][k], states[1][k]), f"prefetch diverged at {k}"
+
+
+def test_prefetch_matches_serial_offline(tmp_path):
+    states = []
+    for prefetch in (False, True):
+        cfg = _offline_cfg(tmp_path / f"o{int(prefetch)}")
+        cfg["loader"] = {"workers": 2}
+        cfg["driver"]["prefetch"] = prefetch
+        cfg["driver"]["max_steps"] = 4
+        pipe = egolearn.build(cfg)
+        pipe.driver.fit()
+        assert pipe.ctx.clock.step == 4
+        states.append({k: v.clone() for k, v in pipe.model.state_dict().items()})
+    for k in states[0]:
+        assert torch.equal(states[0][k], states[1][k]), f"prefetch diverged at {k}"
+
+
+def test_prefetch_resume_matches_uninterrupted(tmp_path):
+    # a snapshot can land while a prefetched batch is in flight; the sequence
+    # number is committed only on consumption, so the resumed run recomposes
+    # the identical batch and ends bit-identical to the uninterrupted run
+    from egolearn.utils.snapshot import load_snapshot, save_snapshot
+
+    ref = egolearn.build(_prefetch_cfg(tmp_path / "ref", True))
+    ref.driver.fit()  # straight to 8
+
+    cfg1 = _prefetch_cfg(tmp_path / "cut", True)
+    cfg1["driver"]["max_steps"] = 4
+    p1 = egolearn.build(cfg1)
+    p1.driver.fit()
+    snap = str(tmp_path / "prefetch_snap.pth")
+    save_snapshot(snap, p1.driver)
+
+    cfg2 = _prefetch_cfg(tmp_path / "res", True)
+    p2 = egolearn.build(cfg2)
+    load_snapshot(snap, p2.driver)
+    p2.driver.fit()
+
+    resumed = p2.model.state_dict()
+    for k, v in ref.model.state_dict().items():
+        assert torch.equal(v, resumed[k]), f"prefetch resume diverged at {k}"
+
+
+def test_prefetch_requires_workers(tmp_path):
+    cfg = _prefetch_cfg(tmp_path, True)
+    cfg["loader"] = {"workers": 0}
+    with pytest.raises(egolearn.PipelineError, match=r"loader\.workers"):
+        egolearn.build(cfg)
+
+
+def test_prefetch_refused_when_a_loss_mutates_sampling(tmp_path):
+    from egolearn.config.registry import LOSSES
+    from egolearn.model.losses.base import Loss
+
+    if "mutating_test_loss" not in LOSSES.names():
+
+        @LOSSES.register("mutating_test_loss")
+        class MutatingTestLoss(Loss):
+            # e.g. per-step replay priorities: what the composer would sample
+            # changes between steps, so batches cannot be composed ahead
+            mutates_sampling_state = True
+
+            def __init__(self, **kw):
+                super().__init__("mut")
+
+            def compute(self, batch, model, ctx):
+                return {}
+
+    cfg = _prefetch_cfg(tmp_path, True)
+    cfg["losses"].append({"_target_": "loss:mutating_test_loss"})
+    with pytest.raises(egolearn.PipelineError, match="mutates_sampling_state"):
+        egolearn.build(cfg)
 
 
 def test_worker_pool_registers_project_views(tmp_path):

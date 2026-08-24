@@ -8,6 +8,16 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Prefetch (`driver.prefetch`): the next batch is composed -- sampled,
+  decoded, augmented -- while the current one trains on the GPU, in both
+  loops. Valid because sampling state only changes when the stream advances;
+  a component that breaks that rule declares `mutates_sampling_state` and
+  the build then refuses to prefetch. Underneath, every batch's randomness
+  now derives from its own sequence number, making a batch a pure function
+  of (seed, sequence, memory contents): prefetch on/off provably changes
+  nothing, a snapshot taken while a prefetch is in flight resumes exactly,
+  and clips ride the worker pool alongside frames in one submission per
+  batch instead of one per slot. Covered by equality and resume tests.
 - V-JEPA video pretraining, with V-JEPA 2 as the reference design:
   `encoder:video_vit` (tubelet embedding, 3D rotary positions, and a
   visible-token forward so the context pass only pays for unmasked tokens),

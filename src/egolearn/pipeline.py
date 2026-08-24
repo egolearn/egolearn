@@ -279,6 +279,24 @@ def build(cfg: dict) -> Pipeline:
         )
 
     dcfg = cfg["driver"]
+    prefetch = bool(dcfg.get("prefetch", False))
+    if prefetch:
+        if workers <= 0:
+            raise PipelineError(
+                "driver.prefetch composes the next batch while the current "
+                "one trains, which needs loader.workers >= 1 (the in-process "
+                "load path manipulates global RNG state and cannot run "
+                "concurrently with training)"
+            )
+        mutators = [fn.name for fn in losses if fn.mutates_sampling_state]
+        mutators += [type(h).__name__ for h in hooks if h.mutates_sampling_state]
+        if mutators:
+            raise PipelineError(
+                f"driver.prefetch=true, but {mutators} declare "
+                "mutates_sampling_state: they change what the composer would "
+                "sample between steps, so batches cannot be composed ahead"
+            )
+
     driver: LockstepDriver | OfflineDriver
     if mode == "offline":
         driver = OfflineDriver(
@@ -294,6 +312,7 @@ def build(cfg: dict) -> Pipeline:
             max_steps=dcfg.get("max_steps"),
             subsample=dcfg.get("subsample", 1),
             grad_accumulation=dcfg.get("grad_accumulation", 1),
+            prefetch=prefetch,
             **(dcfg.get("batch") or {}),
         )
     else:
@@ -316,6 +335,7 @@ def build(cfg: dict) -> Pipeline:
             hooks=hooks,
             max_steps=dcfg.get("max_steps"),
             grad_accumulation=dcfg.get("grad_accumulation", 1),
+            prefetch=prefetch,
         )
 
     pipe = Pipeline(

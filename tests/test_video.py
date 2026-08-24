@@ -308,6 +308,23 @@ def test_offline_clip_unit_indexes_windows_and_trains(tmp_path):
     assert "batch.compose" in rep and rep["model.forward"]["count"] == 2
 
 
+def test_clip_worker_pool_matches_serial(tmp_path):
+    # clips travel through the worker pool like frames; the worker count
+    # stays a pure throughput knob for them too
+    def first_batch(workers):
+        cfg = _vjepa_cfg(tmp_path / f"w{workers}")
+        cfg["loader"] = {"workers": workers}
+        pipe = egolearn.build(cfg)
+        pipe.driver._run_warmup()
+        batch = pipe.composer.compose(pipe.recipe, pipe.memories, {}, pipe.ctx)
+        pipe.loader.close()
+        assert batch is not None
+        return batch
+
+    serial, pooled = first_batch(0), first_batch(2)
+    assert torch.equal(serial["clips"]["views"], pooled["clips"]["views"])
+
+
 def test_offline_clip_unit_needs_a_video_encoder(tmp_path):
     cfg = _offline_vjepa_cfg(tmp_path)
     cfg["model"] = {"encoders": {"vision": {"_target_": "encoder:toy_cnn", "dim": 32}}}

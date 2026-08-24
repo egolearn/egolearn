@@ -75,6 +75,7 @@ class OfflineDriver:
         subsample: int = 1,
         hooks: list | None = None,
         grad_accumulation: int = 1,
+        prefetch: bool = False,
     ):
         if unit not in ("frame", "clip"):
             raise ValueError(
@@ -106,6 +107,7 @@ class OfflineDriver:
         self.subsample = max(1, int(subsample))
         self.hooks = hooks or []
         self.grad_accumulation = max(1, int(grad_accumulation))
+        self.prefetch = bool(prefetch)
         self._base_lrs = [g["lr"] for g in optimizer.param_groups]
         self._skip_feats = own_forward_slots(losses)
         self.timer = StageTimer()
@@ -135,26 +137,39 @@ class OfflineDriver:
         return refs
 
     # ------------------------------------------------------------------
-    def _compose(self, refs) -> dict:
-        step = self.ctx.clock.step
+    def _pick(self, refs, order, b: int) -> list:
+        return [refs[order[b * self.n + j]] for j in range(self.n)]
+
+    def _compose(self, refs, seq: int | None = None) -> dict:
+        """Batch randomness derives from the batch's sequence number (see
+        Composer.compose for the identical contract): without `seq` it is
+        taken from the clock and committed immediately; the prefetch path
+        allocates it in the training thread and commits on consumption."""
+        if seq is None:
+            seq = self.ctx.clock.compose_seq
+            self.ctx.clock.compose_seq = seq + 1
         if self.unit == "clip":
-            # clip augmentation draws from the (seeded, snapshotted) global
-            # torch RNG inside apply_clip; the rng passed here only places
-            # the window, and exact-span window refs leave it unconsumed
-            rng = self.ctx.fresh_rng(f"clip:{step}:{self.slot}")
-            views = torch.stack(
-                [
-                    self.loader.clip_views(r, self.views, self.clip_len, self.clip_stride, rng)
-                    for r in refs
-                ],
-                dim=0,
-            )
-        else:
-            work = [
-                (r, 0, self.views, self.ctx.derive_seed(f"aug:{step}:{self.slot}:{i}"))
+            # index windows are exact-span, so the start pick consumes no
+            # randomness; augmentation comes from each item's derived seed
+            rng = self.ctx.fresh_rng(f"compose.{seq}")
+            work: list[tuple] = [
+                (
+                    "clip",
+                    r,
+                    self.loader.pick_clip_start(r, self.clip_len, self.clip_stride, rng),
+                    self.views,
+                    self.clip_len,
+                    self.clip_stride,
+                    self.ctx.derive_seed(f"aug:{seq}:{self.slot}:{i}"),
+                )
                 for i, r in enumerate(refs)
             ]
-            views = torch.stack(self.loader.frame_views_batch(work), dim=0)
+        else:
+            work = [
+                ("frame", r, 0, self.views, self.ctx.derive_seed(f"aug:{seq}:{self.slot}:{i}"))
+                for i, r in enumerate(refs)
+            ]
+        views = torch.stack(self.loader.views_batch(work), dim=0)
         slot = {
             K.SLOT_VIEWS: views,
             K.SLOT_MODALITY: modality_for_unit(self.unit),
@@ -228,6 +243,11 @@ class OfflineDriver:
 
         if self.ctx.clock.step > 0:
             print(f"[offline] resuming at step {self.ctx.clock.step}/{planned}", flush=True)
+        executor = None
+        if self.prefetch:
+            from concurrent.futures import ThreadPoolExecutor
+
+            executor = ThreadPoolExecutor(max_workers=1)
         while self.ctx.clock.step < planned:
             # per-epoch DERIVED shuffle: the order for epoch e depends only on
             # (seed, e), so a resumed run regenerates it exactly and continues
@@ -237,13 +257,32 @@ class OfflineDriver:
             # fresh_rng, not rng: the cached generator would be restored
             # already-consumed on resume and shuffle a different order
             self.ctx.fresh_rng(f"offline.shuffle.epoch{epoch}").shuffle(order)
+            pending = None  # (future, seq): the next batch, composing ahead
             for b in range(self.ctx.clock.step % batches_per_epoch, batches_per_epoch):
                 if self.ctx.clock.step >= planned:
                     break
-                picked = [refs[order[b * self.n + j]] for j in range(self.n)]
-                with self.timer.measure("batch.compose"):
-                    batch = self._compose(picked)
+                if pending is not None:
+                    fut, seq = pending
+                    pending = None
+                    with self.timer.measure("batch.compose"):
+                        batch = fut.result()
+                    # committed only now that the batch is handed to training,
+                    # so a snapshot taken mid-flight stays consistent
+                    self.ctx.clock.compose_seq = seq + 1
+                else:
+                    with self.timer.measure("batch.compose"):
+                        batch = self._compose(self._pick(refs, order, b))
+                if (
+                    executor is not None
+                    and b + 1 < batches_per_epoch
+                    and self.ctx.clock.step + 1 < planned
+                ):
+                    seq = self.ctx.clock.compose_seq
+                    nxt = self._pick(refs, order, b + 1)
+                    pending = (executor.submit(self._compose, nxt, seq), seq)
                 self._train_step(batch)
+        if executor is not None:
+            executor.shutdown(wait=True)
         if self.grad_accumulation > 1 and self.ctx.clock.step % self.grad_accumulation != 0:
             # apply the tail of an unfinished accumulation window
             if self.schedule is not None:

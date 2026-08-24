@@ -38,6 +38,12 @@ class Loss:
     # like), so the shared per-slot pooled precompute would be wasted work for
     # its slots -- see own_forward_slots below
     own_forward: bool = False
+    # True: this loss changes what the composer would sample BETWEEN steps
+    # (e.g. per-step replay priorities).  The driver contract says sampling
+    # state -- memory contents, labels -- only changes when the stream
+    # advances; a loss that breaks that declares it here, and the build then
+    # refuses `driver.prefetch` (batches could not be composed ahead).
+    mutates_sampling_state: bool = False
 
     def compute(self, batch: dict, model, ctx) -> dict[str, torch.Tensor]:
         raise NotImplementedError  # pragma: no cover

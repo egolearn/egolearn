@@ -79,10 +79,19 @@ and pipelining is exactly where determinism tends to break.  With those
 tests green, run the bench scripts on real data first and let the numbers
 decide the order.
 
-- [x] Decode+augment now fans out to worker processes (`loader.workers`),
-      with per-item seeds so the worker count never changes what a run
-      computes.  Still open: double-buffering the (now parallel) batch
-      composer against the GPU step, so data work and the GPU overlap too.
+- [x] Decode+augment fans out to worker processes (`loader.workers`), with
+      per-item seeds so the worker count never changes what a run computes;
+      frames and clips travel in one pool submission per batch.
+- [x] The composer double-buffers against the GPU step (`driver.prefetch`):
+      every batch's randomness derives from its own sequence number, so
+      prefetch on/off is provably identical (equality + resume tests), and
+      components that mutate sampling state between steps can declare it to
+      opt out.
+- [ ] Worker→trainer transport still pays pickle+pipe for every augmented
+      tensor (~40MB/batch on BabyCL): move to shared-memory buffers, or ship
+      uint8 and normalize on the GPU (needs views to declare a device
+      stage — an interface change). Pinned staging for truly async H2D
+      belongs to the same pass.
 - [ ] Replay re-decodes the same frames every time it samples them (memory
       stores refs) — a small LRU cache of decoded tensors would help a lot.
 - [ ] bf16 and channels_last on the backbone.

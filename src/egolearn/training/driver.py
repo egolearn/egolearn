@@ -71,6 +71,7 @@ class LockstepDriver:
         max_steps: int | None = None,
         grad_accumulation: int = 1,
         stream_head_size: int = 512,
+        prefetch: bool = False,
     ):
         self.stream = stream
         self.admission = admission
@@ -89,6 +90,20 @@ class LockstepDriver:
         self.hooks = hooks or []
         self.max_steps = max_steps
         self.grad_accumulation = max(1, int(grad_accumulation))
+        # Prefetch: compose the NEXT batch (CPU: sampling, decode, augment)
+        # while the current one trains on the GPU.  Valid because sampling
+        # state -- memory contents, label stores, stream head -- only changes
+        # when the stream advances, never between the steps of one quantum
+        # (components that break that rule declare mutates_sampling_state,
+        # and the build refuses to prefetch; see pipeline.build).  Batch
+        # randomness derives from the batch's sequence number, so prefetch
+        # on/off is a pure throughput knob: same batches either way.
+        self.prefetch = bool(prefetch)
+        self._prefetch_pool = None
+        if self.prefetch:
+            from concurrent.futures import ThreadPoolExecutor
+
+            self._prefetch_pool = ThreadPoolExecutor(max_workers=1)
         self._base_lrs = [g["lr"] for g in optimizer.param_groups]
         self._skip_feats = own_forward_slots(losses)
         self.timer = StageTimer()
@@ -260,17 +275,39 @@ class LockstepDriver:
         k = int(self.rate["steps_per_admit"])
         resample = bool(self.rate["resample"])
         batch = None
-        for _i in range(k):
+        pending = None  # (future, seq): the next batch, composing ahead
+        for i in range(k):
             if batch is None or resample:
-                with self.timer.measure("batch.compose"):
-                    batch = self.composer.compose(
-                        self.recipe,
-                        self.memories,
-                        {s: list(d) for s, d in self.stream_head.items()},
-                        self.ctx,
-                    )
+                if pending is not None:
+                    fut, seq = pending
+                    pending = None
+                    with self.timer.measure("batch.compose"):
+                        batch = fut.result()
+                    # committed only now that the batch is handed to training,
+                    # so a snapshot taken mid-flight stays consistent (the
+                    # resumed run rebuilds the identical batch from this seq)
+                    self.ctx.clock.compose_seq = seq + 1
+                else:
+                    with self.timer.measure("batch.compose"):
+                        batch = self.composer.compose(
+                            self.recipe,
+                            self.memories,
+                            {s: list(d) for s, d in self.stream_head.items()},
+                            self.ctx,
+                        )
             if batch is None:
                 return  # strict slot unfilled and no fallback: skip quietly
+            if self._prefetch_pool is not None and resample and i + 1 < k:
+                # never across the quantum boundary: the next advance changes
+                # what the composer would sample
+                seq = self.ctx.clock.compose_seq
+                head = {s: list(d) for s, d in self.stream_head.items()}
+                pending = (
+                    self._prefetch_pool.submit(
+                        self.composer.compose, self.recipe, self.memories, head, self.ctx, seq
+                    ),
+                    seq,
+                )
             logs: dict[str, float] = {}
             total = None
             with self.timer.measure("model.forward"):
@@ -355,6 +392,8 @@ class LockstepDriver:
                 h.on_admit(self, len(self.stream_head))
             self._train_steps()
         self._flush_grad_accumulation()
+        if self._prefetch_pool is not None:
+            self._prefetch_pool.shutdown(wait=True)
         self.composer.loader.close()
         for h in self.hooks:
             h.on_end(self)

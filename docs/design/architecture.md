@@ -137,10 +137,14 @@ optimizable paths. `decoder:poodle` is the stub for the lab's efficient
 video pipeline; its docstring lists what the integration has to provide.
 
 `loading.py` is the Loader, the only place refs become tensors. Decode and
-augmentation can fan out to worker processes (`loader.workers`); each
-frame's augmentation seed derives from what the item is (step, slot,
-position), so the worker count is a throughput knob that never changes what
-a run computes. It serves
+augmentation — frames and clips alike, one submission per batch — can fan
+out to worker processes (`loader.workers`); every item's randomness derives
+from what the item is (the batch's sequence number, slot, position), so the
+worker count is a throughput knob that never changes what a run computes.
+On top of that, `driver.prefetch` composes the next batch while the current
+one trains on the GPU — safe because sampling state only changes when the
+stream advances, and a component that breaks that rule declares
+`mutates_sampling_state`, which makes the build refuse to prefetch. It serves
 every data unit — single frames, K frames sampled from a segment, pairs, and
 contiguous clips — and its time shows up as `data.load` in the timing
 report. `views.py` holds named augmentation pipelines (`center_crop`,
@@ -304,9 +308,11 @@ should be compared against that before merging. Current single-thread
 measurements (one L40S, 2026-08): stream ingest runs at ~700× realtime and
 is nowhere near the bottleneck; batch composition takes ~1.4 s (about 80% of
 it in the ms-view Gaussian blur), capping a single-threaded run at ~0.7
-steps/s. The planned fix: keep the decision-making serial (which refs to
-sample, which augmentation parameters to use) and spread the actual
-decode+augment work, which has no ordering constraints, over a worker pool.
+steps/s. The fix, both halves now in: the decision-making stays serial
+(which refs to sample, where a clip starts), the decode+augment work spreads
+over a worker pool (`loader.workers`), and the whole compose overlaps the
+GPU step (`driver.prefetch`). Measured on the BabyCL reproduction run (one
+A100): composition 2.6 s → 0.56 s per batch, ~4× end to end.
 
 Resume works in both modes: pass `resume=auto` (or a snapshot path) to the
 train entry point. A snapshot holds everything a run needs to continue —

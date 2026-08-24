@@ -14,15 +14,17 @@ If a StageTimer is attached (`loader.timer`, set by the training driver),
 decode+augment time is recorded under "data.load" -- this is the number that
 answers "how much latency do the data abstractions cost?".
 
-Parallelism: `frame_views_batch` can fan decode+augment out to a pool of
-worker processes (`loader.workers` in the config; 0 = in-process).  The
-worker count is a pure throughput knob and never changes what a run
-computes, because every frame's augmentation randomness comes from its own
-derived seed (Context.derive_seed) rather than from a shared RNG stream --
-the same seeds give the same tensors whether 0 or 8 workers ran them.
-Streaming order stays intact: only stage two (refs -> tensors) runs in
-parallel; everything that decides WHICH refs to load is still sequential.
-Clips keep the serial path for now (BabyCL/MS batches are frames).
+Parallelism: `views_batch` can fan decode+augment out to a pool of worker
+processes (`loader.workers` in the config; 0 = in-process).  The worker
+count is a pure throughput knob and never changes what a run computes,
+because every item's augmentation randomness comes from its own derived
+seed (Context.derive_seed) rather than from a shared RNG stream -- the same
+seeds give the same tensors whether 0 or 8 workers ran them.  Frames and
+clips both travel through the pool; a clip item carries its start index
+(picked sequentially by the caller) so the worker only decodes and
+augments.  Streaming order stays intact: only stage two (refs -> tensors)
+runs in parallel; everything that decides WHICH refs to load is still
+sequential.
 """
 
 from __future__ import annotations
@@ -41,8 +43,11 @@ if TYPE_CHECKING:
 
     from egolearn.training.profiling import StageTimer
 
-# WorkItem: what one output row of frame_views_batch needs.
-# (ref, frame index within the ref, view names, augmentation seed)
+# WorkItem: what one output row of views_batch needs, tagged by kind:
+#   ("frame", ref, frame_index, view_names, seed)              -> [V, C, H, W]
+#   ("clip", ref, start, view_names, clip_len, stride, seed)   -> [V, T, C, H, W]
+# The seed pins the item's augmentation randomness; the frame index / clip
+# start were already picked sequentially by the caller.
 WorkItem = tuple
 
 _WORKER: dict = {}  # per-process state, filled by _pool_init in each worker
@@ -61,9 +66,23 @@ def _pool_init(stream: Stream, view_specs: dict, imports: list[str]) -> None:
     _WORKER["views"] = ViewBank(view_specs)
 
 
+def _decode_clip(stream: Stream, ref, start: int, clip_len: int, stride: int) -> torch.Tensor:
+    """[T, C, H, W] float clip; indices past the ref's end clamp to the last
+    frame (pad-by-repetition, the common video convention)."""
+    n = stream.num_frames(ref)
+    idx = [min(start + j * stride, n - 1) for j in range(clip_len)]
+    return torch.stack([TF.to_tensor(stream.open_frame(ref, i)) for i in idx])
+
+
 def _pool_task(item: WorkItem) -> torch.Tensor:
-    ref, index, view_names, seed = item
     # worker processes own their RNGs, so plain seeding is race-free here
+    if item[0] == "clip":
+        _, ref, start, view_names, clip_len, stride, seed = item
+        clip = _decode_clip(_WORKER["stream"], ref, start, clip_len, stride)
+        torch.manual_seed(seed)
+        random.seed(seed)
+        return _WORKER["views"].apply_clip(clip, view_names)
+    _, ref, index, view_names, seed = item
     torch.manual_seed(seed)
     random.seed(seed)
     pil = _WORKER["stream"].open_frame(ref, index)
@@ -172,16 +191,24 @@ class Loader:
             finally:
                 random.setstate(py_state)
 
-    def frame_views_batch(self, items: list[WorkItem]) -> list[torch.Tensor]:
-        """Load many frames, one [V,C,H,W] tensor per item, in item order.
+    def views_batch(self, items: list[WorkItem]) -> list[torch.Tensor]:
+        """Load many items, one view tensor per item, in item order (frames
+        give [V,C,H,W], clips [V,T,C,H,W]; see the WorkItem shapes above).
 
-        items: (ref, frame_index, view_names, seed) tuples.  workers=0 loads
-        in-process; otherwise decode+augment fan out to the process pool.
-        Same items, same tensors, either way."""
+        workers=0 loads in-process; otherwise decode+augment fan out to the
+        process pool.  Same items, same tensors, either way."""
         if not items:
             return []
         if self.workers <= 0:
-            return [self.frame_views(r, i, v, seed=s) for r, i, v, s in items]
+            out = []
+            for item in items:
+                if item[0] == "clip":
+                    _, ref, start, views, clip_len, stride, seed = item
+                    out.append(self._one_clip(ref, start, views, clip_len, stride, seed))
+                else:
+                    _, ref, index, views, seed = item
+                    out.append(self.frame_views(ref, index, views, seed=seed))
+            return out
         pool = self._ensure_pool()
         chunk = max(1, len(items) // (self.workers * 4))
         if self.timer is not None:
@@ -190,17 +217,25 @@ class Loader:
         return list(pool.map(_pool_task, items, chunksize=chunk))
 
     def clip_views(
-        self, ref, view_names: list[str], clip_len: int, stride: int, rng: random.Random
+        self,
+        ref,
+        view_names: list[str],
+        clip_len: int,
+        stride: int,
+        rng: random.Random,
+        seed: int | None = None,
     ) -> torch.Tensor:
         """Decode a contiguous clip from `ref` and apply the named views,
         returning a [V,T,C,H,W] tensor.
 
         A clip is T=clip_len frames taken every `stride` frames from a random
-        start inside the ref; indices past the end clamp to the last frame,
-        so a short ref yields a clip padded by repeating that frame (the
-        common video convention).  Augmentation is temporally consistent:
-        each clip view pipeline runs once on the whole [T,C,H,W] tensor, so
-        all T frames get the same random crop etc. (see views.apply_clip).
+        start inside the ref (drawn from `rng`); indices past the end clamp
+        to the last frame, so a short ref yields a clip padded by repeating
+        that frame (the common video convention).  Augmentation is temporally
+        consistent: each clip view pipeline runs once on the whole [T,C,H,W]
+        tensor, so all T frames get the same random crop etc. (see
+        views.apply_clip).  With a `seed`, augmentation randomness comes from
+        that seed instead of the global stream, like frame_views.
 
         `view_names` must name clip-domain views (clip_simclr,
         clip_center_crop, ...).  Frames are decoded one by one through
@@ -208,16 +243,26 @@ class Loader:
         VideoDecoder.read_window is an optimization left for the Poodle
         integration.
         """
+        start = self.pick_clip_start(ref, clip_len, stride, rng)
+        return self._one_clip(ref, start, view_names, clip_len, stride, seed)
 
+    def _one_clip(
+        self, ref, start: int, view_names: list[str], clip_len: int, stride: int, seed: int | None
+    ) -> torch.Tensor:
         def _load() -> torch.Tensor:
-            n = self.stream.num_frames(ref)
-            start = self.pick_clip_start(ref, clip_len, stride, rng)
-            idx = [min(start + j * stride, n - 1) for j in range(clip_len)]
-            clip = torch.stack([TF.to_tensor(self.stream.open_frame(ref, i)) for i in idx])
-            return clip  # [T,C,H,W]
+            clip = _decode_clip(self.stream, ref, start, clip_len, stride)
+            if seed is None:
+                return self.views.apply_clip(clip, view_names)
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(seed)
+                py_state = random.getstate()
+                random.seed(seed)
+                try:
+                    return self.views.apply_clip(clip, view_names)
+                finally:
+                    random.setstate(py_state)
 
         if self.timer is not None:
             with self.timer.measure("data.load"):
-                clip = _load()
-                return self.views.apply_clip(clip, view_names)
-        return self.views.apply_clip(_load(), view_names)
+                return _load()
+        return _load()

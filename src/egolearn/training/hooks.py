@@ -16,6 +16,11 @@ import torch
 
 
 class Hook:
+    # True: this hook changes what the composer would sample between steps
+    # (memory contents, labels, priorities); the build then refuses
+    # `driver.prefetch` -- same contract as Loss.mutates_sampling_state
+    mutates_sampling_state: bool = False
+
     def on_step(self, driver, logs: dict[str, float]) -> None:
         pass
 
