@@ -35,6 +35,18 @@ def _finish(size):
     return [T.ToTensor(), T.Normalize(IMAGENET_MEAN, IMAGENET_STD)]
 
 
+@VIEWS.register("resize")
+def resize(size: int = 224, vertical_flip: bool = False):
+    """Squash the whole frame to size x size (aspect-distorting), no crop --
+    CVCL's and BabyCL's evaluation preprocessing (multimodal_data_module's
+    base transform).  Evaluations reproducing their numbers must use this,
+    not center_crop: on wide egocentric frames the two differ by points."""
+    ops: list = [T.Resize((size, size), interpolation=T.InterpolationMode.BICUBIC)]
+    if vertical_flip:
+        ops.insert(0, T.Lambda(ImageOps.flip))
+    return T.Compose(ops + _finish(size))
+
+
 @VIEWS.register("center_crop")
 def center_crop(size: int = 224, vertical_flip: bool = False):
     ops = [T.Resize(size, interpolation=T.InterpolationMode.BICUBIC), T.CenterCrop(size)]

@@ -51,7 +51,12 @@ class FourAFCProbe(Probe):
         self.name = name
         with open(manifest) as f:
             self.trials: list[dict] = json.load(f)["trials"]
-        self.tokenizer = VocabTokenizer.from_json(vocab_json, normalize=normalize_text)
+        # canonical protocol (Vong et al., kept by BabyCL's eval): the
+        # category name is ONE bare token -- no <sos>/<eos>.  Wrapping it
+        # dilutes the word embedding with special tokens and costs points.
+        self.tokenizer = VocabTokenizer.from_json(
+            vocab_json, add_sos_eos=False, normalize=normalize_text
+        )
         self.vision_head = vision_head
         self.transform = VIEWS.get(view)(size=size)
 
