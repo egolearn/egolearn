@@ -18,6 +18,7 @@ outputs/
 multirun/
 wandb/
 checkpoints/
+projects/*/model/
 /data/
 frames/
 runs/
