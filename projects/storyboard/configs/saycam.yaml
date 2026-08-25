@@ -1,0 +1,119 @@
+# Memory Storyboard on SAYCam -- reproduction config.
+#
+# Code-verified against agentic-learning-ai-lab/memory-storyboard
+# (train_storyboard_merging.py, replay_buffer.py, utils.py), README example:
+#   curr 64 + replay 448, short FIFO 5000 (stream subsample 8) /
+#   long reservoir 45000, crop 112, SGD lr 0.05, class_length 7500,
+#   prototype merging with dynamic quantile threshold (merge_threshold 0.003).
+#
+# How to tell this config apart from the babycl one, structurally:
+#   * memory unit = FRAME; both tiers admit from the stream INDEPENDENTLY (no spill);
+#     the short FIFO admits every 8th frame (admit_stride), the long
+#     reservoir ingests every frame;
+#   * batch = two slots, each drawing from ONE tier;
+#   * NT-Xent over curr+replay JOINTLY; TCL over the replay slot only,
+#     with GLOBAL class ids resolved through the revisable LabelStore;
+#   * segmentation embeddings come from the LEARNER'S OWN backbone;
+#   * training pace: 1 gradient step per 64-frame stream advance, and with more
+#     steps the SAME batch would be reused (resample=false == the original
+#     num_grads semantics).
+
+defaults:
+  - /config          # packaged root: seed, wandb, dry_run, resume
+  - _self_
+
+hydra:
+  searchpath:
+    - pkg://egolearn.configs
+
+run_dir: runs/storyboard_saycam
+seed: 42
+device: cuda
+
+# the method-specific components (verbatim greedy_hierarchical_clustering,
+# storyboard_recluster, learner) register themselves when imported
+_imports_: [egolearn.methods.storyboard]
+
+stream:
+  _target_: "stream:saycam"
+  root_dir: /path/to/saycam_5fps          # <- data location
+  fps: 5.0
+
+views:
+  # crop 112 + train-time vertical flip: SAYCam raw frames are upside-down
+  # and the original MS flips at train time (BabyCL data is pre-flipped).
+  ms_v1: {name: simclr_strong, size: 112, view_idx: 0, scale_min: 0.08, vertical_flip: true}
+  ms_v2: {name: simclr_strong, size: 112, view_idx: 1, scale_min: 0.08, vertical_flip: true}
+  eval:  {name: center_crop,   size: 112, vertical_flip: true}
+
+label_stores: [storyboard]
+
+embedders:
+  cluster: {_target_: "embedder:learner", encoder: vision, view: eval}
+
+admission:
+  # every frame becomes a RawFrame item (frame-granularity memory)
+  - {_target_: "admission:frame_emitter", subsample: 1}
+  # labels before any reclustering: fixed-length chunks of class_length frames
+  # (StreamingDataset's default labels)
+  - {_target_: "admission:fixed_window_labeler", class_length: 7500,
+     label_store: storyboard}
+  # recluster on short-window turnover + retroactive relabeling + prototype
+  # merging (1:1 port; window mirrors the short FIFO: 5000 entries at
+  # stride 8; prototypes sampled <=32/class from the LONG buffer)
+  - {_target_: "admission:storyboard_recluster",
+     window_frames: 5000, window_stride: 8, class_length: 7500,
+     warmup: 0, merge: true, merge_threshold: 0.003, prototype_samples: 32,
+     prototype_tier: long, cp_subsample: 1,
+     label_store: storyboard, embedder: cluster, memory: frames}
+
+memories:
+  frames:
+    tiers:
+      short: {capacity: 5000,  update: fifo, admit_stride: 8}
+      long:  {capacity: 45000, update: reservoir_weighted}
+    admit_to: [short, long]      # MS: both buffers ingest the stream independently
+    overflow: {}
+
+routes:
+  RawFrame: frames
+
+recipe:
+  slots:
+    - {name: curr,   source: {kind: tier, memory: frames, tier: short},
+       n: 64,  unit: frame, views: [ms_v1, ms_v2],
+       labels_from: storyboard, strict: true}
+    - {name: replay, source: {kind: tier, memory: frames, tier: long},
+       n: 448, unit: frame, views: [ms_v1, ms_v2],
+       labels_from: storyboard, strict: true}
+
+model:
+  encoders:
+    vision: {_target_: "encoder:resnext50", pretrained: false}
+  heads:
+    proj128: {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 128]}
+    # num classes >= len(stream)/class_length + headroom for unmerged splits
+    cls:     {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 2000]}
+
+losses:
+  # NT-Xent over the concatenated curr+replay batch (one joint loss, as in MS)
+  - {_target_: "loss:ntxent", name: instance,
+     slots: [curr, replay], head: proj128, temperature: 0.1, weight: 1.0}
+  # TCL on the replay portion only, global (revisable) storyboard classes
+  - {_target_: "loss:tcl", name: temporal,
+     slots: [replay], head: cls, num_classes: 2000, filter_unseen: true, weight: 1.0}
+
+solver:
+  opt: sgd
+  groups:
+    - {match: ".*", lr: 0.05, weight_decay: 1.0e-4}
+  schedule: {constant: true}     # original MS runs constant-LR SGD
+
+driver:
+  advance: {kind: observations, n: 64}          # step_frame_size
+  rate: {steps_per_admit: 1, resample: false}   # num_grads semantics (same batch)
+  warmup: {tier_full: frames.long}              # init_buffer_size prefill
+
+hooks:
+  log_every: 100
+  checkpoint_every: 10000

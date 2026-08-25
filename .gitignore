@@ -18,8 +18,10 @@ outputs/
 multirun/
 wandb/
 checkpoints/
-data/
+projects/*/model/
+/data/
 frames/
+runs/
 
 # OS / editor
 .DS_Store
