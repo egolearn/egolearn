@@ -1,6 +1,11 @@
 name: advisory-review
 # The agent-session reviewer (reads the PR head read-only). Runs on PR
 # open/reopen and the autoresearch:review label, not every push.
+# terra (hermes, openai-direct) is the sole advisory reviewer: the opus
+# advisory job is sunset (2026-08-26) — terra converges where opus
+# manufactured rounds, validated here as the second opinion and on the
+# autoresearch arc. The wide lens round stays in autoresearch, where PR
+# volume warrants it.
 on:
   pull_request_target:
     types: [opened, reopened, labeled]
@@ -14,23 +19,11 @@ jobs:
     uses: agentic-learning-ai-lab/autoresearch/.github/workflows/advisory-review-agent.yml@main
     with:
       bot_login: agentic-learning-bot
-    secrets:
-      anthropic_reviewer_key: ${{ secrets.ANTHROPIC_REVIEWER_KEY }}
-      checkout_ssh_key: ${{ secrets.AUTORESEARCH_CHECKOUT_KEY }}
-
-  # Independent second opinion (terra via hermes/OpenRouter) — same reusable,
-  # different backend and opinion label; runs through the least-token split.
-  second-opinion:
-    if: github.event.action != 'labeled' || github.event.label.name == 'autoresearch:review'
-    uses: agentic-learning-ai-lab/autoresearch/.github/workflows/advisory-review-agent.yml@main
-    with:
-      bot_login: agentic-learning-bot
       backend: hermes
       # openai-direct: same token rate, no OpenRouter platform fee; the
       # model id is provider-native
       hermes_provider: openai
       model: gpt-5.6-terra
-      opinion_label: second opinion — terra
     secrets:
       openai_reviewer_key: ${{ secrets.OPENAI_REVIEWER_KEY }}
       checkout_ssh_key: ${{ secrets.AUTORESEARCH_CHECKOUT_KEY }}
