@@ -83,15 +83,20 @@ def generate_trials(
 
 
 def generate_split(by_cat: dict[str, list[Path]], test_frac: float, seed: int) -> dict:
-    """Stratified train/test split over ALL categories, frozen by seed."""
+    """Stratified train/test split over ALL categories, frozen by seed.
+    Every class keeps at least one example on each side."""
+    if not 0.0 < test_frac < 1.0:
+        raise SystemExit(f"--test_frac must be in (0, 1), got {test_frac}")
     rng = random.Random(seed)
     classes = sorted(by_cat)
     train: list[dict] = []
     test: list[dict] = []
     for label, cat in enumerate(classes):
         files = [str(p) for p in by_cat[cat]]
+        if len(files) < 2:
+            raise SystemExit(f"category {cat!r} has {len(files)} crop(s); need >= 2 to split")
         rng.shuffle(files)
-        n_test = max(1, round(test_frac * len(files)))
+        n_test = min(max(1, round(test_frac * len(files))), len(files) - 1)
         test.extend({"image": p, "label": label} for p in files[:n_test])
         train.extend({"image": p, "label": label} for p in files[n_test:])
     return {"classes": classes, "train": train, "test": test}

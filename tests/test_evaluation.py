@@ -62,6 +62,11 @@ def test_babyview_prepare_follows_the_frozen_protocol(tmp_path):
         assert any(e["label"] == label for e in train)
         assert any(e["label"] == label for e in test)
     assert prepare.generate_split(by_cat, 0.2, 0) == split
+    # a degenerate fraction cannot empty either side (autoresearch finding)
+    with pytest.raises(SystemExit, match="test_frac"):
+        prepare.generate_split(by_cat, 1.0, 0)
+    high = prepare.generate_split(by_cat, 0.99, 0)
+    assert all(any(e["label"] == c for e in high["train"]) for c in range(len(all_cats)))
 
 
 def test_linear_probe_learns_and_consumes_no_randomness(tmp_path):
