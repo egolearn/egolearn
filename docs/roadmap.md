@@ -53,6 +53,7 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
 
 ## Phase 4 — Readout evals
 
+- [x] Novel-object shape-vs-texture bias probe with deterministic stimuli
 - [ ] Linear probe: one implementation, no apex dependency
 - [ ] kNN/SVM readout with explicit split files and validation-based selection
 

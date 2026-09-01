@@ -8,6 +8,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Shape-bias evaluation from Tartaglini et al. Experiment 3: pinned,
+  deterministic 80%-size unaligned stimuli; a registered image-representation
+  probe over all 57,600 novel shape/texture triplets.
 - Prefetch (`driver.prefetch`): the next batch is composed -- sampled,
   decoded, augmented -- while the current one trains on the GPU, in both
   loops. Valid because sampling state only changes when the stream advances;

@@ -335,6 +335,7 @@ benchmark owns a package under `src/egolearn/evaluation/benchmarks/`, ported
 | `labeled_s_4afc` | target word vs 4 candidate images, argmax cosine | `four_afc_acc` |
 | `vtwt` | one image, two 2-word phrases; the positive must strictly win | `vtwt_acc` |
 | `baby_winoground` | 2×2 image/phrase matrix; group-correct iff both directions hold | `bw_group_acc` + per-context accs |
+| `shape_bias` | novel shape/texture triplets, cosine preference | `shape_bias` |
 
 Some quirks of the originals are preserved on purpose (OOV words map to
 padding index 0 and still count in the mean-pool denominator; no sos/eos;
@@ -524,7 +525,7 @@ method = one paper's research code, eval = benchmark code.
 | `src/egolearn/training/profiling.py` | shared | the per-stage timing report |
 | `src/egolearn/utils/snapshot.py` | shared | save/restore the whole world; streaming resume replays the stream |
 | `src/egolearn/evaluation/probe.py` | shared | the `Probe` protocol |
-| `src/egolearn/evaluation/benchmarks/` | eval | 4AFC, visual two-word test, Baby Winoground probes |
+| `src/egolearn/evaluation/benchmarks/` | eval | 4AFC, visual two-word test, Baby Winoground, shape-bias probes |
 | `src/egolearn/methods/storyboard/` | method | verbatim clustering + recluster admission + learner embedder |
 | `src/egolearn/methods/babycl/refine.py` | method | verbatim segmentation math from `online_ms_refine.py` |
 | `src/egolearn/methods/babycl/segmenter.py` | method | the OnlineSegmenter, 1:1 |
