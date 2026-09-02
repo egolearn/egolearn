@@ -1,6 +1,6 @@
 """Labeled-S probes backed by the generic linear scorers.
 
-The canonical Memory Storyboard metadata contains one dataset-relative image
+The benchmark dataset contains one dataset-relative image
 path and integer label per row.  The first 2,886 rows are training examples;
 the remaining 2,901 are evaluation examples.  This adapter resolves those
 paths against a caller-provided Labeled-S root and constructs the generic
@@ -10,6 +10,9 @@ The small split file is downloaded from an immutable upstream commit by
 default and verified by SHA-256.  ``split_file`` supports offline clusters and
 local mirrors.  Labeled-S itself is licensed separately and is never
 downloaded here.
+
+The benchmark was first proposed in "How Well Do Unsupervised Learning Algorithms
+Model Human Real-time and Life-long Learning?" by Chengxu Zhuang et al.
 """
 
 from __future__ import annotations
