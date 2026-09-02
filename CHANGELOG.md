@@ -8,6 +8,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Shape-bias evaluation from Tartaglini et al. Experiment 3: pinned,
+  deterministic 80%-size unaligned stimuli; a registered image-representation
+  probe over all 57,600 novel shape/texture triplets.
 - BabyView benchmarks (`benchmarks/babyview_4afc/`): zero-shot 4AFC (the
   Labeled-S 4150 protocol on the public BabyView object crops, scored by
   the unchanged probe:four_afc; the trial generator is an RNG-faithful

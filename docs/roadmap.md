@@ -53,6 +53,7 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
 
 ## Phase 4 — Readout evals
 
+- [x] Novel-object shape-vs-texture bias probe with deterministic stimuli
 - [x] Linear probe: one implementation, no apex dependency (`probe:linear`:
       frozen features + zero-init logistic regression via full-batch L-BFGS,
       deterministic, consumes no RNG; splits frozen in manifests; first

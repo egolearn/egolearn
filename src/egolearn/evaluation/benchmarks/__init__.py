@@ -8,6 +8,6 @@ no single method -- every method is scored on them.
 
 Available: labeled_s_4afc/ and babyview_4afc/ (trial manifests for the
 generic probe:four_afc; babyview also ships a probe:linear split), vtwt/
-(probe:vtwt), baby_winoground/ (probe:baby_winoground).
+(probe:vtwt), baby_winoground/ (probe:baby_winoground), shape_bias/ (probe:shape_bias).
 Planned: linear_probe_imagenet/, rvs_ego/, egolife/, intphys/ ...
 """
