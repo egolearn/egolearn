@@ -8,6 +8,17 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Gradient-based linear decoding (`probe:linear_sgd`):
+  stochastic train crops, frozen encoder, optional feature L2 normalization,
+  SGD, LARC, cosine decay, and deterministic RNG isolation. Direct adapters are available
+  for full ImageNet (`probe:imagenet_linear_sgd`, caller-supplied ImageFolder
+  root) and Labeled-S (`probe:labeled_s_linear_sgd`).
+- Direct Labeled-S linear probing (`benchmarks/labeled_s_linear/`,
+  `probe:labeled_s_linear`): the canonical
+  metadata is pinned and resolved in memory against a
+  user-supplied dataset root using its frozen 2,886-row train boundary, with no
+  generated machine-specific manifest. The generic linear scorer now accepts
+  an in-memory classification split while retaining JSON-manifest compatibility.
 - Shape-bias evaluation from Tartaglini et al. Experiment 3: pinned,
   deterministic 80%-size unaligned stimuli; a registered image-representation
   probe over all 57,600 novel shape/texture triplets.
@@ -16,7 +27,7 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   the unchanged probe:four_afc; the trial generator is an RNG-faithful
   port of the source repo's, and center-crop preprocessing is frozen by a
   3-models x 3-transforms comparison) plus a 72-class linear-probe split.
-- Linear probing (`probe:linear`): held-out top-1 of a zero-initialized
+- Fixed-feature linear probing (`probe:linear`): held-out top-1 of a zero-initialized
   logistic regression fitted with full-batch L-BFGS on frozen,
   train-standardized features. Deterministic and RNG-free, so probing
   mid-training cannot perturb the run (tested); splits are frozen in the
@@ -93,8 +104,6 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   batch recipes, SSL + multimodal losses, lockstep streaming driver and
   offline-IID driver, progress-clock LR schedule, world-state snapshots with
   deterministic resume, stage-latency profiling, wandb hook.
-- Memory Storyboard and BabyCL as 1:1 method ports (`src/egolearn/methods/`)
-  with reproduction configs under `projects/`.
 - Evaluation probes: Labeled-S 4AFC, visual two-word test, Baby Winoground.
 - Hydra train entry point (`python -m egolearn.train`); registry-based
   component instantiation under the hydra shell.

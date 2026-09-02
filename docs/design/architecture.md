@@ -333,6 +333,9 @@ benchmark owns a package under `src/egolearn/evaluation/benchmarks/`, ported
 | Benchmark | Protocol | Metric |
 |---|---|---|
 | `labeled_s_4afc` | target word vs 4 candidate images, argmax cosine | `four_afc_acc` |
+| `labeled_s_linear` | frozen-split 26-class fixed-feature or gradient-trained linear decoding | `top1`, `train_top1` |
+| `babyview_4afc` | Labeled-S 4AFC protocol on BabyView crops; frozen-split 72-class linear probe | `four_afc_acc`; `top1`, `train_top1` |
+| `imagenet_linear` | full ImageNet ImageFolder train/val; frozen encoder + augmented SGD/LARC linear decoder | `top1`, `train_top1` |
 | `vtwt` | one image, two 2-word phrases; the positive must strictly win | `vtwt_acc` |
 | `baby_winoground` | 2×2 image/phrase matrix; group-correct iff both directions hold | `bw_group_acc` + per-context accs |
 | `shape_bias` | novel shape/texture triplets, cosine preference | `shape_bias` |
@@ -340,7 +343,12 @@ benchmark owns a package under `src/egolearn/evaluation/benchmarks/`, ported
 Some quirks of the originals are preserved on purpose (OOV words map to
 padding index 0 and still count in the mean-pool denominator; no sos/eos;
 32-token truncation), since OOV handling is part of what these benchmarks
-measure. Linear probing and BabyView object detection are on the roadmap.
+measure. `probe:linear` caches one deterministic view and solves a standardized
+logistic regression with full-batch L-BFGS. `probe:linear_sgd` instead ports
+Memory Storyboard's ImageNet protocol: it recomputes stochastic train crops
+through the frozen encoder for 10 epochs and optimizes an L2-normalized linear
+head with SGD, LARC, and cosine decay. Labeled-S supports both; BabyView uses
+the fixed-feature protocol, and full ImageNet uses the gradient protocol.
 
 ### Configs: hydra outside, registries inside
 
@@ -525,7 +533,7 @@ method = one paper's research code, eval = benchmark code.
 | `src/egolearn/training/profiling.py` | shared | the per-stage timing report |
 | `src/egolearn/utils/snapshot.py` | shared | save/restore the whole world; streaming resume replays the stream |
 | `src/egolearn/evaluation/probe.py` | shared | the `Probe` protocol |
-| `src/egolearn/evaluation/benchmarks/` | eval | 4AFC, visual two-word test, Baby Winoground, shape-bias probes |
+| `src/egolearn/evaluation/benchmarks/` | eval | 4AFC, linear decoding, visual two-word test, Baby Winoground, shape-bias probes |
 | `src/egolearn/methods/storyboard/` | method | verbatim clustering + recluster admission + learner embedder |
 | `src/egolearn/methods/babycl/refine.py` | method | verbatim segmentation math from `online_ms_refine.py` |
 | `src/egolearn/methods/babycl/segmenter.py` | method | the OnlineSegmenter, 1:1 |

@@ -7,7 +7,9 @@ are concrete datasets rather than shared infrastructure, and they belong to
 no single method -- every method is scored on them.
 
 Available: labeled_s_4afc/ and babyview_4afc/ (trial manifests for the
-generic probe:four_afc; babyview also ships a probe:linear split), vtwt/
-(probe:vtwt), baby_winoground/ (probe:baby_winoground), shape_bias/ (probe:shape_bias).
-Planned: linear_probe_imagenet/, rvs_ego/, egolife/, intphys/ ...
+generic probe:four_afc; babyview also ships a probe:linear split),
+labeled_s_linear/ (fixed-feature and gradient linear decoding), vtwt/
+(probe:vtwt), baby_winoground/ (probe:baby_winoground), shape_bias/
+(probe:shape_bias), and imagenet_linear/ (probe:imagenet_linear_sgd).
+Planned: rvs_ego/, egolife/, intphys/ ...
 """

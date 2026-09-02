@@ -1,13 +1,19 @@
-"""Benchmark data preparation (babyview_4afc) and the generic linear probe."""
+"""Benchmark data preparation and the generic linear probe."""
 
 import csv
+import hashlib
 import random
 
 import pytest
 import torch
+import torch.nn as nn
 from PIL import Image
 
+from egolearn.evaluation import gradient_linear_probe
 from egolearn.evaluation.benchmarks.babyview_4afc import prepare
+from egolearn.evaluation.benchmarks.imagenet_linear import probe as imagenet_linear
+from egolearn.evaluation.benchmarks.labeled_s_linear import probe as labeled_s_linear
+from egolearn.evaluation.linear_probe import ClassificationSplit, LabeledImage
 
 
 def _fake_crops(tmp_path, n_cats=6, per_cat=6, size=32):
@@ -69,6 +75,58 @@ def test_babyview_prepare_follows_the_frozen_protocol(tmp_path):
     assert all(any(e["label"] == c for e in high["train"]) for c in range(len(all_cats)))
 
 
+def test_labeled_s_adapter_follows_the_frozen_protocol(tmp_path, monkeypatch):
+    rows = []
+    expected_classes = tuple(f"class_{label}" for label in range(labeled_s_linear.N_CLASSES))
+    for index in range(labeled_s_linear.TOTAL_SIZE):
+        label = index % labeled_s_linear.N_CLASSES
+        rows.append(f"class_{label}/image_{index}.jpeg {label}")
+
+    split_text = "\n".join(rows) + "\n"
+    split_file = tmp_path / "labeledS_train_val.txt"
+    split_file.write_text(split_text)
+    monkeypatch.setattr(
+        labeled_s_linear, "SPLIT_SHA256", hashlib.sha256(split_text.encode()).hexdigest()
+    )
+    probe = labeled_s_linear.LabeledSLinearProbe(
+        name="labeled_s_linear",
+        data_root=str(tmp_path / "labeled_s"),
+        split_file=str(split_file),
+        check_files=False,
+        size=32,
+    )
+    gradient_probe = labeled_s_linear.LabeledSGradientLinearProbe(
+        name="labeled_s_linear_sgd",
+        data_root=str(tmp_path / "labeled_s"),
+        split_file=str(split_file),
+        check_files=False,
+        workers=0,
+    )
+
+    assert probe.split.classes == expected_classes
+    assert gradient_probe.split == probe.split
+    assert gradient_probe.size == 112
+    assert gradient_probe.epochs == 10
+    assert len(probe.split.train) == 2886
+    assert len(probe.split.test) == 2901
+    assert probe.split.train[-1].image.endswith("class_25/image_2885.jpeg")
+    assert probe.split.test[0].image.endswith("class_0/image_2886.jpeg")
+    assert {item.label for item in probe.split.train} == set(range(26))
+    assert {item.label for item in probe.split.test} == set(range(26))
+
+
+def test_labeled_s_adapter_rejects_noncanonical_metadata(tmp_path):
+    with pytest.raises(ValueError, match="expected 5787 metadata rows"):
+        labeled_s_linear.parse_split("ball/image.jpeg 0\n", tmp_path, check_files=False)
+
+
+def test_labeled_s_adapter_verifies_local_split(tmp_path):
+    split_file = tmp_path / "labeledS_train_val.txt"
+    split_file.write_text("ball/image.jpeg 0\n")
+    with pytest.raises(ValueError, match="unexpected SHA-256"):
+        labeled_s_linear.load_split_text(split_file)
+
+
 def test_linear_probe_learns_and_consumes_no_randomness(tmp_path):
     import json
 
@@ -103,3 +161,83 @@ def test_linear_probe_learns_and_consumes_no_randomness(tmp_path):
     # the probe must not perturb the run it is scoring
     assert torch.equal(torch_state, torch.get_rng_state())
     assert py_state == random.getstate()
+
+
+def test_gradient_linear_probe_learns_and_preserves_model_and_rng(tmp_path):
+    from egolearn.core.context import Context
+    from egolearn.model.model import ComposedModel
+
+    class MeanEncoder(nn.Module):
+        modality = "image"
+        out_dim = 3
+
+        def forward(self, value):
+            return value.mean(dim=(2, 3))
+
+    train: list[LabeledImage] = []
+    test: list[LabeledImage] = []
+    for label, color in enumerate([(230, 20, 20), (20, 20, 230)]):
+        for index in range(10):
+            path = tmp_path / f"gradient_{label}_{index}.png"
+            Image.new("RGB", (32, 32), color).save(path)
+            item = LabeledImage(str(path), label)
+            (train if index < 8 else test).append(item)
+    split = ClassificationSplit(("red", "blue"), tuple(train), tuple(test))
+
+    model = ComposedModel({"vision": MeanEncoder()}).train()
+    ctx = Context(seed=17, device="cpu")
+    probe = gradient_linear_probe.GradientLinearProbe(
+        name="gradient",
+        split=split,
+        encoder="vision",
+        size=16,
+        batch_size=4,
+        workers=0,
+        epochs=4,
+        lr=1.0,
+        momentum=0.0,
+        larc_trust_coefficient=0.1,
+        seed=5,
+    )
+
+    model_state = {name: value.clone() for name, value in model.state_dict().items()}
+    torch_state = torch.get_rng_state().clone()
+    python_state = random.getstate()
+    with torch.no_grad():
+        first = probe.run(model, ctx)
+        second = probe.run(model, ctx)
+
+    assert first["top1"] == pytest.approx(1.0)
+    assert first == second
+    assert model.training
+    assert all(torch.equal(model_state[name], value) for name, value in model.state_dict().items())
+    assert torch.equal(torch_state, torch.get_rng_state())
+    assert python_state == random.getstate()
+
+
+def test_gradient_linear_probe_larc_matches_reference_update():
+    parameter = nn.Parameter(torch.tensor([3.0, 4.0]))
+    parameter.grad = torch.tensor([6.0, 8.0])
+    optimizer = torch.optim.SGD([parameter], lr=2.0, momentum=0.0, weight_decay=0.0)
+    larc = gradient_linear_probe._LARC(optimizer, trust_coefficient=0.1, eps=0.0)
+
+    larc.step()
+
+    assert parameter.detach().tolist() == pytest.approx([2.4, 3.2])
+    assert optimizer.param_groups[0]["weight_decay"] == 0.0
+    assert gradient_linear_probe._cosine_lr(3.0, 0, 10) == pytest.approx(3.0)
+    assert gradient_linear_probe._cosine_lr(3.0, 5, 10) == pytest.approx(1.5)
+
+
+def test_imagenet_linear_adapter_reads_imagefolder_layout(tmp_path):
+    for split_name in ("train", "val"):
+        for label, class_name in enumerate(("n00000001", "n00000002")):
+            directory = tmp_path / split_name / class_name
+            directory.mkdir(parents=True)
+            Image.new("RGB", (20, 20), (200 * label, 20, 20)).save(directory / "image.jpg")
+
+    split = imagenet_linear.build_split(tmp_path, expected_classes=2)
+
+    assert split.classes == ("n00000001", "n00000002")
+    assert [item.label for item in split.train] == [0, 1]
+    assert [item.label for item in split.test] == [0, 1]
