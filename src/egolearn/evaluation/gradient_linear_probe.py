@@ -54,6 +54,8 @@ class _L2Normalize(nn.Module):
         return F.normalize(value, p=2, dim=1)
 
 
+# Adapted from NVIDIA Apex's LARC implementation (BSD-3-Clause):
+# https://github.com/NVIDIA/apex/blob/e13873debc4699d39c6861074b9a3b2a02327f92/apex/parallel/LARC.py
 class _LARC:
     """Minimal Apex-compatible LARC wrapper used by the reference protocol."""
 
