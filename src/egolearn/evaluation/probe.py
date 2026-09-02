@@ -13,9 +13,9 @@ instead of every model x evaluation pair needing its own adapter.  Current
 capability names: image_representation, video_representation,
 text_representation, multimodal, prediction, generation.
 
-Benchmark-specific probes live with their benchmark or project and register
-into the PROBES registry (e.g. probe:four_afc in
-benchmarks/labeled_s_4afc/__init__.py).  Core ships only this protocol.
+Generic, dataset-agnostic probes live beside this protocol (four_afc.py,
+linear_probe.py); a benchmark package owns its dataset manifests and any
+probe specific to it, and registers into the same PROBES registry.
 """
 
 from __future__ import annotations

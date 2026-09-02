@@ -11,6 +11,24 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 - Shape-bias evaluation from Tartaglini et al. Experiment 3: pinned,
   deterministic 80%-size unaligned stimuli; a registered image-representation
   probe over all 57,600 novel shape/texture triplets.
+- BabyView benchmarks (`benchmarks/babyview_4afc/`): zero-shot 4AFC (the
+  Labeled-S 4150 protocol on the public BabyView object crops, scored by
+  the unchanged probe:four_afc; the trial generator is an RNG-faithful
+  port of the source repo's, and center-crop preprocessing is frozen by a
+  3-models x 3-transforms comparison) plus a 72-class linear-probe split.
+- Linear probing (`probe:linear`): held-out top-1 of a zero-initialized
+  logistic regression fitted with full-batch L-BFGS on frozen,
+  train-standardized features. Deterministic and RNG-free, so probing
+  mid-training cannot perturb the run (tested); splits are frozen in the
+  manifest.
+
+### Changed
+
+- probe:four_afc moved from the labeled_s_4afc benchmark package to
+  `evaluation/four_afc.py`: with two datasets using it, the scoring is
+  generic and the benchmark packages own only their manifests (the
+  promotion rule). Config `_imports_` paths are unchanged.
+
 - Prefetch (`driver.prefetch`): the next batch is composed -- sampled,
   decoded, augmented -- while the current one trains on the GPU, in both
   loops. Valid because sampling state only changes when the stream advances;
