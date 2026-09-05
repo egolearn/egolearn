@@ -2,7 +2,6 @@ import re
 import subprocess
 import sys
 import textwrap
-from pathlib import Path
 
 import egolearn
 
@@ -12,19 +11,16 @@ def test_package_imports() -> None:
 
 
 def test_evaluation_protocol_imports_without_train_dependencies() -> None:
-    src = Path(__file__).parents[1] / "src"
     script = textwrap.dedent(
-        f"""
+        """
         import importlib.abc
         import sys
 
-        sys.path.insert(0, {str(src)!r})
-
         class BlockTrainDependencies(importlib.abc.MetaPathFinder):
             def find_spec(self, fullname, path=None, target=None):
-                if fullname.split(".", 1)[0] in {{"PIL", "torch", "torchvision"}}:
+                if fullname.split(".", 1)[0] in {"PIL", "torch", "torchvision"}:
                     raise ModuleNotFoundError(
-                        f"optional train dependency imported: {{fullname}}",
+                        f"optional train dependency imported: {fullname}",
                         name=fullname,
                     )
                 return None
