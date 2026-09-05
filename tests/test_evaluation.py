@@ -163,16 +163,16 @@ def test_linear_probe_learns_and_consumes_no_randomness(tmp_path):
     assert py_state == random.getstate()
 
 
-def test_gradient_linear_probe_learns_and_preserves_model_and_rng(tmp_path):
+def test_gradient_linear_probe_learns_from_bfloat16_features_and_preserves_state(tmp_path):
     from egolearn.core.context import Context
     from egolearn.model.model import ComposedModel
 
-    class MeanEncoder(nn.Module):
+    class BFloat16MeanEncoder(nn.Module):
         modality = "image"
         out_dim = 3
 
         def forward(self, value):
-            return value.mean(dim=(2, 3))
+            return value.mean(dim=(2, 3)).bfloat16()
 
     train: list[LabeledImage] = []
     test: list[LabeledImage] = []
@@ -184,7 +184,7 @@ def test_gradient_linear_probe_learns_and_preserves_model_and_rng(tmp_path):
             (train if index < 8 else test).append(item)
     split = ClassificationSplit(("red", "blue"), tuple(train), tuple(test))
 
-    model = ComposedModel({"vision": MeanEncoder()}).train()
+    model = ComposedModel({"vision": BFloat16MeanEncoder()}).train()
     ctx = Context(seed=17, device="cpu")
     probe = gradient_linear_probe.GradientLinearProbe(
         name="gradient",

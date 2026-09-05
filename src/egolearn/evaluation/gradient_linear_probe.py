@@ -282,7 +282,8 @@ class GradientLinearProbe(Probe):
             features = model.encode(self.encoder, images).pooled
             if self.head is not None:
                 features = model.apply_head(self.head, features)
-        return features.detach()
+        # Keep the trainable decoder fp32 even when the frozen encoder uses reduced precision.
+        return features.detach().float()
 
     def _feature_dim(self, model) -> int:
         if self.head is None:
