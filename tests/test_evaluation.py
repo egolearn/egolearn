@@ -215,6 +215,73 @@ def test_gradient_linear_probe_learns_and_preserves_model_and_rng(tmp_path):
     assert python_state == random.getstate()
 
 
+def test_gradient_linear_probe_augmentations_are_worker_count_invariant(tmp_path):
+    from egolearn.core.context import Context
+
+    items: list[LabeledImage] = []
+    for index in range(6):
+        image = Image.new("RGB", (48 + index, 36))
+        pixels = image.load()
+        assert pixels is not None
+        for y in range(image.height):
+            for x in range(image.width):
+                pixels[x, y] = (
+                    (11 * x + 17 * y + index) % 256,
+                    (23 * x + 5 * y + index) % 256,
+                    (3 * x + 29 * y + index) % 256,
+                )
+        path = tmp_path / f"worker_invariant_{index}.png"
+        image.save(path)
+        items.append(LabeledImage(str(path), index))
+
+    split = ClassificationSplit(
+        tuple(str(index) for index in range(len(items))), tuple(items), tuple(items)
+    )
+    ctx = Context(seed=17, device="cpu")
+
+    def collect(workers: int, num_epochs: int) -> list[tuple[list[int], dict[int, torch.Tensor]]]:
+        probe = gradient_linear_probe.GradientLinearProbe(
+            name="gradient",
+            split=split,
+            size=16,
+            batch_size=2,
+            workers=workers,
+            epochs=2,
+            seed=5,
+        )
+        generator = torch.Generator().manual_seed(probe.seed)
+        loader = probe._loader(
+            split.train,
+            gradient_linear_probe._train_transform(probe.size),
+            True,
+            generator,
+            ctx.derive_seed,
+            "train",
+        )
+        epochs = []
+        for _ in range(num_epochs):
+            order: list[int] = []
+            views: dict[int, torch.Tensor] = {}
+            for images, labels in loader:
+                order.extend(int(label) for label in labels)
+                views.update(
+                    (int(label), image.clone()) for image, label in zip(images, labels, strict=True)
+                )
+            epochs.append((order, views))
+        return epochs
+
+    serial = collect(0, 2)
+    pooled = collect(2, 2)
+
+    for epoch in range(len(pooled)):
+        serial_order, serial_views = serial[epoch]
+        pooled_order, pooled_views = pooled[epoch]
+        assert serial_order == pooled_order
+        assert serial_views.keys() == pooled_views.keys()
+        assert all(torch.equal(serial_views[index], pooled_views[index]) for index in serial_views)
+    assert any(not torch.equal(serial[0][1][index], serial[1][1][index]) for index in serial[0][1])
+
+
 def test_gradient_linear_probe_larc_matches_reference_update():
     parameter = nn.Parameter(torch.tensor([3.0, 4.0]))
     parameter.grad = torch.tensor([6.0, 8.0])

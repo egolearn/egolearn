@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 import random
-from collections.abc import Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 
 import torch
@@ -23,7 +23,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as T
 from PIL import Image
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, RandomSampler, Sampler, SequentialSampler
 
 from egolearn.config.registry import PROBES
 from egolearn.core import keys as K
@@ -42,11 +42,46 @@ class _ImageDataset(Dataset):
     def __len__(self) -> int:
         return len(self.items)
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, int]:
+    def __getitem__(self, index: int | tuple[int, int]) -> tuple[torch.Tensor, int]:
+        seed = None
+        if isinstance(index, tuple):
+            index, seed = index
         item = self.items[index]
         with Image.open(item.image) as image:
-            tensor = self.transform(image.convert("RGB"))
+            converted = image.convert("RGB")
+            if seed is None:
+                tensor = self.transform(converted)
+            else:
+                with _isolated_rng(seed):
+                    tensor = self.transform(converted)
         return tensor, item.label
+
+
+class _SeededSampler(Sampler[tuple[int, int]]):
+    """Attach an epoch-and-item-derived augmentation seed to each index."""
+
+    def __init__(
+        self,
+        sampler: Sampler[int],
+        derive_seed: Callable[[str], int],
+        namespace: str,
+        size: int,
+    ):
+        self.sampler = sampler
+        self.derive_seed = derive_seed
+        self.namespace = namespace
+        self.size = size
+        self.epoch = 0
+
+    def __iter__(self) -> Iterator[tuple[int, int]]:
+        epoch = self.epoch
+        self.epoch += 1
+        for index in self.sampler:
+            seed = self.derive_seed(f"{self.namespace}:epoch:{epoch}:item:{index}")
+            yield index, seed
+
+    def __len__(self) -> int:
+        return self.size
 
 
 class _L2Normalize(nn.Module):
@@ -207,14 +242,39 @@ class GradientLinearProbe(Probe):
         self.l2_normalize = bool(l2_normalize)
         self.seed = int(seed)
 
-    def _loader(self, items, transform, shuffle: bool, generator) -> DataLoader:
+    def _loader(
+        self,
+        items,
+        transform,
+        shuffle: bool,
+        generator,
+        derive_seed: Callable[[str], int],
+        split_name: str,
+    ) -> DataLoader:
+        dataset = _ImageDataset(items, transform)
+        base_sampler: Sampler[int]
+        if shuffle:
+            base_sampler = RandomSampler(dataset, generator=generator)
+        else:
+            base_sampler = SequentialSampler(dataset)
+        namespace = f"evaluation.linear_sgd:{self.seed}:{split_name}"
+        sampler = _SeededSampler(
+            base_sampler,
+            derive_seed,
+            namespace,
+            len(dataset),
+        )
+        # DataLoader consumes its generator to seed workers.  Keep that bookkeeping
+        # separate from the generator that defines the shuffled sample order.
+        worker_generator = torch.Generator().manual_seed(derive_seed(f"{namespace}:workers"))
         return DataLoader(
-            _ImageDataset(items, transform),
+            dataset,
             batch_size=self.batch_size,
-            shuffle=shuffle,
+            sampler=sampler,
             num_workers=self.workers,
             pin_memory=torch.cuda.is_available(),
-            generator=generator,
+            generator=worker_generator,
+            multiprocessing_context="spawn" if self.workers > 0 else None,
         )
 
     def _features(self, model, images: torch.Tensor) -> torch.Tensor:
@@ -265,10 +325,20 @@ class GradientLinearProbe(Probe):
         try:
             with _isolated_rng(self.seed):
                 train_loader = self._loader(
-                    self.split.train, _train_transform(self.size), True, loader_generator
+                    self.split.train,
+                    _train_transform(self.size),
+                    True,
+                    loader_generator,
+                    ctx.derive_seed,
+                    "train",
                 )
                 eval_loader = self._loader(
-                    self.split.test, _eval_transform(self.size), False, loader_generator
+                    self.split.test,
+                    _eval_transform(self.size),
+                    False,
+                    loader_generator,
+                    ctx.derive_seed,
+                    "test",
                 )
 
                 layers: list[nn.Module] = []
