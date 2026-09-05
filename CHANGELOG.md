@@ -35,6 +35,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Changed
 
+- Full ImageNet gradient decoding (`probe:imagenet_linear_sgd`) now defaults to
+  224-pixel crops, matching BabyCL's training resolution. Set `size: 112` to
+  reproduce Memory Storyboard's released evaluation command.
 - probe:four_afc moved from the labeled_s_4afc benchmark package to
   `evaluation/four_afc.py`: with two datasets using it, the scoring is
   generic and the benchmark packages own only their manifests (the

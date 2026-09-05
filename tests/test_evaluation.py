@@ -241,3 +241,8 @@ def test_imagenet_linear_adapter_reads_imagefolder_layout(tmp_path):
     assert split.classes == ("n00000001", "n00000002")
     assert [item.label for item in split.train] == [0, 1]
     assert [item.label for item in split.test] == [0, 1]
+
+    probe = imagenet_linear.ImageNetLinearProbe(
+        name="imagenet_linear", data_root=str(tmp_path), expected_classes=2, workers=0
+    )
+    assert probe.size == 224

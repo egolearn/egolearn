@@ -49,7 +49,7 @@ def build_split(data_root: str | Path, expected_classes: int | None = 1000) -> C
 
 @PROBES.register("imagenet_linear_sgd")
 class ImageNetLinearProbe(GradientLinearProbe):
-    """Full ImageNet train/val adapter with Memory Storyboard defaults."""
+    """Full ImageNet train/val adapter, defaulting to 224-pixel inputs."""
 
     def __init__(
         self,
@@ -58,7 +58,7 @@ class ImageNetLinearProbe(GradientLinearProbe):
         expected_classes: int | None = 1000,
         encoder: str = "image",
         head: str | None = None,
-        size: int = 112,
+        size: int = 224,
         batch_size: int = 1024,
         workers: int = 16,
         epochs: int = 10,

@@ -8,6 +8,9 @@ is measured on center-cropped validation images.
 
 The caller supplies an ImageFolder-style root containing ``train/<class>/...``
 and ``val/<class>/...``; ImageNet itself is never downloaded by EgoLearn.
+The adapter defaults to 224-pixel crops, matching EgoLearn's BabyCL training
+resolution.  Set ``size: 112`` to reproduce Memory Storyboard's released
+evaluation command.
 
 Config::
 
@@ -15,7 +18,7 @@ Config::
     probes:
       - {_target_: "probe:imagenet_linear_sgd", name: imagenet_linear,
          data_root: <imagenet-root>, encoder: vision,
-         size: 112, batch_size: 1024, workers: 16, epochs: 10}
+         size: 224, batch_size: 1024, workers: 16, epochs: 10}
 """
 
 from .probe import ImageNetLinearProbe
