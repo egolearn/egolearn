@@ -8,6 +8,22 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Registered spatial relation categorization probe over 2D abstract scenes and
+  3D rendered scenes: equal component/cell accuracy averaging, descriptive
+  metrics, condition diagnostics, and separate monitoring/full profiles.
+
+- Standalone full-versus-monitoring spatial comparison for external frozen DINO
+  checkpoints, with per-trial scores, condition summaries, provenance hashes,
+  and balanced-subset sampling/ranking checks.
+
+- Fixed spatial monitoring subsets: 768 Exp. 1 trials and 512 Exp. 3 trials,
+  balanced by condition and candidate order, selected reproducibly from the
+  full datasets with parent hashes and original trial IDs preserved.
+
+- Spatial relation categorization data preparation for Experiments 1 and 3:
+  portable, checksummed images and labeled two-choice trials; balanced
+  relation/target conditions, seeded candidate order, and provenance records.
+
 - Shape-bias evaluation from Tartaglini et al. Experiment 3: pinned,
   deterministic 80%-size unaligned stimuli; a registered image-representation
   probe over all 57,600 novel shape/texture triplets.
