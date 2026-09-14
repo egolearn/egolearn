@@ -13,6 +13,9 @@ no weight decay, and unclipped LARC with trust coefficient 0.001.
 Evaluation uses a registered ``view`` (default: ``imagenet_center_crop``).
 Match both ``view`` and ``size`` when comparing evaluation preprocessing
 with the fixed-feature probe; the classifier training protocols still differ.
+``train_top1_running`` reports the final epoch's accuracy accumulated from
+pre-update predictions on stochastic training views, rather than post-fit
+accuracy on deterministic training views.
 """
 
 from __future__ import annotations
@@ -348,7 +351,7 @@ class GradientLinearProbe(Probe):
                     else None
                 )
 
-                train_top1 = 0.0
+                train_top1_running = 0.0
                 top1 = 0.0
                 for epoch in range(self.epochs):
                     epoch_lr = _cosine_lr(self.lr, epoch, self.epochs)
@@ -372,14 +375,15 @@ class GradientLinearProbe(Probe):
                                 larc.step()
                         correct += int((logits.detach().argmax(dim=1) == labels).sum())
                         total += labels.numel()
-                    train_top1 = correct / total
+                    train_top1_running = correct / total
                     top1 = self._accuracy(eval_loader, model, decoder, ctx.device)
                     print(
                         f"[linear-sgd {self.name}] epoch={epoch + 1}/{self.epochs} "
-                        f"lr={epoch_lr:.6g} train_top1={train_top1:.6f} top1={top1:.6f}",
+                        f"lr={epoch_lr:.6g} train_top1_running={train_top1_running:.6f} "
+                        f"top1={top1:.6f}",
                         flush=True,
                     )
         finally:
             model.train(was_training)
 
-        return {"top1": top1, "train_top1": train_top1}
+        return {"top1": top1, "train_top1_running": train_top1_running}

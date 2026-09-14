@@ -149,6 +149,7 @@ def test_linear_probe_learns_and_consumes_no_randomness(tmp_path):
         first = probe.run(model, ctx)
         second = probe.run(model, ctx)
 
+    assert set(first) == {"top1", "train_top1"}
     assert first["top1"] == pytest.approx(1.0)  # trivially separable
     assert first == second  # deterministic solver, frozen split
     # the probe must not perturb the run it is scoring
@@ -200,6 +201,7 @@ def test_gradient_linear_probe_learns_from_bfloat16_features_and_preserves_state
         first = probe.run(model, ctx)
         second = probe.run(model, ctx)
 
+    assert set(first) == {"top1", "train_top1_running"}
     assert first["top1"] == pytest.approx(1.0)
     assert first == second
     assert model.training

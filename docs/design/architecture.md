@@ -335,7 +335,7 @@ benchmark owns a package under `src/egolearn/evaluation/benchmarks/`, ported
 | `labeled_s_4afc` | target word vs 4 candidate images, argmax cosine | `four_afc_acc` |
 | `labeled_s_linear` | frozen-split 26-class fixed-feature L-BFGS linear decoding | `top1`, `train_top1` |
 | `babyview_4afc` | Labeled-S 4AFC protocol on BabyView crops; frozen-split 72-class linear probe | `four_afc_acc`; `top1`, `train_top1` |
-| `imagenet_linear` | full ImageNet ImageFolder train/val; frozen encoder + augmented SGD/LARC linear decoder, 224px by default | `top1`, `train_top1` |
+| `imagenet_linear` | full ImageNet ImageFolder train/val; frozen encoder + augmented SGD/LARC linear decoder, 224px by default | `top1`, `train_top1_running` |
 | `vtwt` | one image, two 2-word phrases; the positive must strictly win | `vtwt_acc` |
 | `baby_winoground` | 2×2 image/phrase matrix; group-correct iff both directions hold | `bw_group_acc` + per-context accs |
 | `shape_bias` | novel shape/texture triplets, cosine preference | `shape_bias` |
