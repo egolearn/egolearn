@@ -39,6 +39,10 @@ def save_snapshot(path: str, driver) -> str:
     label_stores = getattr(composer, "label_stores", None) or {}
     state = {
         "model": driver.model.state_dict(),
+        "model_config": getattr(driver.model, "construction_config", None),
+        "export_contract": (
+            driver.model.export_contract() if hasattr(driver.model, "export_contract") else None
+        ),
         "optimizer": driver.optimizer.state_dict(),
         # gradients accumulated but not yet applied (grad_accumulation > 1,
         # snapshot mid-window): without them a resumed run's next optimizer

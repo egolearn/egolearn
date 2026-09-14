@@ -59,6 +59,7 @@ GENERATIVE = Registry("generative")  # generative/autoregressive components (int
 LOSSES = Registry("loss")  # model/losses
 # evaluation
 PROBES = Registry("probe")
+BENCHMARKS = Registry("benchmark")
 
 _ALL = {
     r.kind: r
@@ -76,6 +77,7 @@ _ALL = {
         GENERATIVE,
         LOSSES,
         PROBES,
+        BENCHMARKS,
     ]
 }
 

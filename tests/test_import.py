@@ -28,10 +28,11 @@ def test_evaluation_protocol_imports_without_train_dependencies() -> None:
         sys.meta_path.insert(0, BlockTrainDependencies())
 
         import egolearn.evaluation
-        from egolearn.evaluation import Probe
+        from egolearn.evaluation import Benchmark, Probe
         from egolearn.evaluation.probe import Probe as ProbeFromModule
 
         assert Probe is ProbeFromModule
+        assert issubclass(Probe, Benchmark)
         """
     )
     subprocess.run([sys.executable, "-I", "-c", script], check=True)

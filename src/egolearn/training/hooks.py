@@ -71,6 +71,7 @@ class CheckpointHook(Hook):
                 "optimizer": driver.optimizer.state_dict(),
                 "step": driver.ctx.clock.step,
                 "export_contract": driver.model.export_contract(),
+                "model_config": getattr(driver.model, "construction_config", None),
             },
             path + ".tmp",
         )

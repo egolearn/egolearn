@@ -12,9 +12,9 @@ from PIL import Image
 
 from egolearn.config.registry import VIEWS
 from egolearn.data.views import IMAGENET_MEAN, IMAGENET_STD
-from egolearn.evaluation import gradient_linear_probe
+from egolearn.evaluation import gradient_linear, gradient_linear_probe
 from egolearn.evaluation.benchmarks.babyview_4afc import prepare
-from egolearn.evaluation.benchmarks.imagenet_linear import probe as imagenet_linear
+from egolearn.evaluation.benchmarks.imagenet_linear import benchmark as imagenet_linear
 from egolearn.evaluation.benchmarks.labeled_s_linear import probe as labeled_s_linear
 from egolearn.evaluation.linear_probe import ClassificationSplit, LabeledImage, LinearProbe
 
@@ -317,7 +317,7 @@ def test_gradient_linear_probe_augmentations_are_worker_count_invariant(tmp_path
         generator = torch.Generator().manual_seed(probe.seed)
         loader = probe._loader(
             split.train,
-            gradient_linear_probe._train_transform(probe.size),
+            gradient_linear._train_transform(probe.size),
             True,
             generator,
             ctx.derive_seed,
@@ -351,14 +351,14 @@ def test_gradient_linear_probe_larc_matches_reference_update():
     parameter = nn.Parameter(torch.tensor([3.0, 4.0]))
     parameter.grad = torch.tensor([6.0, 8.0])
     optimizer = torch.optim.SGD([parameter], lr=2.0, momentum=0.0, weight_decay=0.0)
-    larc = gradient_linear_probe._LARC(optimizer, trust_coefficient=0.1, eps=0.0)
+    larc = gradient_linear._LARC(optimizer, trust_coefficient=0.1, eps=0.0)
 
     larc.step()
 
     assert parameter.detach().tolist() == pytest.approx([2.4, 3.2])
     assert optimizer.param_groups[0]["weight_decay"] == 0.0
-    assert gradient_linear_probe._cosine_lr(3.0, 0, 10) == pytest.approx(3.0)
-    assert gradient_linear_probe._cosine_lr(3.0, 5, 10) == pytest.approx(1.5)
+    assert gradient_linear._cosine_lr(3.0, 0, 10) == pytest.approx(3.0)
+    assert gradient_linear._cosine_lr(3.0, 5, 10) == pytest.approx(1.5)
 
 
 @pytest.mark.parametrize("view", [None, "center_crop", "resize"])
@@ -375,14 +375,14 @@ def test_imagenet_linear_adapter_reads_imagefolder_layout(tmp_path, view):
     assert [item.label for item in split.train] == [0, 1]
     assert [item.label for item in split.test] == [0, 1]
 
-    probe = imagenet_linear.ImageNetLinearProbe(
+    probe = imagenet_linear.ImageNetLinearBenchmark(
         name="imagenet_linear",
         data_root=str(tmp_path),
         expected_classes=2,
         workers=0,
         **({"view": view} if view is not None else {}),
     )
-    assert probe.size == 224
+    assert probe.scorer.size == 224
     image = _patterned_image(359, 271)
     expected_transform = VIEWS.get(view or "imagenet_center_crop")(size=224)
-    assert torch.equal(probe.transform(image), expected_transform(image))
+    assert torch.equal(probe.scorer.transform(image), expected_transform(image))

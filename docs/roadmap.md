@@ -51,6 +51,9 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
 
 ## Phase 4 — Readout evals
 
+- [x] Native checkpoint evaluation API and CLI, with model-only reconstruction,
+      structured results, and standalone ImageNet gradient decoding
+
 - [x] Novel-object shape-vs-texture bias probe with deterministic stimuli
 - [x] Linear probes: `probe:linear` caches frozen features
       and fits zero-init logistic regression by full-batch L-BFGS;

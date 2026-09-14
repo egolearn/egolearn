@@ -72,6 +72,9 @@ class ComposedModel(nn.Module):
             for a linear probe cannot change how batches are routed.
         """
         super().__init__()
+        # Populated by build_model; manually assembled models need an explicit
+        # construction config when loading a checkpoint for evaluation.
+        self.construction_config: dict | None = None
         if not encoders:
             raise ValueError("ComposedModel needs at least one encoder")
         for name, enc in encoders.items():

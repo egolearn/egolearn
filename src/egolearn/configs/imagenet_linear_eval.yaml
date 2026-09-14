@@ -1,0 +1,26 @@
+defaults:
+  - evaluate
+  - _self_
+
+data_root: ???
+device: cuda
+_imports_:
+  - egolearn.evaluation.benchmarks.imagenet_linear
+benchmarks:
+  - _target_: "benchmark:imagenet_linear_sgd"
+    name: imagenet_linear
+    data_root: ${data_root}
+    expected_classes: 1000
+    encoder: image
+    head: null
+    view: imagenet_center_crop
+    size: 224
+    batch_size: 1024
+    workers: 16
+    epochs: 10
+    lr: 3.0
+    momentum: 0.9
+    weight_decay: 0.0
+    larc_trust_coefficient: 0.001
+    l2_normalize: true
+    seed: 0

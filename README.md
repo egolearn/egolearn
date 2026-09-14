@@ -53,6 +53,12 @@ per-stage timing report. Memory Storyboard and BabyCL are included as
 faithful ports of the original code, each expressed as a config file. The
 full walkthrough: [docs/design/architecture.md](docs/design/architecture.md).
 
+Trained checkpoints can be evaluated independently through
+`egolearn.evaluation.evaluate_checkpoint` or `python -m egolearn.evaluate`.
+Full ImageNet decoding runs as a standalone benchmark, with dataset preparation
+deferred until evaluation. See [the evaluation guide](docs/evaluation.md) for
+Python usage, CLI configuration, and checkpoint compatibility.
+
 The rest of the consolidation (LifelongMemory's QA/memory line, more evals)
 arrives per [docs/roadmap.md](docs/roadmap.md), and **nothing is ported
 without triage** — see the porting policy there.

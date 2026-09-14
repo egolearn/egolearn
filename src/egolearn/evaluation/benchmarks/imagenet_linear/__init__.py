@@ -1,6 +1,6 @@
 """ImageNet gradient-based linear decoding.
 
-The probe freezes the image encoder and trains a randomly initialized linear
+The benchmark freezes the image encoder and trains a randomly initialized linear
 classifier on the full ImageNet training split.  Each epoch recomputes
 L2-normalized features from random resized crops, then updates the classifier
 with cross-entropy, SGD, LARC, and cosine learning-rate decay.  Top-1 accuracy
@@ -21,13 +21,13 @@ validation images; training continues to use random resized crops and flips.
 Config::
 
     _imports_: [egolearn.evaluation.benchmarks.imagenet_linear]
-    probes:
-      - {_target_: "probe:imagenet_linear_sgd", name: imagenet_linear,
+    benchmarks:
+      - {_target_: "benchmark:imagenet_linear_sgd", name: imagenet_linear,
          data_root: <imagenet-root>, encoder: vision,
          view: imagenet_center_crop, size: 224,
          batch_size: 1024, workers: 16, epochs: 10}
 """
 
-from .probe import ImageNetLinearProbe
+from .benchmark import ImageNetLinearBenchmark
 
-__all__ = ["ImageNetLinearProbe"]
+__all__ = ["ImageNetLinearBenchmark"]

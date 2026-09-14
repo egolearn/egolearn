@@ -15,6 +15,7 @@ Submodules:
 """
 
 from . import encoders, generative, predictors  # noqa: F401  (registers components)
+from .build import build_model
 from .encoders.base import EncoderOutput
 from .heads import LinearHead, MLPHead
 from .losses import Loss
@@ -26,4 +27,5 @@ __all__ = [
     "LinearHead",
     "Loss",
     "MLPHead",
+    "build_model",
 ]

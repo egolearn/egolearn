@@ -8,10 +8,16 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Standalone evaluation API (`evaluate`, `evaluate_checkpoint`, `load_model`) and
+  `python -m egolearn.evaluate`, with benchmark configs, structured JSON results,
+  checkpoint provenance, and isolated evaluation RNGs. Existing probes can also
+  run through this API. Pipeline checkpoints and snapshots now save resolved
+  model construction metadata; older files accept an explicit model config.
+
 - Gradient-based linear decoding (`probe:linear_sgd`):
   stochastic train crops, frozen encoder, optional feature L2 normalization,
   SGD, LARC, cosine decay, and deterministic RNG isolation. A direct adapter is available
-  for full ImageNet (`probe:imagenet_linear_sgd`, caller-supplied ImageFolder
+  for full ImageNet (`benchmark:imagenet_linear_sgd`, caller-supplied ImageFolder
   root).
 - Direct Labeled-S linear probing (`benchmarks/labeled_s_linear/`,
   `probe:labeled_s_linear`): the canonical
@@ -35,7 +41,13 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Changed
 
-- Full ImageNet gradient decoding (`probe:imagenet_linear_sgd`) now defaults to
+- Full ImageNet evaluation moves from `probe:imagenet_linear_sgd` to standalone
+  `benchmark:imagenet_linear_sgd`. Dataset enumeration is deferred to preparation
+  and cached across calls on the same benchmark instance. Remove ImageNet from
+  training `probes` and use the packaged `imagenet_linear_eval` config; the former
+  `ImageNetLinearProbe` Python class is replaced by `ImageNetLinearBenchmark`.
+
+- Full ImageNet gradient decoding (`benchmark:imagenet_linear_sgd`) now defaults to
   224-pixel crops, matching BabyCL's training resolution. Set `size: 112` to
   reproduce Memory Storyboard's released evaluation command.
 - Gradient linear-probe augmentations now use per-item derived seeds, so changing
