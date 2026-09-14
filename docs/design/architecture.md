@@ -333,7 +333,7 @@ benchmark owns a package under `src/egolearn/evaluation/benchmarks/`, ported
 | Benchmark | Protocol | Metric |
 |---|---|---|
 | `labeled_s_4afc` | target word vs 4 candidate images, argmax cosine | `four_afc_acc` |
-| `labeled_s_linear` | frozen-split 26-class fixed-feature or gradient-trained linear decoding | `top1`, `train_top1` |
+| `labeled_s_linear` | frozen-split 26-class fixed-feature L-BFGS linear decoding | `top1`, `train_top1` |
 | `babyview_4afc` | Labeled-S 4AFC protocol on BabyView crops; frozen-split 72-class linear probe | `four_afc_acc`; `top1`, `train_top1` |
 | `imagenet_linear` | full ImageNet ImageFolder train/val; frozen encoder + augmented SGD/LARC linear decoder, 224px by default | `top1`, `train_top1` |
 | `vtwt` | one image, two 2-word phrases; the positive must strictly win | `vtwt_acc` |
@@ -349,7 +349,7 @@ Memory Storyboard's ImageNet protocol: it recomputes stochastic train crops
 through the frozen encoder for 10 epochs and optimizes an L2-normalized linear
 head with SGD, LARC, and cosine decay. The ImageNet adapter uses 224px by
 default to match BabyCL's training resolution; `size: 112` reproduces Memory
-Storyboard's released command. Labeled-S supports both; BabyView uses the
+Storyboard's released command. Labeled-S and BabyView use the
 fixed-feature protocol, and full ImageNet uses the gradient protocol.
 
 ### Configs: hydra outside, registries inside

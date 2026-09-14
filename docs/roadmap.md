@@ -56,7 +56,7 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
       and fits zero-init logistic regression by full-batch L-BFGS;
       `probe:linear_sgd` provides an augmented, L2-normalized SGD/LARC/cosine
       decoder while isolating its RNG. Frozen adapters cover
-      BabyView and Labeled-S; ImageNet and Labeled-S support gradient decoding.
+      BabyView and Labeled-S; ImageNet supports gradient decoding.
 - [ ] kNN/SVM readout with explicit split files and validation-based selection
 
 ## Phase 5 — Memory & QA

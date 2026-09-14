@@ -1,4 +1,4 @@
-"""Labeled-S probes backed by the generic linear scorers.
+"""Labeled-S probe backed by the generic fixed-feature linear scorer.
 
 The benchmark dataset contains one dataset-relative image
 path and integer label per row.  The first 2,886 rows are training examples;
@@ -22,7 +22,6 @@ import urllib.request
 from pathlib import Path
 
 from egolearn.config.registry import PROBES
-from egolearn.evaluation.gradient_linear_probe import GradientLinearProbe
 from egolearn.evaluation.linear_probe import ClassificationSplit, LabeledImage, LinearProbe
 
 SPLIT_COMMIT = "c084d826fdc85a72e78477bb53c88b7353a89563"
@@ -164,47 +163,4 @@ class LabeledSLinearProbe(LinearProbe):
             batch_size=batch_size,
             l2=l2,
             max_iter=max_iter,
-        )
-
-
-@PROBES.register("labeled_s_linear_sgd")
-class LabeledSGradientLinearProbe(GradientLinearProbe):
-    """Labeled-S adapter for Memory Storyboard's gradient decoder."""
-
-    def __init__(
-        self,
-        name: str,
-        data_root: str,
-        split_file: str | None = None,
-        check_files: bool = True,
-        encoder: str = "image",
-        head: str | None = None,
-        size: int = 112,
-        batch_size: int = 1024,
-        workers: int = 16,
-        epochs: int = 10,
-        lr: float = 3.0,
-        momentum: float = 0.9,
-        weight_decay: float = 0.0,
-        larc_trust_coefficient: float | None = 0.001,
-        l2_normalize: bool = True,
-        seed: int = 0,
-    ):
-        text, self.split_source, self.split_sha256 = load_split_text(split_file)
-        split = parse_split(text, data_root, check_files=check_files)
-        super().__init__(
-            name=name,
-            split=split,
-            encoder=encoder,
-            head=head,
-            size=size,
-            batch_size=batch_size,
-            workers=workers,
-            epochs=epochs,
-            lr=lr,
-            momentum=momentum,
-            weight_decay=weight_decay,
-            larc_trust_coefficient=larc_trust_coefficient,
-            l2_normalize=l2_normalize,
-            seed=seed,
         )

@@ -95,18 +95,8 @@ def test_labeled_s_adapter_follows_the_frozen_protocol(tmp_path, monkeypatch):
         check_files=False,
         size=32,
     )
-    gradient_probe = labeled_s_linear.LabeledSGradientLinearProbe(
-        name="labeled_s_linear_sgd",
-        data_root=str(tmp_path / "labeled_s"),
-        split_file=str(split_file),
-        check_files=False,
-        workers=0,
-    )
 
     assert probe.split.classes == expected_classes
-    assert gradient_probe.split == probe.split
-    assert gradient_probe.size == 112
-    assert gradient_probe.epochs == 10
     assert len(probe.split.train) == 2886
     assert len(probe.split.test) == 2901
     assert probe.split.train[-1].image.endswith("class_25/image_2885.jpeg")

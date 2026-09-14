@@ -10,9 +10,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 - Gradient-based linear decoding (`probe:linear_sgd`):
   stochastic train crops, frozen encoder, optional feature L2 normalization,
-  SGD, LARC, cosine decay, and deterministic RNG isolation. Direct adapters are available
+  SGD, LARC, cosine decay, and deterministic RNG isolation. A direct adapter is available
   for full ImageNet (`probe:imagenet_linear_sgd`, caller-supplied ImageFolder
-  root) and Labeled-S (`probe:labeled_s_linear_sgd`).
+  root).
 - Direct Labeled-S linear probing (`benchmarks/labeled_s_linear/`,
   `probe:labeled_s_linear`): the canonical
   metadata is pinned and resolved in memory against a
