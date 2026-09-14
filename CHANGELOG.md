@@ -75,6 +75,11 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- Gradient linear probes now accept a registered evaluation `view`, including
+  `center_crop` and `resize`, and share ImageNet normalization constants with
+  the other views. The default `imagenet_center_crop` preserves their previous
+  bilinear resize/crop behavior. Use the same `view` and `size` across probes
+  to align evaluation preprocessing.
 - Determinism (from PR review): the configured seed now also seeds the
   global torch/python RNGs and snapshots carry their state, so the same
   seed gives bit-identical weights and a resumed run matches an

@@ -68,12 +68,14 @@ class ImageNetLinearProbe(GradientLinearProbe):
         larc_trust_coefficient: float | None = 0.001,
         l2_normalize: bool = True,
         seed: int = 0,
+        view: str = "imagenet_center_crop",
     ):
         super().__init__(
             name=name,
             split=build_split(data_root, expected_classes=expected_classes),
             encoder=encoder,
             head=head,
+            view=view,
             size=size,
             batch_size=batch_size,
             workers=workers,

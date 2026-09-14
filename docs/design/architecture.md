@@ -351,6 +351,13 @@ head with SGD, LARC, and cosine decay. The ImageNet adapter uses 224px by
 default to match BabyCL's training resolution; `size: 112` reproduces Memory
 Storyboard's released command. Labeled-S and BabyView use the
 fixed-feature protocol, and full ImageNet uses the gradient protocol.
+Both linear probes select evaluation preprocessing through `view` and `size`.
+The gradient probe defaults to `imagenet_center_crop` (bilinear resize to
+`256 * size // 224`, then center crop), preserving its original preprocessing;
+the fixed-feature probe defaults to `center_crop` (bicubic resize to `size`,
+then center crop). Set the same view and size to align evaluation inputs,
+or use `resize` for CVCL/BabyCL preprocessing. The gradient probe's stochastic
+training crops and the two classifier-fitting protocols remain distinct.
 
 ### Configs: hydra outside, registries inside
 

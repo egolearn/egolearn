@@ -9,6 +9,10 @@ features and full-batch L-BFGS solve answer a different experimental question.
 Hyperparameters: 10 epochs, 112-pixel crops, batch size 1,024,
 L2-normalized features, SGD at learning rate 3, momentum 0.9,
 no weight decay, and unclipped LARC with trust coefficient 0.001.
+
+Evaluation uses a registered ``view`` (default: ``imagenet_center_crop``).
+Match both ``view`` and ``size`` when comparing evaluation preprocessing
+with the fixed-feature probe; the classifier training protocols still differ.
 """
 
 from __future__ import annotations
@@ -25,13 +29,11 @@ import torchvision.transforms as T
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset, RandomSampler, Sampler, SequentialSampler
 
-from egolearn.config.registry import PROBES
+from egolearn.config.registry import PROBES, VIEWS
 from egolearn.core import keys as K
+from egolearn.data.views import IMAGENET_MEAN, IMAGENET_STD
 from egolearn.evaluation.linear_probe import ClassificationSplit, LabeledImage
 from egolearn.evaluation.probe import Probe
-
-IMAGENET_MEAN = (0.485, 0.456, 0.406)
-IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
 class _ImageDataset(Dataset):
@@ -150,21 +152,6 @@ def _train_transform(size: int):
     )
 
 
-def _eval_transform(size: int):
-    return T.Compose(
-        [
-            T.Resize(
-                256 * size // 224,
-                interpolation=T.InterpolationMode.BILINEAR,
-                antialias=True,
-            ),
-            T.CenterCrop(size),
-            T.ToTensor(),
-            T.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-        ]
-    )
-
-
 def _cosine_lr(base_lr: float, epoch: int, epochs: int) -> float:
     return base_lr * 0.5 * (1.0 + math.cos(math.pi * epoch / epochs))
 
@@ -206,6 +193,7 @@ class GradientLinearProbe(Probe):
         l2_normalize: bool = True,
         seed: int = 0,
         split: ClassificationSplit | None = None,
+        view: str = "imagenet_center_crop",
     ):
         self.name = name
         if (manifest is None) == (split is None):
@@ -232,6 +220,7 @@ class GradientLinearProbe(Probe):
         self.encoder = encoder
         self.head = head
         self.size = int(size)
+        self.transform = VIEWS.get(view)(size=self.size)
         self.batch_size = int(batch_size)
         self.workers = int(workers)
         self.epochs = int(epochs)
@@ -335,7 +324,7 @@ class GradientLinearProbe(Probe):
                 )
                 eval_loader = self._loader(
                     self.split.test,
-                    _eval_transform(self.size),
+                    self.transform,
                     False,
                     loader_generator,
                     ctx.derive_seed,

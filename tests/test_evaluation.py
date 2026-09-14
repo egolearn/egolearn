@@ -7,13 +7,16 @@ import random
 import pytest
 import torch
 import torch.nn as nn
+import torchvision.transforms as T
 from PIL import Image
 
+from egolearn.config.registry import VIEWS
+from egolearn.data.views import IMAGENET_MEAN, IMAGENET_STD
 from egolearn.evaluation import gradient_linear_probe
 from egolearn.evaluation.benchmarks.babyview_4afc import prepare
 from egolearn.evaluation.benchmarks.imagenet_linear import probe as imagenet_linear
 from egolearn.evaluation.benchmarks.labeled_s_linear import probe as labeled_s_linear
-from egolearn.evaluation.linear_probe import ClassificationSplit, LabeledImage
+from egolearn.evaluation.linear_probe import ClassificationSplit, LabeledImage, LinearProbe
 
 
 def _fake_crops(tmp_path, n_cats=6, per_cat=6, size=32):
@@ -205,6 +208,76 @@ def test_gradient_linear_probe_learns_from_bfloat16_features_and_preserves_state
     assert python_state == random.getstate()
 
 
+def _patterned_image(width: int, height: int) -> Image.Image:
+    # Nonuniform pixels expose differences in interpolation and crop geometry.
+    return Image.frombytes(
+        "RGB", (width, height), bytes((17 * i + i // 7) % 256 for i in range(width * height * 3))
+    )
+
+
+@pytest.mark.parametrize("view", ["center_crop", "resize", "imagenet_center_crop", "custom_eval"])
+@pytest.mark.parametrize("dimensions", [(37, 37), (53, 37), (37, 53)])
+def test_linear_probes_encode_identical_evaluation_views(tmp_path, monkeypatch, view, dimensions):
+    from egolearn.core.context import Context
+    from egolearn.model.model import ComposedModel
+
+    def custom_eval(size: int):
+        return T.Compose([T.Resize((size, size)), T.ToTensor()])
+
+    monkeypatch.setitem(VIEWS._items, "custom_eval", custom_eval)
+    path = tmp_path / "pattern.png"
+    _patterned_image(*dimensions).save(path)
+    items = (LabeledImage(str(path), 0),)
+    split = ClassificationSplit(("object",), items, items)
+
+    class RecordingEncoder(nn.Module):
+        modality = "image"
+        out_dim = 3
+
+        def __init__(self):
+            super().__init__()
+            self.inputs: list[torch.Tensor] = []
+
+        def forward(self, value):
+            self.inputs.append(value.clone())
+            return value.mean(dim=(2, 3))
+
+    encoder = RecordingEncoder()
+    model = ComposedModel({"vision": encoder}).eval()
+    ctx = Context(seed=17, device="cpu")
+    fixed = LinearProbe(name="fixed", split=split, view=view, size=16)
+    gradient = gradient_linear_probe.GradientLinearProbe(
+        name="gradient", split=split, view=view, size=16, workers=0, epochs=1
+    )
+    fixed._extract(model, ctx, split.test)
+    with torch.no_grad():
+        gradient.run(model, ctx)
+
+    # Fixed test extraction, SGD train batch, then SGD evaluation batch.
+    assert len(encoder.inputs) == 3
+    assert encoder.inputs[0].shape == (1, 3, 16, 16)
+    assert torch.equal(encoder.inputs[0], encoder.inputs[-1])
+
+
+@pytest.mark.parametrize("size", [112, 224])
+@pytest.mark.parametrize("dimensions", [(271, 271), (359, 271), (271, 359)])
+def test_gradient_linear_probe_default_preserves_evaluation_pixels(size, dimensions):
+    items = (LabeledImage("unused.png", 0),)
+    split = ClassificationSplit(("object",), items, items)
+    probe = gradient_linear_probe.GradientLinearProbe(name="gradient", split=split, size=size)
+    original_transform = T.Compose(
+        [
+            T.Resize(256 * size // 224, interpolation=T.InterpolationMode.BILINEAR, antialias=True),
+            T.CenterCrop(size),
+            T.ToTensor(),
+            T.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+        ]
+    )
+    image = _patterned_image(*dimensions)
+
+    assert torch.equal(probe.transform(image), original_transform(image))
+
+
 def test_gradient_linear_probe_augmentations_are_worker_count_invariant(tmp_path):
     from egolearn.core.context import Context
 
@@ -286,7 +359,8 @@ def test_gradient_linear_probe_larc_matches_reference_update():
     assert gradient_linear_probe._cosine_lr(3.0, 5, 10) == pytest.approx(1.5)
 
 
-def test_imagenet_linear_adapter_reads_imagefolder_layout(tmp_path):
+@pytest.mark.parametrize("view", [None, "center_crop", "resize"])
+def test_imagenet_linear_adapter_reads_imagefolder_layout(tmp_path, view):
     for split_name in ("train", "val"):
         for label, class_name in enumerate(("n00000001", "n00000002")):
             directory = tmp_path / split_name / class_name
@@ -300,6 +374,13 @@ def test_imagenet_linear_adapter_reads_imagefolder_layout(tmp_path):
     assert [item.label for item in split.test] == [0, 1]
 
     probe = imagenet_linear.ImageNetLinearProbe(
-        name="imagenet_linear", data_root=str(tmp_path), expected_classes=2, workers=0
+        name="imagenet_linear",
+        data_root=str(tmp_path),
+        expected_classes=2,
+        workers=0,
+        **({"view": view} if view is not None else {}),
     )
     assert probe.size == 224
+    image = _patterned_image(359, 271)
+    expected_transform = VIEWS.get(view or "imagenet_center_crop")(size=224)
+    assert torch.equal(probe.transform(image), expected_transform(image))
