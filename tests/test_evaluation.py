@@ -12,7 +12,7 @@ from PIL import Image
 
 from egolearn.config.registry import VIEWS
 from egolearn.data.views import IMAGENET_MEAN, IMAGENET_STD
-from egolearn.evaluation import gradient_linear_probe
+from egolearn.evaluation import linear_sgd_probe
 from egolearn.evaluation.benchmarks.babyview_4afc import prepare
 from egolearn.evaluation.benchmarks.imagenet_linear import probe as imagenet_linear
 from egolearn.evaluation.benchmarks.labeled_s_linear import probe as labeled_s_linear
@@ -190,7 +190,7 @@ def test_linear_probe_learns_and_consumes_no_randomness(tmp_path):
     assert py_state == random.getstate()
 
 
-def test_gradient_linear_probe_learns_from_bfloat16_features_and_preserves_state(tmp_path):
+def test_linear_sgd_probe_learns_from_bfloat16_features_and_preserves_state(tmp_path):
     from egolearn.core.context import Context
     from egolearn.model.model import ComposedModel
 
@@ -205,7 +205,7 @@ def test_gradient_linear_probe_learns_from_bfloat16_features_and_preserves_state
     test: list[LabeledImage] = []
     for label, color in enumerate([(230, 20, 20), (20, 20, 230)]):
         for index in range(10):
-            path = tmp_path / f"gradient_{label}_{index}.png"
+            path = tmp_path / f"sgd_{label}_{index}.png"
             Image.new("RGB", (32, 32), color).save(path)
             item = LabeledImage(str(path), label)
             (train if index < 8 else test).append(item)
@@ -213,8 +213,8 @@ def test_gradient_linear_probe_learns_from_bfloat16_features_and_preserves_state
 
     model = ComposedModel({"vision": BFloat16MeanEncoder()}).train()
     ctx = Context(seed=17, device="cpu")
-    probe = gradient_linear_probe.GradientLinearProbe(
-        name="gradient",
+    probe = linear_sgd_probe.LinearSGDProbe(
+        name="sgd",
         split=split,
         encoder="vision",
         size=16,
@@ -281,12 +281,12 @@ def test_linear_probes_encode_identical_evaluation_views(tmp_path, monkeypatch, 
     model = ComposedModel({"vision": encoder}).eval()
     ctx = Context(seed=17, device="cpu")
     fixed = LinearProbe(name="fixed", split=split, view=view, size=16)
-    gradient = gradient_linear_probe.GradientLinearProbe(
-        name="gradient", split=split, view=view, size=16, workers=0, epochs=1
+    sgd = linear_sgd_probe.LinearSGDProbe(
+        name="sgd", split=split, view=view, size=16, workers=0, epochs=1
     )
     fixed._extract(model, ctx, split.test)
     with torch.no_grad():
-        gradient.run(model, ctx)
+        sgd.run(model, ctx)
 
     # Fixed test extraction, SGD train batch, then SGD evaluation batch.
     assert len(encoder.inputs) == 3
@@ -296,10 +296,10 @@ def test_linear_probes_encode_identical_evaluation_views(tmp_path, monkeypatch, 
 
 @pytest.mark.parametrize("size", [112, 224])
 @pytest.mark.parametrize("dimensions", [(271, 271), (359, 271), (271, 359)])
-def test_gradient_linear_probe_default_preserves_evaluation_pixels(size, dimensions):
+def test_linear_sgd_probe_default_preserves_evaluation_pixels(size, dimensions):
     items = (LabeledImage("unused.png", 0),)
     split = ClassificationSplit(("object",), items, items)
-    probe = gradient_linear_probe.GradientLinearProbe(name="gradient", split=split, size=size)
+    probe = linear_sgd_probe.LinearSGDProbe(name="sgd", split=split, size=size)
     original_transform = T.Compose(
         [
             T.Resize(256 * size // 224, interpolation=T.InterpolationMode.BILINEAR, antialias=True),
@@ -315,7 +315,7 @@ def test_gradient_linear_probe_default_preserves_evaluation_pixels(size, dimensi
 
 @pytest.mark.parametrize("cuda_available", [False, True])
 @pytest.mark.parametrize("device,pin_memory", [("cpu", False), ("cuda", True), ("cuda:1", True)])
-def test_gradient_linear_probe_pins_memory_for_execution_device(
+def test_linear_sgd_probe_pins_memory_for_execution_device(
     monkeypatch, cuda_available, device, pin_memory
 ):
     from egolearn.core.context import Context
@@ -324,7 +324,7 @@ def test_gradient_linear_probe_pins_memory_for_execution_device(
     monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda_available)
     items = (LabeledImage("unused.png", 0),)
     split = ClassificationSplit(("object",), items, items)
-    probe = gradient_linear_probe.GradientLinearProbe(name="gradient", split=split, workers=0)
+    probe = linear_sgd_probe.LinearSGDProbe(name="sgd", split=split, workers=0)
 
     # Constructing loaders needs no GPU or image reads, even for a CUDA target.
     loader = probe._loader(
@@ -340,7 +340,7 @@ def test_gradient_linear_probe_pins_memory_for_execution_device(
     assert loader.pin_memory is pin_memory
 
 
-def test_gradient_linear_probe_augmentations_are_worker_count_invariant(tmp_path):
+def test_linear_sgd_probe_augmentations_are_worker_count_invariant(tmp_path):
     from egolearn.core.context import Context
 
     items: list[LabeledImage] = []
@@ -365,8 +365,8 @@ def test_gradient_linear_probe_augmentations_are_worker_count_invariant(tmp_path
     ctx = Context(seed=17, device="cpu")
 
     def collect(workers: int, num_epochs: int) -> list[tuple[list[int], dict[int, torch.Tensor]]]:
-        probe = gradient_linear_probe.GradientLinearProbe(
-            name="gradient",
+        probe = linear_sgd_probe.LinearSGDProbe(
+            name="sgd",
             split=split,
             size=16,
             batch_size=2,
@@ -377,7 +377,7 @@ def test_gradient_linear_probe_augmentations_are_worker_count_invariant(tmp_path
         generator = torch.Generator().manual_seed(probe.seed)
         loader = probe._loader(
             split.train,
-            gradient_linear_probe._train_transform(probe.size),
+            linear_sgd_probe._train_transform(probe.size),
             True,
             generator,
             ctx.derive_seed,
@@ -408,18 +408,18 @@ def test_gradient_linear_probe_augmentations_are_worker_count_invariant(tmp_path
     assert any(not torch.equal(serial[0][1][index], serial[1][1][index]) for index in serial[0][1])
 
 
-def test_gradient_linear_probe_larc_matches_reference_update():
+def test_linear_sgd_probe_larc_matches_reference_update():
     parameter = nn.Parameter(torch.tensor([3.0, 4.0]))
     parameter.grad = torch.tensor([6.0, 8.0])
     optimizer = torch.optim.SGD([parameter], lr=2.0, momentum=0.0, weight_decay=0.0)
-    larc = gradient_linear_probe._LARC(optimizer, trust_coefficient=0.1, eps=0.0)
+    larc = linear_sgd_probe._LARC(optimizer, trust_coefficient=0.1, eps=0.0)
 
     larc.step()
 
     assert parameter.detach().tolist() == pytest.approx([2.4, 3.2])
     assert optimizer.param_groups[0]["weight_decay"] == 0.0
-    assert gradient_linear_probe._cosine_lr(3.0, 0, 10) == pytest.approx(3.0)
-    assert gradient_linear_probe._cosine_lr(3.0, 5, 10) == pytest.approx(1.5)
+    assert linear_sgd_probe._cosine_lr(3.0, 0, 10) == pytest.approx(3.0)
+    assert linear_sgd_probe._cosine_lr(3.0, 5, 10) == pytest.approx(1.5)
 
 
 @pytest.mark.parametrize("view", [None, "center_crop", "resize"])
@@ -436,7 +436,7 @@ def test_imagenet_linear_adapter_reads_imagefolder_layout(tmp_path, view):
     assert [item.label for item in split.train] == [0, 1]
     assert [item.label for item in split.test] == [0, 1]
 
-    probe = imagenet_linear.ImageNetLinearProbe(
+    probe = imagenet_linear.ImageNetLinearSGDProbe(
         name="imagenet_linear",
         data_root=str(tmp_path),
         expected_classes=2,

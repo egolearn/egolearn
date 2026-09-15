@@ -54,11 +54,11 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
 ## Phase 4 — Readout evals
 
 - [x] Novel-object shape-vs-texture bias probe with deterministic stimuli
-- [x] Linear probes: `probe:linear` caches frozen features
+- [x] Linear probes: `probe:linear` caches features from deterministic views
       and fits zero-init logistic regression by full-batch L-BFGS;
-      `probe:linear_sgd` provides an augmented, L2-normalized SGD/LARC/cosine
+      `probe:linear_sgd` provides a stochastic-view, L2-normalized SGD/LARC/cosine
       decoder while isolating its RNG. Frozen adapters cover
-      BabyView and Labeled-S; ImageNet supports gradient decoding.
+      BabyView and Labeled-S; ImageNet supports stochastic-view SGD decoding.
 - [ ] kNN/SVM readout with explicit split files and validation-based selection
 
 ## Phase 5 — Memory & QA

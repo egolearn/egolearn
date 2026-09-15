@@ -8,7 +8,7 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
-- Gradient-based linear decoding (`probe:linear_sgd`): stochastic train crops,
+- Stochastic-view SGD linear decoding (`probe:linear_sgd`): stochastic train crops,
   frozen encoder, optional feature L2 normalization, SGD, LARC, cosine decay,
   and deterministic RNG isolation. Per-item augmentation seeds keep scores
   independent of the data-loader worker count. Evaluation uses a registered
@@ -48,8 +48,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   the unchanged probe:four_afc; the trial generator is an RNG-faithful
   port of the source repo's, and center-crop preprocessing is frozen by a
   3-models x 3-transforms comparison) plus a 72-class linear-probe split.
-- Fixed-feature linear probing (`probe:linear`): held-out top-1 of a zero-initialized
-  logistic regression fitted with full-batch L-BFGS on frozen,
+- Fixed-feature L-BFGS linear probing (`probe:linear`): held-out top-1 of a
+  zero-initialized logistic regression fitted with full-batch L-BFGS on frozen,
   train-standardized features. Deterministic and RNG-free, so probing
   mid-training cannot perturb the run (tested); splits are frozen in the
   manifest.

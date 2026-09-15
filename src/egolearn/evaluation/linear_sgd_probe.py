@@ -1,4 +1,4 @@
-"""Gradient-trained linear decoding on a frozen image encoder.
+"""Stochastic-view SGD linear decoding on a frozen image encoder.
 
 The encoder is frozen, but features are recomputed from a stochastic image
 view every epoch while a randomly initialized linear classifier is trained
@@ -203,7 +203,7 @@ def _isolated_rng(seed: int):
 
 
 @PROBES.register("linear_sgd")
-class GradientLinearProbe(Probe):
+class LinearSGDProbe(Probe):
     """Train a linear classifier by SGD while keeping the encoder frozen."""
 
     requires_capabilities = (K.CAP_IMAGE_REPRESENTATION,)

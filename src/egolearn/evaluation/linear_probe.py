@@ -1,4 +1,4 @@
-"""Linear probing: fit a linear classifier on FROZEN features, report
+"""Fixed-feature L-BFGS linear probing: fit a classifier on frozen features, report
 held-out top-1 -- the standard readout for comparing self-supervised
 encoders (the roadmap's "one implementation, no apex dependency").
 

@@ -1,4 +1,4 @@
-"""ImageNet probe backed by the shared gradient linear-decoding protocol."""
+"""ImageNet probe backed by the shared stochastic-view SGD linear-decoding protocol."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 from torchvision.datasets import ImageFolder
 
 from egolearn.config.registry import PROBES
-from egolearn.evaluation.gradient_linear_probe import GradientLinearProbe
 from egolearn.evaluation.linear_probe import ClassificationSplit, LabeledImage
+from egolearn.evaluation.linear_sgd_probe import LinearSGDProbe
 
 
 def build_split(data_root: str | Path, expected_classes: int | None = 1000) -> ClassificationSplit:
@@ -48,7 +48,7 @@ def build_split(data_root: str | Path, expected_classes: int | None = 1000) -> C
 
 
 @PROBES.register("imagenet_linear_sgd")
-class ImageNetLinearProbe(GradientLinearProbe):
+class ImageNetLinearSGDProbe(LinearSGDProbe):
     """Full ImageNet train/val adapter, defaulting to 224-pixel inputs."""
 
     def __init__(

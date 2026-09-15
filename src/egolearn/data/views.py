@@ -59,7 +59,7 @@ def center_crop(size: int = 224, vertical_flip: bool = False):
 def imagenet_center_crop(size: int = 224):
     """Bilinear resize to 256/224 of size, then crop for ImageNet linear decoding.
 
-    Preserves the gradient probe's original evaluation preprocessing; at
+    The SGD linear probe uses this evaluation view by default; at
     size=112 this resizes the shorter edge to 128 before cropping to 112.
     """
     ops = [
