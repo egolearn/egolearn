@@ -1,6 +1,7 @@
 # Roadmap
 
 Consolidates the lab's egocentric-learning line into one ecosystem. Source repos —
+[memory-storyboard](https://github.com/agentic-learning-ai-lab/memory-storyboard),
 [lifelong-memory](https://github.com/agentic-learning-ai-lab/lifelong-memory),
 [poodle](https://github.com/agentic-learning-ai-lab/poodle),
 [midway-network](https://github.com/agentic-learning-ai-lab/midway-network) —
@@ -48,6 +49,7 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
       classes
 - [x] One streaming trainer — seeded, resumable, state-dict checkpoints —
       replacing the seven trainer scripts
+- [x] Memory Storyboard lands as `src/egolearn/methods/storyboard` + `projects/storyboard`
 
 ## Phase 4 — Readout evals
 

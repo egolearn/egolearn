@@ -91,6 +91,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- Retain the full upstream BSD-3-Clause license alongside the Apex-derived LARC
+  implementation.
 - Gradient linear probes now accept a registered evaluation `view`, including
   `center_crop` and `resize`, and share ImageNet normalization constants with
   the other views. The default `imagenet_center_crop` preserves their previous
