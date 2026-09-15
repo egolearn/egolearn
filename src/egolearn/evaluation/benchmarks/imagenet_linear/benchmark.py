@@ -105,22 +105,10 @@ class ImageNetLinearBenchmark(Benchmark):
             "data_root": self.data_root,
             "expected_classes": self.expected_classes,
             **{
-                key: getattr(self.scorer, key)
-                for key in (
-                    "encoder",
-                    "head",
-                    "size",
-                    "batch_size",
-                    "workers",
-                    "epochs",
-                    "lr",
-                    "momentum",
-                    "weight_decay",
-                    "larc_trust_coefficient",
-                    "l2_normalize",
-                    "seed",
-                    "view",
-                )
+                key: value
+                for key, value in vars(self.scorer).items()
+                # The benchmark owns its name; the transform is derived from view and size.
+                if key not in {"name", "transform"}
             },
         }
 
