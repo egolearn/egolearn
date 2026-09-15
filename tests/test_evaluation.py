@@ -120,6 +120,39 @@ def test_labeled_s_adapter_verifies_local_split(tmp_path):
         labeled_s_linear.load_split_text(split_file)
 
 
+@pytest.mark.parametrize("via_mapping", [False, True], ids=["direct", "mapping"])
+@pytest.mark.parametrize(
+    "classes,train_labels,test_labels,message",
+    [
+        ((), (0,), (0,), "class list is empty"),
+        (("red", "blue"), (), (0,), "train split is empty"),
+        (("red", "blue"), (0,), (), "test split is empty"),
+        (("red", "blue"), (-1,), (0,), "train label -1 is outside"),
+        (("red", "blue"), (2,), (0,), "train label 2 is outside"),
+        (("red", "blue"), (0,), (-1,), "test label -1 is outside"),
+        (("red", "blue"), (0,), (2,), "test label 2 is outside"),
+    ],
+)
+def test_classification_split_rejects_invalid_data(
+    via_mapping, classes, train_labels, test_labels, message
+):
+    with pytest.raises(ValueError, match=message):
+        if via_mapping:
+            ClassificationSplit.from_mapping(
+                {
+                    "classes": classes,
+                    "train": [{"image": "train.png", "label": label} for label in train_labels],
+                    "test": [{"image": "test.png", "label": label} for label in test_labels],
+                }
+            )
+        else:
+            ClassificationSplit(
+                classes=classes,
+                train=tuple(LabeledImage("train.png", label) for label in train_labels),
+                test=tuple(LabeledImage("test.png", label) for label in test_labels),
+            )
+
+
 def test_linear_probe_learns_and_consumes_no_randomness(tmp_path):
     import json
 
@@ -280,6 +313,33 @@ def test_gradient_linear_probe_default_preserves_evaluation_pixels(size, dimensi
     assert torch.equal(probe.transform(image), original_transform(image))
 
 
+@pytest.mark.parametrize("cuda_available", [False, True])
+@pytest.mark.parametrize("device,pin_memory", [("cpu", False), ("cuda", True), ("cuda:1", True)])
+def test_gradient_linear_probe_pins_memory_for_execution_device(
+    monkeypatch, cuda_available, device, pin_memory
+):
+    from egolearn.core.context import Context
+
+    ctx = Context(seed=17, device="cpu")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda_available)
+    items = (LabeledImage("unused.png", 0),)
+    split = ClassificationSplit(("object",), items, items)
+    probe = gradient_linear_probe.GradientLinearProbe(name="gradient", split=split, workers=0)
+
+    # Constructing loaders needs no GPU or image reads, even for a CUDA target.
+    loader = probe._loader(
+        split.test,
+        probe.transform,
+        False,
+        torch.Generator().manual_seed(probe.seed),
+        ctx.derive_seed,
+        "test",
+        device=torch.device(device),
+    )
+
+    assert loader.pin_memory is pin_memory
+
+
 def test_gradient_linear_probe_augmentations_are_worker_count_invariant(tmp_path):
     from egolearn.core.context import Context
 
@@ -322,6 +382,7 @@ def test_gradient_linear_probe_augmentations_are_worker_count_invariant(tmp_path
             generator,
             ctx.derive_seed,
             "train",
+            device=ctx.device,
         )
         epochs = []
         for _ in range(num_epochs):

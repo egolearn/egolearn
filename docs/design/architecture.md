@@ -344,20 +344,15 @@ Some quirks of the originals are preserved on purpose (OOV words map to
 padding index 0 and still count in the mean-pool denominator; no sos/eos;
 32-token truncation), since OOV handling is part of what these benchmarks
 measure. `probe:linear` caches one deterministic view and solves a standardized
-logistic regression with full-batch L-BFGS. `probe:linear_sgd` instead ports
-Memory Storyboard's ImageNet protocol: it recomputes stochastic train crops
-through the frozen encoder for 10 epochs and optimizes an L2-normalized linear
-head with SGD, LARC, and cosine decay. The ImageNet adapter uses 224px by
-default to match BabyCL's training resolution; `size: 112` reproduces Memory
-Storyboard's released command. Labeled-S and BabyView use the
-fixed-feature protocol, and full ImageNet uses the gradient protocol.
-Both linear probes select evaluation preprocessing through `view` and `size`.
-The gradient probe defaults to `imagenet_center_crop` (bilinear resize to
-`256 * size // 224`, then center crop), preserving its original preprocessing;
-the fixed-feature probe defaults to `center_crop` (bicubic resize to `size`,
-then center crop). Set the same view and size to align evaluation inputs,
-or use `resize` for CVCL/BabyCL preprocessing. The gradient probe's stochastic
-training crops and the two classifier-fitting protocols remain distinct.
+logistic regression with full-batch L-BFGS. `probe:linear_sgd` trains an
+L2-normalized linear head with SGD, LARC, and cosine decay for 10 epochs,
+recomputing stochastic crops through the frozen encoder. Its default input size
+is 112px; the fixed-feature probe and full ImageNet adapter default to 224px.
+Evaluation defaults to
+`imagenet_center_crop` for the gradient probe (bilinear resize to
+`256 * size // 224`, then center crop) and `center_crop` for the fixed-feature
+probe (bicubic resize to `size`, then center crop). Match `view` and `size`
+across probes to align evaluation inputs.
 
 ### Configs: hydra outside, registries inside
 

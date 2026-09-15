@@ -271,6 +271,7 @@ class GradientLinearProbe(Probe):
         generator,
         derive_seed: Callable[[str], int],
         split_name: str,
+        device: torch.device,
     ) -> DataLoader:
         dataset = _ImageDataset(items, transform)
         base_sampler: Sampler[int]
@@ -293,7 +294,7 @@ class GradientLinearProbe(Probe):
             batch_size=self.batch_size,
             sampler=sampler,
             num_workers=self.workers,
-            pin_memory=torch.cuda.is_available(),
+            pin_memory=device.type == "cuda",
             generator=worker_generator,
             multiprocessing_context="spawn" if self.workers > 0 else None,
         )
@@ -353,6 +354,7 @@ class GradientLinearProbe(Probe):
                     loader_generator,
                     ctx.derive_seed,
                     "train",
+                    device=ctx.device,
                 )
                 eval_loader = self._loader(
                     self.split.test,
@@ -361,6 +363,7 @@ class GradientLinearProbe(Probe):
                     loader_generator,
                     ctx.derive_seed,
                     "test",
+                    device=ctx.device,
                 )
 
                 layers: list[nn.Module] = []

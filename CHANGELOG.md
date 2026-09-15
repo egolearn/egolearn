@@ -8,17 +8,22 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
-- Gradient-based linear decoding (`probe:linear_sgd`):
-  stochastic train crops, frozen encoder, optional feature L2 normalization,
-  SGD, LARC, cosine decay, and deterministic RNG isolation. A direct adapter is available
-  for full ImageNet (`probe:imagenet_linear_sgd`, caller-supplied ImageFolder
-  root).
+- Gradient-based linear decoding (`probe:linear_sgd`): stochastic train crops,
+  frozen encoder, optional feature L2 normalization, SGD, LARC, cosine decay,
+  and deterministic RNG isolation. Per-item augmentation seeds keep scores
+  independent of the data-loader worker count. Evaluation uses a registered
+  `view` (default: `imagenet_center_crop`) with shared ImageNet normalization.
+  Match `view` and `size` across linear probes to align evaluation inputs. The
+  full ImageNet adapter (`probe:imagenet_linear_sgd`, caller-supplied
+  ImageFolder root) defaults to 224-pixel crops. The Apex-derived LARC
+  implementation retains its full upstream BSD-3-Clause license.
 - Direct Labeled-S linear probing (`benchmarks/labeled_s_linear/`,
-  `probe:labeled_s_linear`): the canonical
-  metadata is pinned and resolved in memory against a
-  user-supplied dataset root using its frozen 2,886-row train boundary, with no
-  generated machine-specific manifest. The generic linear scorer now accepts
-  an in-memory classification split while retaining JSON-manifest compatibility.
+  `probe:labeled_s_linear`): the canonical metadata is pinned and resolved in
+  memory against a user-supplied dataset root using its frozen 2,886-row train
+  boundary, with no generated machine-specific manifest. The generic linear
+  scorer now accepts an in-memory classification split while retaining
+  JSON-manifest compatibility; both construction paths validate non-empty
+  classes and splits and label ranges.
 - Registered spatial relation categorization probe over 2D abstract scenes and
   3D rendered scenes: equal component/cell accuracy averaging, descriptive
   metrics, condition diagnostics, and separate monitoring/full profiles.
@@ -51,11 +56,6 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Changed
 
-- Full ImageNet gradient decoding (`probe:imagenet_linear_sgd`) now defaults to
-  224-pixel crops, matching BabyCL's training resolution. Set `size: 112` to
-  reproduce Memory Storyboard's released evaluation command.
-- Gradient linear-probe augmentations now use per-item derived seeds, so changing
-  the data-loader worker count does not change the probe score.
 - probe:four_afc moved from the labeled_s_4afc benchmark package to
   `evaluation/four_afc.py`: with two datasets using it, the scoring is
   generic and the benchmark packages own only their manifests (the
@@ -91,13 +91,6 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
-- Retain the full upstream BSD-3-Clause license alongside the Apex-derived LARC
-  implementation.
-- Gradient linear probes now accept a registered evaluation `view`, including
-  `center_crop` and `resize`, and share ImageNet normalization constants with
-  the other views. The default `imagenet_center_crop` preserves their previous
-  bilinear resize/crop behavior. Use the same `view` and `size` across probes
-  to align evaluation preprocessing.
 - Determinism (from PR review): the configured seed now also seeds the
   global torch/python RNGs and snapshots carry their state, so the same
   seed gives bit-identical weights and a resumed run matches an
