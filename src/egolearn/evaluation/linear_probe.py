@@ -1,4 +1,4 @@
-"""Linear probing: fit a linear classifier on FROZEN features, report
+"""Fixed-feature L-BFGS linear probing: fit a classifier on frozen features, report
 held-out top-1 -- the standard readout for comparing self-supervised
 encoders (the roadmap's "one implementation, no apex dependency").
 
@@ -57,30 +57,30 @@ class ClassificationSplit:
     train: tuple[LabeledImage, ...]
     test: tuple[LabeledImage, ...]
 
-    @classmethod
-    def from_mapping(cls, value: Mapping) -> ClassificationSplit:
-        classes = tuple(str(name) for name in value["classes"])
-
-        def read_items(items: Sequence[Mapping], split_name: str) -> tuple[LabeledImage, ...]:
-            result = tuple(
-                LabeledImage(image=str(item["image"]), label=int(item["label"])) for item in items
-            )
-            if not result:
+    def __post_init__(self) -> None:
+        if not self.classes:
+            raise ValueError("linear-probe class list is empty")
+        for split_name, items in (("train", self.train), ("test", self.test)):
+            if not items:
                 raise ValueError(f"linear-probe {split_name} split is empty")
-            for item in result:
-                if not 0 <= item.label < len(classes):
+            for item in items:
+                if not 0 <= item.label < len(self.classes):
                     raise ValueError(
                         f"linear-probe {split_name} label {item.label} is outside "
-                        f"[0, {len(classes) - 1}]"
+                        f"[0, {len(self.classes) - 1}]"
                     )
-            return result
 
-        if not classes:
-            raise ValueError("linear-probe class list is empty")
+    @classmethod
+    def from_mapping(cls, value: Mapping) -> ClassificationSplit:
+        def read_items(items: Sequence[Mapping]) -> tuple[LabeledImage, ...]:
+            return tuple(
+                LabeledImage(image=str(item["image"]), label=int(item["label"])) for item in items
+            )
+
         return cls(
-            classes=classes,
-            train=read_items(value["train"], "train"),
-            test=read_items(value["test"], "test"),
+            classes=tuple(str(name) for name in value["classes"]),
+            train=read_items(value["train"]),
+            test=read_items(value["test"]),
         )
 
 

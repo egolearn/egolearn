@@ -14,17 +14,41 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   run through this API. Pipeline checkpoints and snapshots now save resolved
   model construction metadata; older files accept an explicit model config.
 
-- Gradient-based linear decoding (`probe:linear_sgd`):
-  stochastic train crops, frozen encoder, optional feature L2 normalization,
-  SGD, LARC, cosine decay, and deterministic RNG isolation. A direct adapter is available
-  for full ImageNet (`benchmark:imagenet_linear_sgd`, caller-supplied ImageFolder
-  root).
+- Stochastic-view SGD linear decoding (`probe:linear_sgd`): stochastic train crops,
+  frozen encoder, optional feature L2 normalization, SGD, LARC, cosine decay,
+  and deterministic RNG isolation. The probe seed controls decoder initialization,
+  shuffling, augmentations, and worker seeding independently of the run seed.
+  Per-item augmentation seeds keep scores independent of the data-loader worker
+  count. Worker pools are reused across epochs within each probe run. Evaluation
+  uses a registered `view` (default: `imagenet_center_crop`) with shared ImageNet
+  normalization.
+  Match `view` and `size` across linear probes to align evaluation inputs. The
+  full ImageNet adapter (`benchmark:imagenet_linear_sgd`, caller-supplied
+  ImageFolder root) defaults to 224-pixel crops. The Apex-derived LARC
+  implementation retains its full upstream BSD-3-Clause license.
 - Direct Labeled-S linear probing (`benchmarks/labeled_s_linear/`,
-  `probe:labeled_s_linear`): the canonical
-  metadata is pinned and resolved in memory against a
-  user-supplied dataset root using its frozen 2,886-row train boundary, with no
-  generated machine-specific manifest. The generic linear scorer now accepts
-  an in-memory classification split while retaining JSON-manifest compatibility.
+  `probe:labeled_s_linear`): the canonical metadata is pinned and resolved in
+  memory against a user-supplied dataset root using its frozen 2,886-row train
+  boundary, with no generated machine-specific manifest. The generic linear
+  scorer now accepts an in-memory classification split while retaining
+  JSON-manifest compatibility; both construction paths validate non-empty
+  classes and splits and label ranges.
+- Registered spatial relation categorization probe over 2D abstract scenes and
+  3D rendered scenes: equal component/cell accuracy averaging, descriptive
+  metrics, condition diagnostics, and separate monitoring/full profiles.
+
+- Standalone full-versus-monitoring spatial comparison for external frozen DINO
+  checkpoints, with per-trial scores, condition summaries, provenance hashes,
+  and balanced-subset sampling/ranking checks.
+
+- Fixed spatial monitoring subsets: 768 Exp. 1 trials and 512 Exp. 3 trials,
+  balanced by condition and candidate order, selected reproducibly from the
+  full datasets with parent hashes and original trial IDs preserved.
+
+- Spatial relation categorization data preparation for Experiments 1 and 3:
+  portable, checksummed images and labeled two-choice trials; balanced
+  relation/target conditions, seeded candidate order, and provenance records.
+
 - Shape-bias evaluation from Tartaglini et al. Experiment 3: pinned,
   deterministic 80%-size unaligned stimuli; a registered image-representation
   probe over all 57,600 novel shape/texture triplets.
@@ -33,8 +57,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   the unchanged probe:four_afc; the trial generator is an RNG-faithful
   port of the source repo's, and center-crop preprocessing is frozen by a
   3-models x 3-transforms comparison) plus a 72-class linear-probe split.
-- Fixed-feature linear probing (`probe:linear`): held-out top-1 of a zero-initialized
-  logistic regression fitted with full-batch L-BFGS on frozen,
+- Fixed-feature L-BFGS linear probing (`probe:linear`): held-out top-1 of a
+  zero-initialized logistic regression fitted with full-batch L-BFGS on frozen,
   train-standardized features. Deterministic and RNG-free, so probing
   mid-training cannot perturb the run (tested); splits are frozen in the
   manifest.
@@ -45,13 +69,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   `benchmark:imagenet_linear_sgd`. Dataset enumeration is deferred to preparation
   and cached across calls on the same benchmark instance. Remove ImageNet from
   training `probes` and use the packaged `imagenet_linear_eval` config; the former
-  `ImageNetLinearProbe` Python class is replaced by `ImageNetLinearBenchmark`.
+  `ImageNetLinearSGDProbe` Python class is replaced by `ImageNetLinearBenchmark`.
 
-- Full ImageNet gradient decoding (`benchmark:imagenet_linear_sgd`) now defaults to
-  224-pixel crops, matching BabyCL's training resolution. Set `size: 112` to
-  reproduce Memory Storyboard's released evaluation command.
-- Gradient linear-probe augmentations now use per-item derived seeds, so changing
-  the data-loader worker count does not change the probe score.
 - probe:four_afc moved from the labeled_s_4afc benchmark package to
   `evaluation/four_afc.py`: with two datasets using it, the scoring is
   generic and the benchmark packages own only their manifests (the
@@ -87,11 +106,6 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
-- Gradient linear probes now accept a registered evaluation `view`, including
-  `center_crop` and `resize`, and share ImageNet normalization constants with
-  the other views. The default `imagenet_center_crop` preserves their previous
-  bilinear resize/crop behavior. Use the same `view` and `size` across probes
-  to align evaluation preprocessing.
 - Determinism (from PR review): the configured seed now also seeds the
   global torch/python RNGs and snapshots carry their state, so the same
   seed gives bit-identical weights and a resumed run matches an

@@ -18,7 +18,7 @@ import egolearn
 from egolearn.config.registry import BENCHMARKS, ENCODERS, PROBES, STREAMS
 from egolearn.evaluation import Benchmark, evaluate, evaluate_checkpoint, load_model
 from egolearn.evaluation.benchmarks.imagenet_linear import benchmark as imagenet
-from egolearn.evaluation.gradient_linear_probe import GradientLinearProbe
+from egolearn.evaluation.linear_sgd_probe import LinearSGDProbe
 from egolearn.evaluation.probe import Probe
 from egolearn.model.build import build_model
 from egolearn.model.encoders.image import ToyCNNEncoder
@@ -251,7 +251,8 @@ def test_imagenet_is_lazy_reuses_split_and_matches_shared_probe(
     assert not isinstance(benchmark, Probe)
     model = build_model(model_config)
     first = evaluate(model, benchmarks=[benchmark], seed=7)
-    second = evaluate(model, benchmarks=[benchmark], seed=7)
+    # The protocol seed is independent of the standalone runner seed.
+    second = evaluate(model, benchmarks=[benchmark], seed=19)
     assert len(calls) == 1
     assert first.results == second.results
     assert first.metadata["imagenet"] == {
@@ -262,8 +263,8 @@ def test_imagenet_is_lazy_reuses_split_and_matches_shared_probe(
     assert first.configs["imagenet"]["view"] == "imagenet_center_crop"
 
     settings.pop("expected_classes")
-    probe = GradientLinearProbe(split=benchmark.split, **settings)
-    assert evaluate(model, benchmarks=[probe], seed=7).results == first.results
+    probe = LinearSGDProbe(split=benchmark.split, **settings)
+    assert evaluate(model, benchmarks=[probe], seed=31).results == first.results
     assert "imagenet_linear_sgd" not in PROBES.names()
     assert BENCHMARKS.get("imagenet_linear_sgd") is imagenet.ImageNetLinearBenchmark
 

@@ -1,6 +1,6 @@
 name: advisory-review
 # The agent-session reviewer (reads the PR head read-only). Runs on PR
-# open/reopen and the autoresearch:review label, not every push.
+# open/reopen and the outerloop:review label (autoresearch:review still works), not every push.
 # terra (hermes, openai-direct) is the sole advisory reviewer: the opus
 # advisory job is sunset (2026-08-26) — terra converges where opus
 # manufactured rounds, validated here as the second opinion and on the
@@ -15,8 +15,8 @@ permissions:
 jobs:
   advisory:
     # label events only run the review for the explicit re-request label
-    if: github.event.action != 'labeled' || github.event.label.name == 'autoresearch:review'
-    uses: agentic-learning-ai-lab/autoresearch/.github/workflows/advisory-review-agent.yml@main
+    if: github.event.action != 'labeled' || github.event.label.name == 'outerloop:review' || github.event.label.name == 'autoresearch:review'
+    uses: outerloop-science/outerloop/.github/workflows/advisory-review-agent.yml@main
     with:
       bot_login: agentic-learning-bot
       backend: hermes
@@ -26,4 +26,3 @@ jobs:
       model: gpt-5.6-terra
     secrets:
       openai_reviewer_key: ${{ secrets.OPENAI_REVIEWER_KEY }}
-      checkout_ssh_key: ${{ secrets.AUTORESEARCH_CHECKOUT_KEY }}

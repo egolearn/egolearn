@@ -340,7 +340,7 @@ Each concrete benchmark owns a package under
 | `labeled_s_4afc` | target word vs 4 candidate images, argmax cosine | `four_afc_acc` |
 | `labeled_s_linear` | frozen-split 26-class fixed-feature L-BFGS linear decoding | `top1`, `train_top1` |
 | `babyview_4afc` | Labeled-S 4AFC protocol on BabyView crops; frozen-split 72-class linear probe | `four_afc_acc`; `top1`, `train_top1` |
-| `imagenet_linear` | full ImageNet ImageFolder train/val; frozen encoder + augmented SGD/LARC linear decoder, 224px by default | `top1`, `train_top1_running` |
+| `imagenet_linear` | full ImageNet ImageFolder train/val; frozen encoder + stochastic-view SGD/LARC linear decoder, 224px by default | `top1`, `train_top1_running` |
 | `vtwt` | one image, two 2-word phrases; the positive must strictly win | `vtwt_acc` |
 | `baby_winoground` | 2×2 image/phrase matrix; group-correct iff both directions hold | `bw_group_acc` + per-context accs |
 | `shape_bias` | novel shape/texture triplets, cosine preference | `shape_bias` |
@@ -348,21 +348,19 @@ Each concrete benchmark owns a package under
 Some quirks of the originals are preserved on purpose (OOV words map to
 padding index 0 and still count in the mean-pool denominator; no sos/eos;
 32-token truncation), since OOV handling is part of what these benchmarks
-measure. `probe:linear` caches one deterministic view and solves a standardized
-logistic regression with full-batch L-BFGS. `probe:linear_sgd` instead ports
-Memory Storyboard's ImageNet protocol: it recomputes stochastic train crops
-through the frozen encoder for 10 epochs and optimizes an L2-normalized linear
-head with SGD, LARC, and cosine decay. The ImageNet adapter uses 224px by
-default to match BabyCL's training resolution; `size: 112` reproduces Memory
-Storyboard's released command. Labeled-S and BabyView use the
-fixed-feature protocol, and full ImageNet uses the gradient protocol.
-Both linear probes select evaluation preprocessing through `view` and `size`.
-The gradient probe defaults to `imagenet_center_crop` (bilinear resize to
-`256 * size // 224`, then center crop), preserving its original preprocessing;
-the fixed-feature probe defaults to `center_crop` (bicubic resize to `size`,
-then center crop). Set the same view and size to align evaluation inputs,
-or use `resize` for CVCL/BabyCL preprocessing. The gradient probe's stochastic
-training crops and the two classifier-fitting protocols remain distinct.
+measure. `probe:linear` uses fixed-feature L-BFGS: it caches features from one
+deterministic view and solves a standardized logistic regression with full-batch
+L-BFGS. `probe:linear_sgd` (`LinearSGDProbe`) uses stochastic-view SGD: it trains
+an L2-normalized linear head with SGD, LARC, and cosine decay for 10 epochs,
+recomputing features from stochastic crops through the frozen encoder. Its
+default input size is 112px; the fixed-feature probe and full ImageNet adapter
+(`ImageNetLinearBenchmark`) default to 224px. Evaluation defaults to
+`imagenet_center_crop` for the SGD probe (bilinear resize to `256 * size // 224`,
+then center crop) and `center_crop` for the fixed-feature probe (bicubic resize
+to `size`, then center crop). Match `view` and `size` across probes to align
+evaluation inputs. The SGD probe's `seed` controls decoder initialization,
+shuffling, augmentations, and worker seeding independently of the run seed;
+changing the worker count preserves sample order and augmented inputs.
 
 ### Configs: hydra outside, registries inside
 

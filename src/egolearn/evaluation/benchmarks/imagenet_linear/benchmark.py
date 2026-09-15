@@ -1,4 +1,4 @@
-"""Standalone ImageNet benchmark backed by the shared gradient linear-decoding protocol."""
+"""Standalone ImageNet benchmark using the shared stochastic-view SGD protocol."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from torchvision.datasets import ImageFolder
 from egolearn.config.registry import BENCHMARKS
 from egolearn.core import keys as K
 from egolearn.evaluation.benchmark import Benchmark
-from egolearn.evaluation.gradient_linear import GradientLinearEvaluator
 from egolearn.evaluation.linear_probe import ClassificationSplit, LabeledImage
+from egolearn.evaluation.linear_sgd import LinearSGDEvaluator
 
 
 def build_split(data_root: str | Path, expected_classes: int | None = 1000) -> ClassificationSplit:
@@ -78,7 +78,7 @@ class ImageNetLinearBenchmark(Benchmark):
         self.data_root = data_root
         self.expected_classes = expected_classes
         self.split: ClassificationSplit | None = None
-        self.scorer = GradientLinearEvaluator(
+        self.scorer = LinearSGDEvaluator(
             name=name,
             encoder=encoder,
             head=head,

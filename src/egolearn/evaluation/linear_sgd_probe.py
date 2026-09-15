@@ -1,16 +1,16 @@
-"""Training-hook adapter for the shared gradient linear-decoding protocol."""
+"""Training-hook adapter for the shared stochastic-view SGD linear-decoding protocol."""
 
 from __future__ import annotations
 
 from egolearn.config.registry import PROBES
 from egolearn.core import keys as K
-from egolearn.evaluation.gradient_linear import GradientLinearEvaluator
 from egolearn.evaluation.linear_probe import ClassificationSplit
+from egolearn.evaluation.linear_sgd import LinearSGDEvaluator
 from egolearn.evaluation.probe import Probe
 
 
 @PROBES.register("linear_sgd")
-class GradientLinearProbe(GradientLinearEvaluator, Probe):
+class LinearSGDProbe(LinearSGDEvaluator, Probe):
     requires_capabilities = (K.CAP_IMAGE_REPRESENTATION,)
 
     def __init__(

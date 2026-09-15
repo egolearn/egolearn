@@ -1,4 +1,4 @@
-"""ImageNet gradient-based linear decoding.
+"""ImageNet stochastic-view SGD linear decoding.
 
 The benchmark freezes the image encoder and trains a randomly initialized linear
 classifier on the full ImageNet training split.  Each epoch recomputes
@@ -6,7 +6,7 @@ L2-normalized features from random resized crops, then updates the classifier
 with cross-entropy, SGD, LARC, and cosine learning-rate decay.  Top-1 accuracy
 is measured using the registered evaluation ``view``. The default
 ``imagenet_center_crop`` uses bilinear resize to ``256 * size // 224`` followed
-by a center crop to ``size``, preserving the original gradient protocol.
+by a center crop to ``size``.
 
 The caller supplies an ImageFolder-style root containing ``train/<class>/...``
 and ``val/<class>/...``; ImageNet itself is never downloaded by EgoLearn.
@@ -28,6 +28,6 @@ Config::
          batch_size: 1024, workers: 16, epochs: 10}
 """
 
-from .benchmark import ImageNetLinearBenchmark
+from egolearn.evaluation.benchmarks.imagenet_linear.benchmark import ImageNetLinearBenchmark
 
 __all__ = ["ImageNetLinearBenchmark"]

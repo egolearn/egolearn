@@ -74,6 +74,11 @@ without triage** — see the porting policy there.
 | `scripts/` | Committed operational scripts and cluster launchers |
 | `docs/` | Roadmap and design notes |
 
+Spatial relation categorization evaluates two-choice relation matching in
+2D abstract scenes and 3D rendered scenes. The registered `probe:spatial_relations`
+reports accuracy with equal component weights; see the
+[task definition, data preparation, and probe configuration](docs/evaluation/spatial_relations.md).
+
 ## Lifecycle
 
 Private now → **public at first release, with full git history** (so: public-repo hygiene

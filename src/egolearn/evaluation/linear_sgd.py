@@ -1,4 +1,4 @@
-"""Gradient-trained linear decoding on a frozen image encoder.
+"""Stochastic-view SGD linear decoding on a frozen image encoder.
 
 The encoder is frozen, but features are recomputed from a stochastic image
 view every epoch while a randomly initialized linear classifier is trained
@@ -9,6 +9,10 @@ features and full-batch L-BFGS solve answer a different experimental question.
 Hyperparameters: 10 epochs, 112-pixel crops, batch size 1,024,
 L2-normalized features, SGD at learning rate 3, momentum 0.9,
 no weight decay, and unclipped LARC with trust coefficient 0.001.
+
+The evaluator's ``seed`` controls decoder initialization, shuffle order, augmentations,
+and worker seeding independently of the run seed. Sample order and augmented
+inputs are invariant across data-loader worker counts.
 
 Evaluation uses a registered ``view`` (default: ``imagenet_center_crop``).
 Match both ``view`` and ``size`` when comparing evaluation preprocessing
@@ -22,7 +26,7 @@ from __future__ import annotations
 
 import math
 import random
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
 import torch
@@ -33,6 +37,7 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset, RandomSampler, Sampler, SequentialSampler
 
 from egolearn.config.registry import VIEWS
+from egolearn.core.context import _stable_seed
 from egolearn.data.views import IMAGENET_MEAN, IMAGENET_STD
 from egolearn.evaluation.linear_probe import ClassificationSplit, LabeledImage
 
@@ -66,12 +71,12 @@ class _SeededSampler(Sampler[tuple[int, int]]):
     def __init__(
         self,
         sampler: Sampler[int],
-        derive_seed: Callable[[str], int],
+        seed: int,
         namespace: str,
         size: int,
     ):
         self.sampler = sampler
-        self.derive_seed = derive_seed
+        self.seed = seed
         self.namespace = namespace
         self.size = size
         self.epoch = 0
@@ -80,7 +85,7 @@ class _SeededSampler(Sampler[tuple[int, int]]):
         epoch = self.epoch
         self.epoch += 1
         for index in self.sampler:
-            seed = self.derive_seed(f"{self.namespace}:epoch:{epoch}:item:{index}")
+            seed = _stable_seed(self.seed, f"{self.namespace}:epoch:{epoch}:item:{index}")
             yield index, seed
 
     def __len__(self) -> int:
@@ -94,6 +99,35 @@ class _L2Normalize(nn.Module):
 
 # Adapted from NVIDIA Apex's LARC implementation (BSD-3-Clause):
 # https://github.com/NVIDIA/apex/blob/e13873debc4699d39c6861074b9a3b2a02327f92/apex/parallel/LARC.py
+# The following upstream license applies to the _LARC implementation below:
+# https://github.com/NVIDIA/apex/blob/e13873debc4699d39c6861074b9a3b2a02327f92/LICENSE
+#
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without modification,
+# are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its contributors
+#    may be used to endorse or promote products derived from this software without
+#    specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+# AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 class _LARC:
     """Minimal Apex-compatible LARC wrapper used by the reference protocol."""
 
@@ -171,7 +205,7 @@ def _isolated_rng(seed: int):
         random.setstate(python_state)
 
 
-class GradientLinearEvaluator:
+class LinearSGDEvaluator:
     """Train a linear classifier by SGD while keeping the encoder frozen."""
 
     def __init__(
@@ -224,8 +258,8 @@ class GradientLinearEvaluator:
         transform,
         shuffle: bool,
         generator,
-        derive_seed: Callable[[str], int],
         split_name: str,
+        device: torch.device,
     ) -> DataLoader:
         dataset = _ImageDataset(items, transform)
         base_sampler: Sampler[int]
@@ -236,19 +270,22 @@ class GradientLinearEvaluator:
         namespace = f"evaluation.linear_sgd:{self.seed}:{split_name}"
         sampler = _SeededSampler(
             base_sampler,
-            derive_seed,
+            self.seed,
             namespace,
             len(dataset),
         )
         # DataLoader consumes its generator to seed workers.  Keep that bookkeeping
         # separate from the generator that defines the shuffled sample order.
-        worker_generator = torch.Generator().manual_seed(derive_seed(f"{namespace}:workers"))
+        worker_generator = torch.Generator().manual_seed(
+            _stable_seed(self.seed, f"{namespace}:workers")
+        )
         return DataLoader(
             dataset,
             batch_size=self.batch_size,
             sampler=sampler,
             num_workers=self.workers,
-            pin_memory=torch.cuda.is_available(),
+            persistent_workers=self.workers > 0,
+            pin_memory=device.type == "cuda",
             generator=worker_generator,
             multiprocessing_context="spawn" if self.workers > 0 else None,
         )
@@ -306,16 +343,16 @@ class GradientLinearEvaluator:
                     _train_transform(self.size),
                     True,
                     loader_generator,
-                    ctx.derive_seed,
                     "train",
+                    device=ctx.device,
                 )
                 eval_loader = self._loader(
                     split.test,
                     self.transform,
                     False,
                     loader_generator,
-                    ctx.derive_seed,
                     "test",
+                    device=ctx.device,
                 )
 
                 layers: list[nn.Module] = []
