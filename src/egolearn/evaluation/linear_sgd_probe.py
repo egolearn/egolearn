@@ -294,6 +294,7 @@ class LinearSGDProbe(Probe):
             batch_size=self.batch_size,
             sampler=sampler,
             num_workers=self.workers,
+            persistent_workers=self.workers > 0,
             pin_memory=device.type == "cuda",
             generator=worker_generator,
             multiprocessing_context="spawn" if self.workers > 0 else None,

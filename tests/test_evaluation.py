@@ -341,6 +341,8 @@ def test_linear_sgd_probe_pins_memory_for_execution_device(
 
 
 def test_linear_sgd_probe_augmentations_are_worker_count_invariant(tmp_path):
+    from multiprocessing import active_children
+
     from egolearn.core.context import Context
 
     items: list[LabeledImage] = []
@@ -363,6 +365,7 @@ def test_linear_sgd_probe_augmentations_are_worker_count_invariant(tmp_path):
         tuple(str(index) for index in range(len(items))), tuple(items), tuple(items)
     )
     ctx = Context(seed=17, device="cpu")
+    initial_children = set(active_children())
 
     def collect(workers: int, num_epochs: int) -> list[tuple[list[int], dict[int, torch.Tensor]]]:
         probe = linear_sgd_probe.LinearSGDProbe(
@@ -385,6 +388,7 @@ def test_linear_sgd_probe_augmentations_are_worker_count_invariant(tmp_path):
             device=ctx.device,
         )
         epochs = []
+        worker_pool = None
         for _ in range(num_epochs):
             order: list[int] = []
             views: dict[int, torch.Tensor] = {}
@@ -393,11 +397,19 @@ def test_linear_sgd_probe_augmentations_are_worker_count_invariant(tmp_path):
                 views.update(
                     (int(label), image.clone()) for image, label in zip(images, labels, strict=True)
                 )
+            # The same processes stay alive after each epoch, including while idle.
+            active_pool = set(active_children()) - initial_children
+            assert len(active_pool) == workers
+            if worker_pool is not None:
+                assert active_pool == worker_pool
+            worker_pool = active_pool
             epochs.append((order, views))
         return epochs
 
     serial = collect(0, 2)
     pooled = collect(2, 2)
+    # Releasing the local loader also releases its persistent worker pool.
+    assert set(active_children()) == initial_children
 
     for epoch in range(len(pooled)):
         serial_order, serial_views = serial[epoch]
