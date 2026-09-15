@@ -42,10 +42,9 @@ egocentric video as a time-ordered stream (SAYCam, BabyView, raw video,
 synthetic test data); admission components watch the stream and decide what
 goes into bounded replay buffers; a batch recipe describes how training
 batches are sampled from those buffers; SSL and image-text losses train the
-model; probes score it while it trains (4AFC, visual two-word test, Baby
-Winoground, shape bias). Buffers and sampling only ever handle lightweight
-references,
-never image tensors, so they stay cheap; an admission component that needs
+model; probes score it while it trains (4AFC, linear probing, visual two-word
+test, Baby Winoground, shape bias). Buffers and sampling only ever handle lightweight
+references, never image tensors, so they stay cheap; an admission component that needs
 to look at image content pulls the frames it wants through the loader (both
 shipped methods do this to decide where segments end). Training can follow the stream in order (the streaming mode) or
 shuffle everything like ordinary offline training (the IID mode). Runs can

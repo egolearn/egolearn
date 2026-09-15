@@ -55,6 +55,24 @@ def center_crop(size: int = 224, vertical_flip: bool = False):
     return T.Compose(ops + _finish(size))
 
 
+@VIEWS.register("imagenet_center_crop")
+def imagenet_center_crop(size: int = 224):
+    """Bilinear resize to 256/224 of size, then crop for ImageNet linear decoding.
+
+    The SGD linear probe uses this evaluation view by default; at
+    size=112 this resizes the shorter edge to 128 before cropping to 112.
+    """
+    ops = [
+        T.Resize(
+            256 * size // 224,
+            interpolation=T.InterpolationMode.BILINEAR,
+            antialias=True,
+        ),
+        T.CenterCrop(size),
+    ]
+    return T.Compose(ops + _finish(size))
+
+
 @VIEWS.register("simclr_strong")
 def simclr_strong(
     size: int = 224,

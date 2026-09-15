@@ -1,4 +1,4 @@
-"""Linear probing: fit a linear classifier on FROZEN features, report
+"""Fixed-feature L-BFGS linear probing: fit a classifier on frozen features, report
 held-out top-1 -- the standard readout for comparing self-supervised
 encoders (the roadmap's "one implementation, no apex dependency").
 
@@ -14,10 +14,10 @@ Protocol decisions, made once here so every model is probed identically:
   deterministic solver: the probe consumes NO randomness at all, so probing
   mid-training cannot perturb the run (covered by a test) and the same
   checkpoint always scores the same number.
-* the train/test split is FROZEN in the manifest (written by a benchmark's
-  prepare step), never drawn at probe time.
+* the train/test split is FROZEN by the benchmark adapter or JSON manifest,
+  never drawn at probe time.
 
-Manifest json::
+JSON remains available as a loader for custom datasets and existing configs::
 
     {"classes": ["apple", ...],
      "train": [{"image": "/abs/path.jpg", "label": 0}, ...],
@@ -27,6 +27,8 @@ Manifest json::
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
@@ -37,6 +39,51 @@ from egolearn.core import keys as K
 from egolearn.evaluation.probe import Probe
 
 
+@dataclass(frozen=True)
+class LabeledImage:
+    image: str
+    label: int
+
+
+@dataclass(frozen=True)
+class ClassificationSplit:
+    """In-memory dataset contract consumed by the generic linear scorer.
+
+    Benchmark adapters construct this directly.  JSON manifests are only one
+    loader for the contract, retained for existing configs and custom datasets.
+    """
+
+    classes: tuple[str, ...]
+    train: tuple[LabeledImage, ...]
+    test: tuple[LabeledImage, ...]
+
+    def __post_init__(self) -> None:
+        if not self.classes:
+            raise ValueError("linear-probe class list is empty")
+        for split_name, items in (("train", self.train), ("test", self.test)):
+            if not items:
+                raise ValueError(f"linear-probe {split_name} split is empty")
+            for item in items:
+                if not 0 <= item.label < len(self.classes):
+                    raise ValueError(
+                        f"linear-probe {split_name} label {item.label} is outside "
+                        f"[0, {len(self.classes) - 1}]"
+                    )
+
+    @classmethod
+    def from_mapping(cls, value: Mapping) -> ClassificationSplit:
+        def read_items(items: Sequence[Mapping]) -> tuple[LabeledImage, ...]:
+            return tuple(
+                LabeledImage(image=str(item["image"]), label=int(item["label"])) for item in items
+            )
+
+        return cls(
+            classes=tuple(str(name) for name in value["classes"]),
+            train=read_items(value["train"]),
+            test=read_items(value["test"]),
+        )
+
+
 @PROBES.register("linear")
 class LinearProbe(Probe):
     requires_capabilities = (K.CAP_IMAGE_REPRESENTATION,)
@@ -44,7 +91,7 @@ class LinearProbe(Probe):
     def __init__(
         self,
         name: str,
-        manifest: str,
+        manifest: str | None = None,
         encoder: str = "image",
         head: str | None = None,
         view: str = "center_crop",
@@ -52,13 +99,19 @@ class LinearProbe(Probe):
         batch_size: int = 256,
         l2: float = 1e-3,
         max_iter: int = 500,
+        split: ClassificationSplit | None = None,
     ):
         self.name = name
-        with open(manifest) as f:
-            m = json.load(f)
-        self.classes: list[str] = list(m["classes"])
-        self.train_set: list[dict] = list(m["train"])
-        self.test_set: list[dict] = list(m["test"])
+        if (manifest is None) == (split is None):
+            raise ValueError("linear probe needs exactly one of manifest or split")
+        if split is None:
+            assert manifest is not None
+            with open(manifest) as f:
+                split = ClassificationSplit.from_mapping(json.load(f))
+        self.split = split
+        self.classes = list(split.classes)
+        self.train_set = split.train
+        self.test_set = split.test
         self.encoder = encoder
         self.head = head
         self.transform = VIEWS.get(view)(size=size)
@@ -66,7 +119,9 @@ class LinearProbe(Probe):
         self.l2 = float(l2)
         self.max_iter = int(max_iter)
 
-    def _extract(self, model, ctx, items: list[dict]) -> tuple[torch.Tensor, torch.Tensor]:
+    def _extract(
+        self, model, ctx, items: Sequence[LabeledImage]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         feats: list[torch.Tensor] = []
         labels: list[int] = []
         with torch.no_grad():
@@ -74,14 +129,14 @@ class LinearProbe(Probe):
                 chunk = items[i : i + self.batch_size]
                 imgs = []
                 for it in chunk:
-                    with Image.open(it["image"]) as f:
+                    with Image.open(it.image) as f:
                         imgs.append(self.transform(f.convert("RGB")))
                 x = torch.stack(imgs, dim=0).to(ctx.device)
                 out = model.encode(self.encoder, x).pooled
                 if self.head is not None:
                     out = model.apply_head(self.head, out)
                 feats.append(out.float())
-                labels.extend(int(it["label"]) for it in chunk)
+                labels.extend(it.label for it in chunk)
         return torch.cat(feats, dim=0), torch.tensor(labels, device=ctx.device)
 
     def run(self, model, ctx) -> dict[str, float]:

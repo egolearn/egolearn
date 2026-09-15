@@ -54,10 +54,11 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
 ## Phase 4 — Readout evals
 
 - [x] Novel-object shape-vs-texture bias probe with deterministic stimuli
-- [x] Linear probe: one implementation, no apex dependency (`probe:linear`:
-      frozen features + zero-init logistic regression via full-batch L-BFGS,
-      deterministic, consumes no RNG; splits frozen in manifests; first
-      dataset: BabyView crops)
+- [x] Linear probes: `probe:linear` caches features from deterministic views
+      and fits zero-init logistic regression by full-batch L-BFGS;
+      `probe:linear_sgd` provides a stochastic-view, L2-normalized SGD/LARC/cosine
+      decoder while isolating its RNG. Frozen adapters cover
+      BabyView and Labeled-S; ImageNet supports stochastic-view SGD decoding.
 - [ ] kNN/SVM readout with explicit split files and validation-based selection
 
 ## Phase 5 — Memory & QA
@@ -103,6 +104,5 @@ decide the order.
 
 ## Ongoing
 
-- BabyCL — continual visual and verbal learning, successor of Memory
-  Storyboard — releases its code here when published.
+- BabyCL — continual visual and verbal learning — releases its code here when published.
 - Further egocentric QA and streaming-memory work arrives via `-dev` branches.
