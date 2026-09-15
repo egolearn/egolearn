@@ -353,7 +353,9 @@ default input size is 112px; the fixed-feature probe and full ImageNet adapter
 `imagenet_center_crop` for the SGD probe (bilinear resize to `256 * size // 224`,
 then center crop) and `center_crop` for the fixed-feature probe (bicubic resize
 to `size`, then center crop). Match `view` and `size` across probes to align
-evaluation inputs.
+evaluation inputs. The SGD probe's `seed` controls decoder initialization,
+shuffling, augmentations, and worker seeding independently of the run seed;
+changing the worker count preserves sample order and augmented inputs.
 
 ### Configs: hydra outside, registries inside
 

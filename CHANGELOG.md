@@ -10,10 +10,12 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 - Stochastic-view SGD linear decoding (`probe:linear_sgd`): stochastic train crops,
   frozen encoder, optional feature L2 normalization, SGD, LARC, cosine decay,
-  and deterministic RNG isolation. Per-item augmentation seeds keep scores
-  independent of the data-loader worker count. Worker pools are reused across
-  epochs within each probe run. Evaluation uses a registered
-  `view` (default: `imagenet_center_crop`) with shared ImageNet normalization.
+  and deterministic RNG isolation. The probe seed controls decoder initialization,
+  shuffling, augmentations, and worker seeding independently of the run seed.
+  Per-item augmentation seeds keep scores independent of the data-loader worker
+  count. Worker pools are reused across epochs within each probe run. Evaluation
+  uses a registered `view` (default: `imagenet_center_crop`) with shared ImageNet
+  normalization.
   Match `view` and `size` across linear probes to align evaluation inputs. The
   full ImageNet adapter (`probe:imagenet_linear_sgd`, caller-supplied
   ImageFolder root) defaults to 224-pixel crops. The Apex-derived LARC

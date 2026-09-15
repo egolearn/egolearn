@@ -10,6 +10,10 @@ Hyperparameters: 10 epochs, 112-pixel crops, batch size 1,024,
 L2-normalized features, SGD at learning rate 3, momentum 0.9,
 no weight decay, and unclipped LARC with trust coefficient 0.001.
 
+The probe's ``seed`` controls decoder initialization, shuffle order, augmentations,
+and worker seeding independently of the run seed. Sample order and augmented
+inputs are invariant across data-loader worker counts.
+
 Evaluation uses a registered ``view`` (default: ``imagenet_center_crop``).
 Match both ``view`` and ``size`` when comparing evaluation preprocessing
 with the fixed-feature probe; the classifier training protocols still differ.
@@ -22,7 +26,7 @@ from __future__ import annotations
 
 import math
 import random
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
 import torch
@@ -34,6 +38,7 @@ from torch.utils.data import DataLoader, Dataset, RandomSampler, Sampler, Sequen
 
 from egolearn.config.registry import PROBES, VIEWS
 from egolearn.core import keys as K
+from egolearn.core.context import _stable_seed
 from egolearn.data.views import IMAGENET_MEAN, IMAGENET_STD
 from egolearn.evaluation.linear_probe import ClassificationSplit, LabeledImage
 from egolearn.evaluation.probe import Probe
@@ -68,12 +73,12 @@ class _SeededSampler(Sampler[tuple[int, int]]):
     def __init__(
         self,
         sampler: Sampler[int],
-        derive_seed: Callable[[str], int],
+        seed: int,
         namespace: str,
         size: int,
     ):
         self.sampler = sampler
-        self.derive_seed = derive_seed
+        self.seed = seed
         self.namespace = namespace
         self.size = size
         self.epoch = 0
@@ -82,7 +87,7 @@ class _SeededSampler(Sampler[tuple[int, int]]):
         epoch = self.epoch
         self.epoch += 1
         for index in self.sampler:
-            seed = self.derive_seed(f"{self.namespace}:epoch:{epoch}:item:{index}")
+            seed = _stable_seed(self.seed, f"{self.namespace}:epoch:{epoch}:item:{index}")
             yield index, seed
 
     def __len__(self) -> int:
@@ -269,7 +274,6 @@ class LinearSGDProbe(Probe):
         transform,
         shuffle: bool,
         generator,
-        derive_seed: Callable[[str], int],
         split_name: str,
         device: torch.device,
     ) -> DataLoader:
@@ -282,13 +286,15 @@ class LinearSGDProbe(Probe):
         namespace = f"evaluation.linear_sgd:{self.seed}:{split_name}"
         sampler = _SeededSampler(
             base_sampler,
-            derive_seed,
+            self.seed,
             namespace,
             len(dataset),
         )
         # DataLoader consumes its generator to seed workers.  Keep that bookkeeping
         # separate from the generator that defines the shuffled sample order.
-        worker_generator = torch.Generator().manual_seed(derive_seed(f"{namespace}:workers"))
+        worker_generator = torch.Generator().manual_seed(
+            _stable_seed(self.seed, f"{namespace}:workers")
+        )
         return DataLoader(
             dataset,
             batch_size=self.batch_size,
@@ -353,7 +359,6 @@ class LinearSGDProbe(Probe):
                     _train_transform(self.size),
                     True,
                     loader_generator,
-                    ctx.derive_seed,
                     "train",
                     device=ctx.device,
                 )
@@ -362,7 +367,6 @@ class LinearSGDProbe(Probe):
                     self.transform,
                     False,
                     loader_generator,
-                    ctx.derive_seed,
                     "test",
                     device=ctx.device,
                 )

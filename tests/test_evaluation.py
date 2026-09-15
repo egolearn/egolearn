@@ -250,6 +250,54 @@ def _patterned_image(width: int, height: int) -> Image.Image:
     )
 
 
+def test_linear_sgd_probe_inputs_and_scores_are_independent_of_run_seed(tmp_path):
+    from egolearn.core.context import Context
+    from egolearn.model.model import ComposedModel
+
+    class RecordingEncoder(nn.Module):
+        modality = "image"
+        out_dim = 3
+
+        def __init__(self):
+            super().__init__()
+            self.inputs: list[torch.Tensor] = []
+
+        def forward(self, value):
+            self.inputs.append(value.clone())
+            return value.mean(dim=(2, 3))
+
+    items = []
+    for index in range(6):
+        path = tmp_path / f"pattern_{index}.png"
+        _patterned_image(48 + index, 36).save(path)
+        items.append(LabeledImage(str(path), index % 2))
+    split = ClassificationSplit(("first", "second"), tuple(items[:4]), tuple(items[4:]))
+    encoder = RecordingEncoder()
+    model = ComposedModel({"vision": encoder}).train()
+    probe = linear_sgd_probe.LinearSGDProbe(
+        name="sgd", split=split, size=16, batch_size=2, workers=0, epochs=2, seed=5
+    )
+
+    scores = []
+    inputs = []
+    for run_seed in (17, 18):
+        ctx = Context(seed=run_seed, device="cpu")
+        torch_state = torch.get_rng_state().clone()
+        python_state = random.getstate()
+        encoder.inputs.clear()
+        with torch.no_grad():
+            scores.append(probe.run(model, ctx))
+        inputs.append(tuple(encoder.inputs))
+        assert model.training
+        assert torch.equal(torch_state, torch.get_rng_state())
+        assert python_state == random.getstate()
+
+    # Two train batches and one evaluation batch in each of two epochs.
+    assert len(inputs[0]) == len(inputs[1]) == 6
+    assert all(torch.equal(a, b) for a, b in zip(inputs[0], inputs[1], strict=True))
+    assert scores[0] == scores[1]
+
+
 @pytest.mark.parametrize("view", ["center_crop", "resize", "imagenet_center_crop", "custom_eval"])
 @pytest.mark.parametrize("dimensions", [(37, 37), (53, 37), (37, 53)])
 def test_linear_probes_encode_identical_evaluation_views(tmp_path, monkeypatch, view, dimensions):
@@ -318,9 +366,6 @@ def test_linear_sgd_probe_default_preserves_evaluation_pixels(size, dimensions):
 def test_linear_sgd_probe_pins_memory_for_execution_device(
     monkeypatch, cuda_available, device, pin_memory
 ):
-    from egolearn.core.context import Context
-
-    ctx = Context(seed=17, device="cpu")
     monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda_available)
     items = (LabeledImage("unused.png", 0),)
     split = ClassificationSplit(("object",), items, items)
@@ -332,7 +377,6 @@ def test_linear_sgd_probe_pins_memory_for_execution_device(
         probe.transform,
         False,
         torch.Generator().manual_seed(probe.seed),
-        ctx.derive_seed,
         "test",
         device=torch.device(device),
     )
@@ -340,7 +384,7 @@ def test_linear_sgd_probe_pins_memory_for_execution_device(
     assert loader.pin_memory is pin_memory
 
 
-def test_linear_sgd_probe_augmentations_are_worker_count_invariant(tmp_path):
+def test_linear_sgd_probe_augmentations_are_run_seed_and_worker_count_invariant(tmp_path):
     from multiprocessing import active_children
 
     from egolearn.core.context import Context
@@ -364,10 +408,12 @@ def test_linear_sgd_probe_augmentations_are_worker_count_invariant(tmp_path):
     split = ClassificationSplit(
         tuple(str(index) for index in range(len(items))), tuple(items), tuple(items)
     )
-    ctx = Context(seed=17, device="cpu")
     initial_children = set(active_children())
 
-    def collect(workers: int, num_epochs: int) -> list[tuple[list[int], dict[int, torch.Tensor]]]:
+    def collect(
+        workers: int, num_epochs: int, run_seed: int, probe_seed: int = 5
+    ) -> tuple[int, list[tuple[list[int], dict[int, torch.Tensor]]]]:
+        ctx = Context(seed=run_seed, device="cpu")
         probe = linear_sgd_probe.LinearSGDProbe(
             name="sgd",
             split=split,
@@ -375,7 +421,7 @@ def test_linear_sgd_probe_augmentations_are_worker_count_invariant(tmp_path):
             batch_size=2,
             workers=workers,
             epochs=2,
-            seed=5,
+            seed=probe_seed,
         )
         generator = torch.Generator().manual_seed(probe.seed)
         loader = probe._loader(
@@ -383,10 +429,11 @@ def test_linear_sgd_probe_augmentations_are_worker_count_invariant(tmp_path):
             linear_sgd_probe._train_transform(probe.size),
             True,
             generator,
-            ctx.derive_seed,
             "train",
             device=ctx.device,
         )
+        assert loader.generator is not None
+        worker_seed = loader.generator.initial_seed()
         epochs = []
         worker_pool = None
         for _ in range(num_epochs):
@@ -404,20 +451,25 @@ def test_linear_sgd_probe_augmentations_are_worker_count_invariant(tmp_path):
                 assert active_pool == worker_pool
             worker_pool = active_pool
             epochs.append((order, views))
-        return epochs
+        return worker_seed, epochs
 
-    serial = collect(0, 2)
-    pooled = collect(2, 2)
+    serial_worker_seed, serial = collect(0, 2, run_seed=17)
+    other_run_worker_seed, other_run = collect(0, 2, run_seed=18)
+    pooled_worker_seed, pooled = collect(2, 2, run_seed=18)
+    other_probe_worker_seed, other_probe = collect(0, 2, run_seed=18, probe_seed=6)
     # Releasing the local loader also releases its persistent worker pool.
     assert set(active_children()) == initial_children
 
-    for epoch in range(len(pooled)):
-        serial_order, serial_views = serial[epoch]
-        pooled_order, pooled_views = pooled[epoch]
-        assert serial_order == pooled_order
-        assert serial_views.keys() == pooled_views.keys()
-        assert all(torch.equal(serial_views[index], pooled_views[index]) for index in serial_views)
+    assert serial_worker_seed == other_run_worker_seed == pooled_worker_seed
+    assert other_probe_worker_seed != serial_worker_seed
+    for result in (other_run, pooled):
+        for epoch, (order, views) in enumerate(result):
+            serial_order, serial_views = serial[epoch]
+            assert serial_order == order
+            assert serial_views.keys() == views.keys()
+            assert all(torch.equal(serial_views[index], views[index]) for index in serial_views)
     assert any(not torch.equal(serial[0][1][index], serial[1][1][index]) for index in serial[0][1])
+    assert any(not torch.equal(serial[0][1][i], other_probe[0][1][i]) for i in serial[0][1])
 
 
 def test_linear_sgd_probe_larc_matches_reference_update():
