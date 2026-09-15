@@ -80,6 +80,29 @@ def imagefolder(tmp_path):
     return root
 
 
+@pytest.fixture
+def legacy_text_checkpoint(tmp_path, model_config):
+    vocab = {"<pad>": 0, "<unk>": 1, "red": 2, "ball": 3}
+    vocab_path = tmp_path / "vocab.json"
+    vocab_path.write_text(json.dumps(vocab))
+    config = {
+        "model": deepcopy(model_config),
+        "_imports_": ["egolearn.methods.babycl"],
+        "vocab_path": str(vocab_path),
+        "tokenizer": {"vocab_json": "${vocab_path}", "normalize": False},
+    }
+    config["model"]["encoders"]["text"] = {
+        "_target_": "encoder:text_bow",
+        "dim": 8,
+        "vocab_size": "auto",
+    }
+    model = build_model(config["model"], vocab_size=len(vocab), imports=config["_imports_"])
+    path = tmp_path / "legacy_text.pth"
+    # Older checkpoints record weights and routing, but no construction config.
+    torch.save({"model": model.state_dict(), "export_contract": model.export_contract()}, path)
+    return path, config, model
+
+
 @pytest.mark.parametrize("snapshot", [False, True])
 def test_checkpoint_round_trip_without_building_training_pipeline(
     toy_pipeline, tmp_path, monkeypatch, snapshot
@@ -136,6 +159,67 @@ def test_legacy_checkpoint_uses_only_model_related_config(tmp_path, model_config
     mismatched = deepcopy(model_config)
     mismatched["heads"]["proj"]["out_dim"] = 5
     with pytest.raises(RuntimeError, match="size mismatch"):
+        load_model(path, model_config=mismatched)
+
+
+def test_legacy_checkpoint_resolves_auto_vocab_from_hydra_tokenizer(
+    legacy_text_checkpoint, tmp_path, monkeypatch
+):
+    path, config, model = legacy_text_checkpoint
+    monkeypatch.delenv("EGOLEARN_TEST_MISSING_DATA", raising=False)
+    config["stream"] = {"root": "${oc.env:EGOLEARN_TEST_MISSING_DATA}"}
+    config_path = tmp_path / "config.yaml"
+    OmegaConf.save(OmegaConf.create(config), config_path)
+
+    loaded = load_model(path, model_config=config_path)
+
+    assert loaded.construction_config is not None
+    assert loaded.construction_config["model"]["encoders"]["text"]["vocab_size"] == 4
+    assert loaded.export_contract() == model.export_contract()
+    assert loaded.state_dict().keys() == model.state_dict().keys()
+    assert all(
+        torch.equal(value, loaded.state_dict()[key]) for key, value in model.state_dict().items()
+    )
+    assert not loaded.training
+
+
+@pytest.mark.parametrize("null_tokenizer", [False, True])
+def test_legacy_checkpoint_auto_vocab_requires_tokenizer(legacy_text_checkpoint, null_tokenizer):
+    path, config, _ = legacy_text_checkpoint
+    if null_tokenizer:
+        config["tokenizer"] = None
+    else:
+        del config["tokenizer"]
+
+    with pytest.raises(
+        ValueError, match="vocab_size=auto needs a tokenizer or a resolved vocabulary size"
+    ):
+        load_model(path, model_config=config)
+
+
+def test_checkpoint_rejects_different_routing_with_matching_weights(tmp_path, model_config):
+    config = deepcopy(model_config)
+    config["encoders"]["target"] = {"_target_": "encoder:toy_cnn", "dim": 8, "frozen": True}
+    model = build_model(config)
+    path = tmp_path / "checkpoint.pth"
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "model_config": model.construction_config,
+            "export_contract": model.export_contract(),
+        },
+        path,
+    )
+    mismatched = deepcopy(config)
+    mismatched["heads"]["proj"]["encoder"] = "target"
+    other = build_model(mismatched)
+    # Strict weight loading accepts this model, but its head reads a different encoder.
+    other.load_state_dict(model.state_dict(), strict=True)
+    assert other.export_contract() != model.export_contract()
+
+    with pytest.raises(
+        ValueError, match="model_config does not match the checkpoint's export contract"
+    ):
         load_model(path, model_config=mismatched)
 
 
