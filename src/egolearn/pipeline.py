@@ -15,8 +15,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from egolearn.evaluation.probe import Probe
+from egolearn.model.build import build_model
+
 from .config.instantiate import instantiate
-from .config.registry import ENCODERS
 from .core import events as E
 from .core import keys as K
 from .core.context import Context
@@ -181,51 +183,12 @@ def build(cfg: dict) -> Pipeline:
 
     # model ------------------------------------------------------------------
     build_warnings: list[str] = []
-    mcfg = dict(cfg["model"])
-    enc_modules: dict = {}
-    frozen_names: list[str] = []
-    for name, spec in (mcfg.get("encoders") or {}).items():
-        spec = dict(spec)
-        if spec.pop("frozen", False):
-            # e.g. a JEPA EMA target: kept in the model (and in snapshots)
-            # but never trained; ComposedModel records this and keeps the
-            # module out of routing, out of the optimizer and in eval mode
-            frozen_names.append(name)
-        if spec.get("vocab_size") == "auto":
-            # "auto" is wired to THE TEXT TOKENIZER, so it is only honored
-            # for text encoders; a video tokenizer's vocab is a different
-            # thing and must be given explicitly
-            kind, _, reg_name = str(spec.get("_target_", "")).partition(":")
-            cls = ENCODERS.get(reg_name) if kind == "encoder" else None
-            if cls is None or getattr(cls, "modality", None) != "text":
-                raise PipelineError(
-                    f"encoder {name!r}: vocab_size=auto fills in the text "
-                    "tokenizer's vocab size and only applies to text encoders"
-                )
-            if tokenizer is None:
-                raise PipelineError(f"encoder {name!r}: vocab_size=auto needs a tokenizer")
-            spec["vocab_size"] = tokenizer.vocab_size
-        enc_modules[name] = instantiate(spec)
-    if not enc_modules:
-        raise PipelineError("model needs at least one entry under model.encoders")
-
-    heads = {}
-    for name, spec in (mcfg.get("heads") or {}).items():
-        spec = dict(spec)
-        head = {"encoder": spec.pop("encoder"), "module": None}
-        if "field" in spec:
-            head["field"] = spec.pop("field")
-        head["module"] = instantiate(spec)
-        heads[name] = head
-
-    predictors = {}
-    for name, spec in (mcfg.get("predictors") or {}).items():
-        spec = dict(spec)
-        inputs = spec.pop("inputs", [])
-        predictors[name] = {"inputs": list(inputs), "module": instantiate(spec)}
-
     try:
-        model = ComposedModel(enc_modules, heads=heads, predictors=predictors, frozen=frozen_names)
+        model = build_model(
+            cfg["model"],
+            vocab_size=tokenizer.vocab_size if tokenizer is not None else None,
+            imports=cfg.get("_imports_", []),
+        )
     except (TypeError, ValueError) as e:
         raise PipelineError(str(e)) from e
 
@@ -254,7 +217,16 @@ def build(cfg: dict) -> Pipeline:
     ]
     if hcfg.get("checkpoint_every"):
         hooks.append(CheckpointHook(run_dir, every_steps=hcfg["checkpoint_every"]))
-    probes = [instantiate(p) for p in (cfg.get("probes") or [])]
+    probes = []
+    for spec in cfg.get("probes") or []:
+        if str(spec.get("_target_", "")).startswith("benchmark:"):
+            raise PipelineError(
+                "standalone benchmarks cannot be training probes; use egolearn.evaluate"
+            )
+        probe = instantiate(spec)
+        if not isinstance(probe, Probe):
+            raise PipelineError("training probes must implement Probe; use egolearn.evaluate")
+        probes.append(probe)
     if probes:
         hooks.append(ProbeHook(probes, every_steps=hcfg.get("probe_every", 500)))
     if hcfg.get("snapshot_milestones") or hcfg.get("snapshot_every"):

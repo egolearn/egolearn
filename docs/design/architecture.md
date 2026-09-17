@@ -325,10 +325,15 @@ epoch shuffle from (seed, epoch) and picks up mid-epoch.
 
 ### `egolearn.evaluation` and `evaluation/benchmarks/`
 
-A `Probe` is `run(model, ctx) → {metric: value}` and can execute at a
-gradient-step cadence during training or on checkpoints after. Each concrete
-benchmark owns a package under `src/egolearn/evaluation/benchmarks/`, ported
-1:1 from the original eval scripts:
+A `Benchmark` is `prepare()` plus `run(model, ctx) → {metric: value}` and
+runs independently of training through `evaluate` or `evaluate_checkpoint`.
+`Probe` extends that contract for evaluations scheduled at a gradient-step
+cadence; existing probes also work in the standalone runner. ImageNet is
+benchmark-only. Model reconstruction is shared with training and reads resolved
+construction metadata from new checkpoints, or an explicit config for old ones.
+See [the evaluation guide](../evaluation.md) for the API and CLI.
+Each concrete benchmark owns a package under
+`src/egolearn/evaluation/benchmarks/`, ported 1:1 from the original eval scripts:
 
 | Benchmark | Protocol | Metric |
 |---|---|---|
@@ -349,7 +354,7 @@ L-BFGS. `probe:linear_sgd` (`LinearSGDProbe`) uses stochastic-view SGD: it train
 an L2-normalized linear head with SGD, LARC, and cosine decay for 10 epochs,
 recomputing features from stochastic crops through the frozen encoder. Its
 default input size is 112px; the fixed-feature probe and full ImageNet adapter
-(`ImageNetLinearSGDProbe`) default to 224px. Evaluation defaults to
+(`ImageNetLinearBenchmark`) default to 224px. Evaluation defaults to
 `imagenet_center_crop` for the SGD probe (bilinear resize to `256 * size // 224`,
 then center crop) and `center_crop` for the fixed-feature probe (bicubic resize
 to `size`, then center crop). Match `view` and `size` across probes to align
@@ -490,7 +495,7 @@ A few rules the codebase follows consistently:
   crops (gaze, boxes), extend the view signature — views already receive the
   whole record for this reason.
 * New benchmark: a package under `src/egolearn/evaluation/benchmarks/`
-  owning its probe.
+  owning its benchmark and any training probe adapter.
 * New loop behavior: subclass `LockstepDriver`.
 
 ## File guide
@@ -539,7 +544,10 @@ method = one paper's research code, eval = benchmark code.
 | `src/egolearn/training/hooks.py` | shared | logging, checkpoints, probes, snapshots, wandb |
 | `src/egolearn/training/profiling.py` | shared | the per-stage timing report |
 | `src/egolearn/utils/snapshot.py` | shared | save/restore the whole world; streaming resume replays the stream |
-| `src/egolearn/evaluation/probe.py` | shared | the `Probe` protocol |
+| `src/egolearn/evaluation/benchmark.py` | shared | the standalone `Benchmark` contract |
+| `src/egolearn/evaluation/evaluator.py` | shared | benchmark execution and structured results |
+| `src/egolearn/evaluation/checkpoint.py` | shared | model-only checkpoint loading and evaluation |
+| `src/egolearn/evaluation/probe.py` | shared | the training `Probe` contract |
 | `src/egolearn/evaluation/benchmarks/` | eval | 4AFC, linear decoding, visual two-word test, Baby Winoground, shape-bias probes |
 | `src/egolearn/methods/storyboard/` | method | verbatim clustering + recluster admission + learner embedder |
 | `src/egolearn/methods/babycl/refine.py` | method | verbatim segmentation math from `online_ms_refine.py` |

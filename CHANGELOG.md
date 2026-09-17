@@ -8,6 +8,12 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Standalone evaluation API (`evaluate`, `evaluate_checkpoint`, `load_model`) and
+  `python -m egolearn.evaluate`, with benchmark configs, structured JSON results,
+  checkpoint provenance, and isolated evaluation RNGs. Existing probes can also
+  run through this API. Pipeline checkpoints and snapshots now save resolved
+  model construction metadata; older files accept an explicit model config.
+
 - Stochastic-view SGD linear decoding (`probe:linear_sgd`): stochastic train crops,
   frozen encoder, optional feature L2 normalization, SGD, LARC, cosine decay,
   and deterministic RNG isolation. The probe seed controls decoder initialization,
@@ -17,7 +23,7 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   uses a registered `view` (default: `imagenet_center_crop`) with shared ImageNet
   normalization.
   Match `view` and `size` across linear probes to align evaluation inputs. The
-  full ImageNet adapter (`probe:imagenet_linear_sgd`, caller-supplied
+  full ImageNet adapter (`benchmark:imagenet_linear_sgd`, caller-supplied
   ImageFolder root) defaults to 224-pixel crops. The Apex-derived LARC
   implementation retains its full upstream BSD-3-Clause license.
 - Direct Labeled-S linear probing (`benchmarks/labeled_s_linear/`,
@@ -58,6 +64,12 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   manifest.
 
 ### Changed
+
+- Full ImageNet evaluation moves from `probe:imagenet_linear_sgd` to standalone
+  `benchmark:imagenet_linear_sgd`. Dataset enumeration is deferred to preparation
+  and cached across calls on the same benchmark instance. Remove ImageNet from
+  training `probes` and use the packaged `imagenet_linear_eval` config; the former
+  `ImageNetLinearSGDProbe` Python class is replaced by `ImageNetLinearBenchmark`.
 
 - probe:four_afc moved from the labeled_s_4afc benchmark package to
   `evaluation/four_afc.py`: with two datasets using it, the scoring is

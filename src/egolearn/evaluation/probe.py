@@ -20,8 +20,16 @@ probe specific to it, and registers into the same PROBES registry.
 
 from __future__ import annotations
 
+from egolearn.evaluation.benchmark import Benchmark
 
-class Probe:
+
+class Probe(Benchmark):
+    """A benchmark suitable for scheduling inside the training loop.
+
+    Existing probes also run through the standalone evaluator. Benchmarks
+    that do not inherit Probe cannot be attached to a training pipeline.
+    """
+
     name = "probe"
     # capabilities the model must have for this evaluation to apply
     requires_capabilities: tuple[str, ...] = ()
