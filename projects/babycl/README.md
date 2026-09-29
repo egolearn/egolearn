@@ -22,7 +22,7 @@ register themselves on import):
   segmenter's expanded chunks; this port preserves that.
 * `embedder:frozen_resnext50` (the frozen ImageNet encoder the segmenter embeds
   frames with), `encoder:text_bow` (CVCL bag-of-words text encoder), `view:cvcl_aug`
-  (an_transform 1:1, incl. the PIL radius blur), `view:babycl_ms_aug` (the
+  (matches an_transform using a radius blur), `view:babycl_ms_aug` (the
   augmentation segments EFFECTIVELY receive: center-crop at gather + strong SimCLR
   at train, fused into one pipeline)
 

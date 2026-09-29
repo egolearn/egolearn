@@ -9,7 +9,7 @@ import random
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as T
-from PIL import ImageFilter, ImageOps
+from PIL import Image, ImageFilter, ImageOps
 
 from egolearn.config.registry import EMBEDDERS, VIEWS
 from egolearn.core.refs import ItemRef
@@ -18,17 +18,20 @@ from egolearn.memory.admission.base import EmbeddingProvider
 
 
 class PILRadiusBlur:
-    """VERBATIM port of utils_mcl.GaussianBlur (the SimCLR/MoCo-style PIL blur):
-    draws a radius ~ U(sigma[0], sigma[1]) and applies PIL's ImageFilter blur.
-    This is NOT the same operation as torchvision's kernel-convolution
-    GaussianBlur -- BabyCL's an_transform uses this PIL version."""
+    """Pillow's radius-based Gaussian filter.
 
-    def __init__(self, sigma=(0.1, 2.0)):
+    ``sigma`` bounds a uniform radius sampled from Python's global RNG. Each
+    call consumes one draw. Pillow's filter is part of the numerical contract;
+    substituting a tensor convolution changes pixels.
+    """
+
+    def __init__(self, sigma: tuple[float, float] = (0.1, 2.0)) -> None:
         self.sigma = sigma
 
-    def __call__(self, x):
-        sigma = random.uniform(self.sigma[0], self.sigma[1])
-        return x.filter(ImageFilter.GaussianBlur(radius=sigma))
+    def __call__(self, image: Image.Image) -> Image.Image:
+        lower, upper = self.sigma
+        radius = lower + (upper - lower) * random.random()
+        return image.filter(ImageFilter.GaussianBlur(radius=radius))
 
 
 @VIEWS.register("cvcl_aug")
