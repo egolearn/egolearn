@@ -52,6 +52,40 @@ Existing small evaluations remain available with their `probe:*` configuration
 targets. Pass those configs in `benchmarks` to evaluate them after training.
 There is one scoring implementation for training probes and standalone use.
 
+## BabyVLM benchmark data
+
+The Visual Two-Word Test (VTWT, `probe:vtwt`) and Baby Winoground
+(`probe:baby_winoground`) come from Wang et al., *BabyVLM: Data-Efficient
+Pretraining of VLMs Inspired by Infant Learning* (2025). See the
+[paper website](https://shawnking98.github.io/BabyVLM/) and the authors'
+[evaluation repository](https://github.com/ShawnKing98/babylmms-eval).
+
+| Benchmark | Public labels | Required images |
+| --- | --- | --- |
+| VTWT | [VTWT labels][vtwt-labels] | SAYCam frames |
+| Baby Winoground | [Baby Winoground labels][bw-labels] | SAYCam frames and synthetic negatives |
+
+Follow the [SAYCam access and preparation instructions][saycam-preparation] in
+this repository's README to obtain the frames. For Baby Winoground, also obtain
+the `BabyVLM_V1` folder from [Databrary][babyvlm-images] for its synthetic negative
+images. The repository distributes labels; the images are obtained separately
+under the applicable Databrary data-use terms. Researchers can apply for Databrary
+access with approval from their institution's IRB.
+
+For EgoLearn, configure VTWT's `csv_path` and `image_dir`; for Baby Winoground,
+configure `csv_path`, `pos_dir` (SAYCam frames), and `neg_dir` (synthetic images).
+The probes expect CSV inputs with the schemas documented in the
+[VTWT module](../src/egolearn/evaluation/benchmarks/vtwt/__init__.py) and
+[Baby Winoground module](../src/egolearn/evaluation/benchmarks/baby_winoground/__init__.py).
+Both also require the evaluated model's `vocab_json`, `vision_head`, and
+appropriate `image_norm` (`imagenet` for EgoLearn-trained BabyCL models,
+`clip` for the CVCL family).
+
+[vtwt-labels]: https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/vtwt
+[bw-labels]: https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/baby_winoground
+[saycam-preparation]: ../README.md#saycam-dataset-access
+[babyvlm-images]: https://nyu.databrary.org/volume/564/folder/77120
+
 ## Checkpoint compatibility
 
 Both `CheckpointHook` files (`step_*.pth`, `final.pth`) and training snapshots

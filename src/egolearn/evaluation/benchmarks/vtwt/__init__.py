@@ -1,5 +1,11 @@
 """Visual Two-Word Test (VTWT) benchmark probe.
 
+Introduced by BabyVLM V1: https://shawnking98.github.io/BabyVLM/
+Labels: https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/vtwt
+SAYCam images require separate Databrary access; the upstream README describes
+applying with institutional IRB approval. See docs/evaluation.md for data sources
+and local configuration.
+
 1:1 port of mcl's eval_vtwt.py (protocol from Wang et al., BabyVLM).  For
 each sample the model sees one image and two two-word phrases; it predicts
 whichever phrase has the higher cosine similarity to the image.  Accuracy =

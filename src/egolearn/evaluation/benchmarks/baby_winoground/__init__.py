@@ -1,5 +1,12 @@
 """Baby Winoground benchmark probe.
 
+Introduced by BabyVLM: https://shawnking98.github.io/BabyVLM/
+Labels: https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/baby_winoground
+Synthetic negatives: https://nyu.databrary.org/volume/564/folder/77120
+The upstream README describes applying for Databrary access with institutional
+IRB approval. See docs/evaluation.md for SAYCam image preparation and local
+configuration.
+
 1:1 port of mcl's eval_baby_winoground.py (protocol from Wang et al.,
 BabyVLM).  Each instance pairs (pos_image, positive_phrase) with a
 synthetically perturbed (neg_image, negative_phrase).  All four image-phrase
