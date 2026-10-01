@@ -143,6 +143,7 @@ def test_experiment_diff_wants_a_results_section() -> None:
     assert check("t", GOOD, ["src/egolearn/configs/train.yaml"])[1] == [warning]
     assert check("t", GOOD, ["src/egolearn/configs/train.yml"])[1] == [warning]
     assert check("t", GOOD, ["configs/train.yaml"])[1] == [warning]
+    assert check("t", GOOD, ["configs/line\nbreak.yaml"])[1] == [warning]
     assert check("t", GOOD, ["./projects/x/README.md"])[1] == [warning]
     assert check("t", GOOD, ["src/egolearn/pipeline.py"])[1] == []
     assert check("t", GOOD, ["docs/configs.md", "docs/projects/notes.md"])[1] == []

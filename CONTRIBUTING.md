@@ -51,15 +51,17 @@ dates, a copy of the changelog, and the title repeated as a heading. Delete all
 template comments and empty optional sections. Aim for at most 40 non-blank
 lines; the checker warns past 40 and rejects more than 60.
 
-Draft the body in a file and check it before opening or updating the PR:
+Draft the body in a file and check it before opening or updating the PR. In Bash
+4.4 or newer, preserve each changed path using NUL delimiters and a quoted array:
 
 ```bash
+mapfile -d '' -t changed_files < <(git diff --name-only -z origin/main...HEAD)
 python scripts/check_pr_message.py --title "describe the change" --body-file body.md \
-    --files $(git diff --name-only origin/main...HEAD)
+    --files "${changed_files[@]}"
 ```
 
 The diff command lists committed changes; include any uncommitted paths in
-`--files` when checking earlier. Quote paths containing spaces. To check an
+`--files` when checking earlier. Quote any paths you add manually. To check an
 existing PR from this checkout, use `python scripts/check_pr_message.py --pr N`
 (requires authenticated `gh`). Checking a local draft needs only Python's
 standard library, with no GitHub access or training dependencies.

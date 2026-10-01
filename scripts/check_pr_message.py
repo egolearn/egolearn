@@ -1,7 +1,9 @@
 """Check a pull request message against CONTRIBUTING.md, "The PR message".
 
-    python scripts/check_pr_message.py --title "..." --body-file body.md \\
-        --files $(git diff --name-only origin/main...HEAD)
+    # Bash 4.4+: preserve filenames containing whitespace or glob characters.
+    mapfile -d '' -t changed_files < <(git diff --name-only -z origin/main...HEAD)
+    python scripts/check_pr_message.py --title "describe the change" --body-file body.md \\
+        --files "${changed_files[@]}"
     python scripts/check_pr_message.py --pr 67
 
 Checks the shape only: title, the sections and their order, ticked checklist
@@ -40,7 +42,7 @@ ITEM = re.compile(rf"^\s*{LIST}\s")
 BULLET = re.compile(rf"^ {{0,3}}{LIST}\s")
 NOT_PROSE = re.compile(r"^\s*(#|\||\x00)|^ {4,}")
 ISSUE_ONLY = re.compile(r"^\s*(?:(?:Closes|Part of)\s+#\d+|and|[,.\s])+$")
-EXPERIMENT_PATH = re.compile(r"^projects/|(^|/)configs/.*\.ya?ml$")
+EXPERIMENT_PATH = re.compile(r"^projects/|(^|/)configs/.*\.ya?ml$", re.DOTALL)
 NO_RESULTS = "the diff touches projects/ or YAML configs: add a Results section, or say why not"
 CHECKLIST_TOPICS = {
     "secrets": r"secrets",
