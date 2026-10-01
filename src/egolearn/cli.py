@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from importlib.resources import files
 from pathlib import Path
 
 from egolearn import __version__
@@ -35,7 +36,16 @@ def _hydra_arguments(arguments: list[str]) -> list[str]:
         path = path.resolve()
         # Replace the primary config source: --config-dir only appends a search
         # path and could silently select a packaged config with the same name.
-        return ["--config-path", str(path.parent), "--config-name", path.stem, *rest]
+        # Keep installed defaults as a fallback without overriding hydra.searchpath.
+        return [
+            "--config-path",
+            str(path.parent),
+            "--config-name",
+            path.stem,
+            "--config-dir",
+            str(files("egolearn.configs")),
+            *rest,
+        ]
     return ["--config-name", config, *rest]
 
 

@@ -101,6 +101,44 @@ def test_file_config_preserves_defaults_overrides_and_caller_directory(tmp_path,
     assert sorted(p.name for p in tmp_path.iterdir()) == ["project with spaces"]
 
 
+@pytest.mark.parametrize(
+    "command,filename,default",
+    [("train", "toy_streaming.yaml", "config"), ("eval", "imagenet_linear_eval.yaml", "evaluate")],
+)
+@pytest.mark.parametrize("searchpath_source", [None, "config", "override"])
+def test_file_config_inherits_packaged_defaults_and_keeps_searchpath(
+    tmp_path, command, filename, default, searchpath_source
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    extra = tmp_path / "extra configs"
+    extra.mkdir()
+    (project / "shared.yaml").write_text("message: local\n")
+    (extra / "extension.yaml").write_text("extension: found\n")
+    config = OmegaConf.create({"defaults": [f"/{default}", "shared", "_self_"], "seed": 19})
+    overrides = []
+    if searchpath_source is not None:
+        config.defaults.insert(2, "extension")
+        if searchpath_source == "config":
+            config.hydra = {"searchpath": [f"file://{extra}"]}
+        else:
+            overrides.append(f"hydra.searchpath=['file://{extra}']")
+    OmegaConf.save(config, project / filename)
+    result = run_cli(tmp_path, command, str(project / filename), "--cfg", "job", *overrides)
+    assert result.returncode == 0, result.stderr
+    composed = OmegaConf.create(result.stdout)
+    assert composed.seed == 19
+    assert composed.message == "local"
+    if searchpath_source is not None:
+        assert composed.extension == "found"
+    if command == "train":
+        assert composed.wandb.mode == "disabled"
+        assert composed.loader.workers == 0
+    else:
+        assert composed.benchmarks == []
+        assert OmegaConf.is_missing(composed, "checkpoint")
+
+
 def test_native_hydra_flags_and_eval_default(tmp_path):
     result = run_cli(tmp_path, "train", "--config-name=toy_streaming", "--cfg", "job")
     assert result.returncode == 0, result.stderr

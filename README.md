@@ -47,6 +47,8 @@ egolearn eval imagenet_linear_eval checkpoint=runs/example/final.pth data_root=/
 
 The first argument after `train` or `eval` may be a packaged config name or an
 existing `.yaml` file. Relative paths are resolved from your current directory.
+Explicit files can inherit packaged defaults (for example, `defaults: [/config, _self_]`);
+configs in the file's own directory take precedence over packaged configs.
 Hydra controls all subsequent arguments, including `--help`, `--cfg job`,
 `--multirun`, `+key=value`, and `~key`. Native invocation also works:
 `egolearn train --config-dir projects/babycl/configs --config-name saycam_default`.
