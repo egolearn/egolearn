@@ -300,6 +300,47 @@ def test_local_cli_accepts_an_empty_file_list(tmp_path: Path) -> None:
     assert "warning:" not in result.stdout
 
 
+@pytest.mark.parametrize(
+    "filename",
+    ["-notes.md", "--help", "--pr", "--title", "--body-file", "--files", "--", "-"],
+)
+def test_cli_treats_option_like_filenames_as_paths(tmp_path: Path, filename: str) -> None:
+    result = run_draft(tmp_path, GOOD, "--files", filename, "configs/my config.yaml")
+    assert result.returncode == 0, result.stderr
+    assert "PR message: ok" in result.stdout
+    assert f"warning: {check_pr_message.NO_RESULTS}" in result.stdout
+
+
+def test_cli_preserves_all_filenames_after_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body_file = tmp_path / "body.md"
+    body_file.write_text(GOOD, encoding="utf-8")
+    filenames = ["-notes.md", "--", "--pr", "26", "--help", "--files", "configs/a\nb.yaml"]
+
+    def check_files(title: str, body: str, files: list[str]) -> tuple[list[str], list[str]]:
+        assert title == "check PR messages"
+        assert body == GOOD
+        assert files == filenames
+        return [], []
+
+    monkeypatch.setattr(check_pr_message, "check", check_files)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "check_pr_message.py",
+            "--title",
+            "check PR messages",
+            "--body-file",
+            str(body_file),
+            "--files",
+            *filenames,
+        ],
+    )
+    assert check_pr_message.main() == 0
+
+
 def test_cli_warnings_succeed_but_errors_fail(tmp_path: Path) -> None:
     result = run_draft(tmp_path, GOOD, "--files", "projects/an experiment/run.yaml")
     assert result.returncode == 0, result.stderr

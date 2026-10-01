@@ -12,6 +12,9 @@ touch projects/ or a configs/*.yaml or *.yml file (the file list comes from --fi
 from gh). Fenced code is content, never structure. Exit 1 on any error;
 warnings do not fail. It cannot judge the prose.
 
+Put --files last: every following argument is a literal filename, including
+names beginning with a dash or matching an option such as --help.
+
 Markdown is parsed approximately: a fence is indented at most three spaces and
 closes on a matching delimiter; four spaces open a code block unless the line
 continues a list; tabs count as four spaces; code indented inside a list item
@@ -222,8 +225,21 @@ def main() -> int:
     parser.add_argument("--pr", type=int, help="check an existing pull request through gh")
     parser.add_argument("--title")
     parser.add_argument("--body-file")
-    parser.add_argument("--files", nargs="*", help="changed paths, for the Results check")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--files",
+        nargs=argparse.REMAINDER,
+        help="changed paths for Results; must be last (all following arguments are paths)",
+    )
+    argv = sys.argv[1:]
+    file_args = None
+    if "--files" in argv:
+        start = argv.index("--files") + 1
+        # Even REMAINDER treats a bare -- specially. Keep the entire file list
+        # out of argparse so option-like filenames cannot change the invocation.
+        file_args, argv = argv[start:], argv[:start]
+    args = parser.parse_args(argv)
+    if file_args is not None:
+        args.files = file_args
     if args.pr is not None and (
         args.title is not None or args.body_file is not None or args.files is not None
     ):

@@ -61,8 +61,9 @@ python scripts/check_pr_message.py --title "describe the change" --body-file bod
 ```
 
 The diff command lists committed changes; include any uncommitted paths in
-`--files` when checking earlier. Quote any paths you add manually. To check an
-existing PR from this checkout, use `python scripts/check_pr_message.py --pr N`
+`--files` when checking earlier. Put `--files` last: every following argument is
+a literal filename, even `--help` or `--`. Quote any paths you add manually.
+To check an existing PR from this checkout, use `python scripts/check_pr_message.py --pr N`
 (requires authenticated `gh`). Checking a local draft needs only Python's
 standard library, with no GitHub access or training dependencies.
 
