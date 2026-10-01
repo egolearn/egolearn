@@ -81,6 +81,26 @@ The rest of the consolidation (LifelongMemory's QA/memory line, more evals)
 arrives per [docs/roadmap.md](docs/roadmap.md), and **nothing is ported
 without triage** — see the porting policy there.
 
+## Initialize from another run
+
+Set `init_from` to copy model weights into a fresh run. For example, keep a trained
+vision encoder while initializing new heads from the new run's seed:
+
+```bash
+uv run python -m egolearn.train --config-name toy_streaming \
+  '+init_from.checkpoint=runs/previous/final.pth' \
+  '+init_from.include=[encoders.vision.]'
+```
+
+Checkpoints and full snapshots are accepted. `include` and `exclude` select tensor
+name prefixes; omitting `include` selects all tensors. Strict loading is the default:
+selected components must be complete and shapes must match. Explicitly setting
+`strict: false` skips unmatched tensors, but selecting no tensors always fails.
+Parameters and buffers are copied; optimizer, stream, and RNG state start fresh.
+Use `resume` to continue a complete run instead. Only load trusted checkpoint files.
+The source checkpoint hash, selected prefixes, and tensor count are recorded in the
+pipeline summary and subsequent checkpoints' model metadata.
+
 ## Layout
 
 | Path | Purpose |

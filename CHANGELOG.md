@@ -8,6 +8,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- `init_from` initializes selected model components from a checkpoint or snapshot
+  before optimizer construction, with strict tensor checks and source provenance.
+
 - Standalone evaluation API (`evaluate`, `evaluate_checkpoint`, `load_model`) and
   `python -m egolearn.evaluate`, with benchmark configs, structured JSON results,
   checkpoint provenance, and isolated evaluation RNGs. Existing probes can also

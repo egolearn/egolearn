@@ -61,6 +61,7 @@ class Pipeline:
     driver: LockstepDriver | OfflineDriver
     probes: list = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    init_from: dict | None = None
 
     @property
     def mode(self) -> str:
@@ -89,6 +90,12 @@ class Pipeline:
         lines.append(
             f"  model     : encoders {self.model.modalities()}  heads {self.model.head_names()}"
         )
+        if self.init_from:
+            lines.append(
+                f"  init_from : {self.init_from['tensors']} tensors under "
+                f"{self.init_from['include'] or ['*']} <- {self.init_from['checkpoint']} "
+                f"(step {self.init_from['step']}, sha256 {self.init_from['sha256'][:12]})"
+            )
         for w in self.warnings:
             lines.append(f"  WARNING   : {w}")
         return "\n".join(lines)
@@ -191,6 +198,18 @@ def build(cfg: dict) -> Pipeline:
         )
     except (TypeError, ValueError) as e:
         raise PipelineError(str(e)) from e
+
+    # Initialize weights before creating the optimizer; all other run state is fresh.
+    init_summary = None
+    if cfg.get("init_from"):
+        from egolearn.model.init import load_pretrained_weights
+
+        try:
+            init_summary = load_pretrained_weights(model, **dict(cfg["init_from"]))
+        except (FileNotFoundError, KeyError, TypeError, ValueError) as e:
+            raise PipelineError(f"init_from: {e}") from e
+        model.construction_config = dict(model.construction_config or {})
+        model.construction_config["init_from"] = init_summary
 
     # give learner embedders access to the model
     for emb in embedders.values():
@@ -327,6 +346,7 @@ def build(cfg: dict) -> Pipeline:
         losses=losses,
         probes=probes,
         driver=driver,
+        init_from=init_summary,
     )
     pipe.warnings.extend(build_warnings)
     validate(pipe)
