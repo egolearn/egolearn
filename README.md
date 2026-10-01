@@ -97,7 +97,9 @@ name prefixes; omitting `include` selects all tensors. Strict loading is the def
 selected components must be complete and shapes must match. Explicitly setting
 `strict: false` skips unmatched tensors, but selecting no tensors always fails.
 Parameters and buffers are copied; optimizer, stream, and RNG state start fresh.
-Use `resume` to continue a complete run instead. Only load trusted checkpoint files.
+Use `resume` to continue a complete run instead. `init_from` and `resume` are mutually
+exclusive; set `init_from=null` when resuming a config that specifies initialization.
+Only load trusted checkpoint files.
 The source checkpoint hash, selected prefixes, and tensor count are recorded in the
 pipeline summary and subsequent checkpoints' model metadata.
 

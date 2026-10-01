@@ -3,12 +3,49 @@
 from __future__ import annotations
 
 import copy
+import subprocess
+import sys
 
 import pytest
 import torch
+from omegaconf import OmegaConf
 
 import egolearn
 from egolearn.utils.snapshot import save_snapshot
+
+
+@pytest.mark.parametrize("resume", ["auto", "snapshot.pth"])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_train_rejects_initialization_and_resume_before_building(tmp_path, resume, dry_run):
+    # Deliberately omit stream/model config and use a nonexistent checkpoint:
+    # the incompatible modes must fail before any pipeline or checkpoint I/O.
+    OmegaConf.save(
+        {
+            "init_from": {"checkpoint": "missing.pth"},
+            "resume": resume,
+            "dry_run": dry_run,
+        },
+        tmp_path / "conflict.yaml",
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "egolearn.train",
+            "--config-path",
+            str(tmp_path),
+            "--config-name",
+            "conflict",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode != 0
+    assert "init_from and resume are mutually exclusive" in result.stderr
+    assert "init_from=null" in result.stderr
 
 
 def _cfg(tmp_path, dim: int = 64):
