@@ -8,6 +8,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- BabyCL offline training with complete storyboard/utterance indexing, mixed or
+  pairs-only batches, explicit epoch budgets, and deterministic prefetch/resume.
+
 - Standalone evaluation API (`evaluate`, `evaluate_checkpoint`, `load_model`) and
   `python -m egolearn.evaluate`, with benchmark configs, structured JSON results,
   checkpoint provenance, and isolated evaluation RNGs. Existing probes can also

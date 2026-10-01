@@ -1,0 +1,85 @@
+# Full BabyCL objective with complete-dataset IID sampling, from scratch.
+defaults:
+  - /config
+  - _self_
+
+run_dir: runs/babycl_iid_saycam
+seed: 1337
+device: cuda
+_imports_: [egolearn.methods.babycl]
+
+hydra:
+  searchpath:
+    - pkg://egolearn.configs
+
+stream:
+  _target_: "stream:saycam"
+  root_dir: /path/to/saycam_5fps
+  include: "S_*"
+  transcript_json: /path/to/expand_correct_seg.json
+  fps: 5.0
+
+tokenizer:
+  vocab_json: /path/to/vocab.json
+  normalize: false
+
+views:
+  ms_v1: {name: babycl_ms_aug, size: 224, view_idx: 0, scale_min: 0.2}
+  ms_v2: {name: babycl_ms_aug, size: 224, view_idx: 1, scale_min: 0.2}
+  pair: {name: cvcl_aug, size: 224}
+
+# Metadata supplies complete segments and utterances before the first update.
+label_stores: []
+embedders: null
+admission: []
+memories: null
+routes: null
+recipe: null
+probes: []
+
+model:
+  encoders:
+    vision: {_target_: "encoder:resnext50", pretrained: false}
+    text: {_target_: "encoder:text_bow", vocab_size: auto, dim: 512}
+  heads:
+    proj128: {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 128]}
+    cls: {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 2000]}
+    embed512: {encoder: vision, _target_: "head:linear", in_dim: 2048, out_dim: 512}
+
+losses:
+  - {_target_: "loss:ntxent", name: instance,
+     slots: [segments], head: proj128, temperature: 0.2, weight: 0.5}
+  - {_target_: "loss:tcl", name: temporal,
+     slots: [segments], head: cls, num_classes: 2000, filter_unseen: true, weight: 0.5}
+  - {_target_: "loss:clip_infonce", name: cross_modal,
+     slot: pairs, vision_head: embed512, temperature: 0.07, weight: 0.5,
+     use_sample_weights: false}
+
+solver:
+  opt: adamw
+  groups:
+    - {match: "^encoders\\.vision\\.|^heads\\.embed512\\.", lr: 1.0e-3,
+       weight_decay: 1.0e-4, split_no_decay: true}
+    - {match: ".*", lr: 1.0e-4, weight_decay: 1.0e-4}
+  schedule: {warmup_frac: 0.02, warmup_min_steps: 100, floor: 0.0}
+
+driver:
+  _target_: egolearn.methods.babycl.offline.BabyCLOfflineDriver
+  mode: offline
+  batch:
+    storyboard_json: /path/to/storyboard.json
+    segment_views: [ms_v1, ms_v2]
+    pair_view: pair
+    segments_per_batch: 3
+    frames_per_segment: 32
+    pairs_per_batch: 32
+    # utterances: shuffle AN chunks once; independently sample visual segments.
+    # frame_budget: floor(dataset_frames / 128) independent mixed batches.
+    epoch_basis: utterances
+  epochs: 1
+
+hooks:
+  log_every: 50
+  checkpoint_every: 5000
+  snapshot_every: 500
+  snapshot_milestones: []

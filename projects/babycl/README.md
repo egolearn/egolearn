@@ -37,6 +37,37 @@ python -m egolearn.train --config-dir projects/babycl/configs --config-name sayc
 python -m egolearn.train --config-dir projects/babycl/configs --config-name saycam_default
 ```
 
+## IID training
+
+`saycam_iid` uses the full BabyCL model, losses, AdamW groups, and augmentations
+with all selected sessions available before training starts. Supply the offline
+storyboard JSON as well as the frame, transcript, and vocabulary paths:
+
+```bash
+python -m egolearn.train --config-dir projects/babycl/configs --config-name saycam_iid \
+  stream.root_dir="$DATA_ROOT" stream.transcript_json="$TRANSCRIPT_JSON" \
+  tokenizer.vocab_json="$VOCAB_JSON" driver.batch.storyboard_json="$STORYBOARD_JSON"
+```
+
+Each batch contains three independently sampled storyboard segments, 32 frames
+per segment with two visual views, and 32 utterance/frame pairs. Segment sampling
+uses replacement and TCL uses labels 0, 1, 2 local to each batch, as in BabyCL.
+The storyboard must cover every selected session and match its exact frame order;
+its embedded data root is ignored in favor of `stream.root_dir`. Utterance chunks
+use the streaming AN-chunk builder's timestamp alignment and deduplication.
+
+Choose the epoch definition explicitly:
+
+- `driver.batch.epoch_basis=utterances` (default): visit every utterance chunk once
+  in shuffled order, dropping the incomplete final batch. Visual segments are
+  drawn independently for each batch. This follows the original IID baseline.
+- `driver.batch.epoch_basis=frame_budget`: run
+  `floor(dataset_frame_count / (segments_per_batch * frames_per_segment + pairs_per_batch))`
+  updates per epoch. Each update samples from the complete pools; frames and
+  utterance chunks can recur across updates. At batch size 128, this matches an
+  image-only IID epoch's number of image draws, not unique frame coverage.
+
+
 Published ablations as config diffs:
 
 | Paper ablation | Diff |
