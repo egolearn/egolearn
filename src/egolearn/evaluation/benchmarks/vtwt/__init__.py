@@ -2,16 +2,16 @@
 
 Introduced by BabyVLM V1: https://shawnking98.github.io/BabyVLM/
 Labels: https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/vtwt
-SAYCam images require separate Databrary access; the upstream README describes
-applying with institutional IRB approval. See docs/evaluation.md for data sources
-and local configuration.
+Task attribution: BabyVLM / babylmms-eval, Apache-2.0:
+https://github.com/ShawnKing98/babylmms-eval/blob/main/LICENSE
+Data access and preparation: docs/evaluation.md#babyvlm-benchmark-data
 
-1:1 port of mcl's eval_vtwt.py (protocol from Wang et al., BabyVLM).  For
+1:1 port of BabyCL's original evaluation script (protocol from Wang et al., BabyVLM). For
 each sample the model sees one image and two two-word phrases; it predicts
 whichever phrase has the higher cosine similarity to the image.  Accuracy =
 fraction of samples where positive_phrase wins (strict >).
 
-CSV format (mcl eval/vtwt.csv)::
+CSV format::
 
     image,positive_phrase,negative_phrase
     S_20140420_1803_01_082_00.jpg,see person,touch pillow

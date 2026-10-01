@@ -8,6 +8,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Evaluation data guide with centralized SAYCam access and frame preparation,
+  Labeled-S 4AFC manifest/vocabulary instructions, and BabyVLM task attribution.
+
 - Standalone evaluation API (`evaluate`, `evaluate_checkpoint`, `load_model`) and
   `python -m egolearn.evaluate`, with benchmark configs, structured JSON results,
   checkpoint provenance, and isolated evaluation RNGs. Existing probes can also

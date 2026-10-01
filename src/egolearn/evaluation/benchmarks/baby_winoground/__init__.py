@@ -3,11 +3,11 @@
 Introduced by BabyVLM: https://shawnking98.github.io/BabyVLM/
 Labels: https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/baby_winoground
 Synthetic negatives: https://nyu.databrary.org/volume/564/folder/77120
-The upstream README describes applying for Databrary access with institutional
-IRB approval. See docs/evaluation.md for SAYCam image preparation and local
-configuration.
+Task attribution: BabyVLM / babylmms-eval, Apache-2.0:
+https://github.com/ShawnKing98/babylmms-eval/blob/main/LICENSE
+Data access and preparation: docs/evaluation.md#babyvlm-benchmark-data
 
-1:1 port of mcl's eval_baby_winoground.py (protocol from Wang et al.,
+1:1 port of BabyCL's original evaluation script (protocol from Wang et al.,
 BabyVLM).  Each instance pairs (pos_image, positive_phrase) with a
 synthetically perturbed (neg_image, negative_phrase).  All four image-phrase
 cosine similarities are computed, and the instance is GROUP-correct only
@@ -16,7 +16,7 @@ when both of these hold (strict >):
     sim(pos_img, pos_phrase) > sim(pos_img, neg_phrase)     # cond1 / Positive Ctx
     sim(neg_img, neg_phrase) > sim(neg_img, pos_phrase)     # cond2 / Negative Ctx
 
-CSV format (mcl eval/baby_winoground.csv; rows grouped by instance_id)::
+CSV format (rows grouped by instance_id)::
 
     instance_id,positive_phrase,negative_phrase,image,image_tag
     0,see person,touch pillow,S_..._00.jpg,positive
