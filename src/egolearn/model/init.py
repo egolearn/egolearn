@@ -1,28 +1,8 @@
-"""Initialize part of a model from a trained checkpoint before training.
+"""Initialize parameters and buffers selected by include/exclude name prefixes.
 
-Staged training (pretrain a vision encoder, then fine-tune it with a new
-head and a new modality) needs a way to start a run from another run's
-weights *by name*, without resuming its optimizer, clocks, or memories.
-`load_pretrained_weights` copies the tensors under the requested name
-prefixes from a checkpoint or snapshot (`state["model"]`, the format every
-CheckpointHook/SnapshotHook file shares) into a freshly built model.
-
-Config surface (root `init_from:` key, applied in pipeline.build right after
-the model is built and before the optimizer sees it):
-
-    init_from:
-      checkpoint: runs/stage1/final.pth
-      include: ["encoders.vision."]     # name prefixes; default: everything
-      exclude: []                        # prefixes to skip
-      strict: true                       # see below
-
-Strict mode (the default) refuses a partial encoder: every model tensor under
-an included prefix must come from the checkpoint with the same shape, and
-every included prefix must match something -- a stale prefix or a changed
-architecture fails at build time instead of silently training from random
-init.  Buffers (BatchNorm running statistics) are copied along with
-parameters.  Loading consumes no RNG, so a run's determinism contract is
-unchanged; the copied weights simply replace the seed-derived initialization.
+Strict loading requires complete, shape-compatible selections. Loading consumes
+no RNG; only load trusted checkpoint/snapshot files. On a fresh V-JEPA run, the
+step-0 sync replaces any loaded EMA target with the initialized context encoder.
 """
 
 from __future__ import annotations
@@ -56,8 +36,10 @@ def load_pretrained_weights(
     path = Path(checkpoint).expanduser()
     if not path.is_file():
         raise FileNotFoundError(f"init_from.checkpoint not found: {path}")
-    include = list(include) if include is not None else None
-    exclude = list(exclude or [])
+    include = (
+        [include] if isinstance(include, str) else list(include) if include is not None else None
+    )
+    exclude = [exclude] if isinstance(exclude, str) else list(exclude or [])
     if include is not None and not include:
         raise ValueError("init_from.include is empty; omit it to copy every tensor")
 

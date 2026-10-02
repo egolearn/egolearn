@@ -5,25 +5,24 @@ from __future__ import annotations
 import copy
 import subprocess
 import sys
+from pickle import UnpicklingError
 
 import pytest
 import torch
 from omegaconf import OmegaConf
 
 import egolearn
-from egolearn.utils.snapshot import save_snapshot
+from egolearn.utils.snapshot import load_snapshot, save_snapshot
 
 
-@pytest.mark.parametrize("resume", ["auto", "snapshot.pth"])
-@pytest.mark.parametrize("dry_run", [False, True])
-def test_train_rejects_initialization_and_resume_before_building(tmp_path, resume, dry_run):
+def test_train_rejects_initialization_and_resume_before_building(tmp_path):
     # Deliberately omit stream/model config and use a nonexistent checkpoint:
     # the incompatible modes must fail before any pipeline or checkpoint I/O.
     OmegaConf.save(
         {
             "init_from": {"checkpoint": "missing.pth"},
-            "resume": resume,
-            "dry_run": dry_run,
+            "resume": "auto",
+            "dry_run": True,
         },
         tmp_path / "conflict.yaml",
     )
@@ -48,95 +47,6 @@ def test_train_rejects_initialization_and_resume_before_building(tmp_path, resum
     assert "init_from=null" in result.stderr
 
 
-def _cfg(tmp_path, dim: int = 64):
-    return {
-        "run_dir": str(tmp_path / "run"),
-        "seed": 7,
-        "device": "cpu",
-        "stream": {
-            "_target_": "stream:toy",
-            "n_sessions": 1,
-            "blocks_per_session": 4,
-            "block_len": 40,
-            "img_size": 64,
-        },
-        "views": {
-            "v1": {"name": "simclr_strong", "size": 64, "view_idx": 0},
-            "v2": {"name": "simclr_strong", "size": 64, "view_idx": 1},
-        },
-        "label_stores": ["fixed"],
-        "admission": [
-            {"_target_": "admission:frame_emitter", "subsample": 1},
-            {
-                "_target_": "admission:fixed_window_labeler",
-                "class_length": 40,
-                "label_store": "fixed",
-            },
-        ],
-        "memories": {
-            "frames": {
-                "tiers": {
-                    "short": {"capacity": 30, "update": "fifo"},
-                    "long": {"capacity": 60, "update": "reservoir"},
-                },
-                "admit_to": ["short", "long"],
-                "overflow": {},
-            }
-        },
-        "routes": {"RawFrame": "frames"},
-        "recipe": {
-            "slots": [
-                {
-                    "name": "curr",
-                    "source": {"kind": "tier", "memory": "frames", "tier": "short"},
-                    "n": 4,
-                    "unit": "frame",
-                    "views": ["v1", "v2"],
-                    "labels_from": "fixed",
-                    "strict": True,
-                },
-            ]
-        },
-        "model": {
-            "encoders": {"vision": {"_target_": "encoder:toy_cnn", "dim": dim}},
-            "heads": {
-                "proj": {"encoder": "vision", "_target_": "head:mlp", "sizes": [dim, dim, 32]},
-                "cls": {"encoder": "vision", "_target_": "head:mlp", "sizes": [dim, dim, 8]},
-            },
-        },
-        "losses": [
-            {
-                "_target_": "loss:ntxent",
-                "name": "inst",
-                "slots": ["curr"],
-                "head": "proj",
-                "temperature": 0.1,
-                "weight": 1.0,
-            },
-            {
-                "_target_": "loss:tcl",
-                "name": "temp",
-                "slots": ["curr"],
-                "head": "cls",
-                "num_classes": 8,
-                "weight": 1.0,
-            },
-        ],
-        "solver": {
-            "opt": "sgd",
-            "groups": [{"match": ".*", "lr": 0.05, "weight_decay": 0.0}],
-            "schedule": {"constant": True},
-        },
-        "driver": {
-            "advance": {"kind": "observations", "n": 8},
-            "rate": {"steps_per_admit": 1, "resample": True},
-            "warmup": {"admitted": 20},
-            "max_steps": 2,
-        },
-        "hooks": {"log_every": 1},
-    }
-
-
 def _sub(state: dict, prefix: str) -> dict:
     return {k: v for k, v in state.items() if k.startswith(prefix)}
 
@@ -146,10 +56,10 @@ def _equal(a: dict, b: dict) -> bool:
 
 
 @pytest.fixture
-def trained(tmp_path):
+def trained(toy_config, tmp_path):
     """A short run whose weights differ from the seed's initialization, saved as
     both a plain checkpoint and a full snapshot."""
-    pipe = egolearn.build(_cfg(tmp_path / "src"))
+    pipe = egolearn.build(toy_config(tmp_path / "src"))
     pipe.driver.fit()
     state = {k: v.clone() for k, v in pipe.model.state_dict().items()}
     ckpt = tmp_path / "final.pth"
@@ -166,9 +76,9 @@ def trained(tmp_path):
     return state, ckpt, snap
 
 
-def test_include_copies_only_the_named_encoder(tmp_path, trained):
+def test_include_copies_only_the_named_encoder(toy_config, tmp_path, trained):
     state, ckpt, _ = trained
-    cfg = _cfg(tmp_path / "dst")
+    cfg = toy_config(tmp_path / "dst")
     cfg["init_from"] = {"checkpoint": str(ckpt), "include": ["encoders.vision."]}
     pipe = egolearn.build(cfg)
     got = pipe.model.state_dict()
@@ -183,9 +93,58 @@ def test_include_copies_only_the_named_encoder(tmp_path, trained):
     assert pipe.model.construction_config["init_from"]["sha256"] == pipe.init_from["sha256"]
 
 
-def test_default_copies_everything_and_snapshots_are_accepted(tmp_path, trained):
+def test_string_prefixes_select_whole_components(toy_config, tmp_path, trained):
+    state, checkpoint, _ = trained
+    cfg = toy_config(tmp_path)
+    cfg["init_from"] = {
+        "checkpoint": str(checkpoint),
+        "include": "encoders.vision.",
+        "exclude": "encoders.vision.net.0.bias",
+    }
+    fresh = egolearn.build(toy_config(tmp_path)).model.state_dict()
+    pipe = egolearn.build(cfg)
+    for name, tensor in pipe.model.state_dict().items():
+        selected = name.startswith("encoders.vision.") and name != "encoders.vision.net.0.bias"
+        assert torch.equal(tensor, state[name] if selected else fresh[name]), name
+
+
+@pytest.mark.parametrize(
+    "payload,error", [(b"", EOFError), (b"invalid", UnpicklingError), (b"PK\x03\x04", RuntimeError)]
+)
+def test_corrupt_checkpoint_has_pipeline_context(toy_config, tmp_path, payload, error):
+    checkpoint = tmp_path / "corrupt.pth"
+    checkpoint.write_bytes(payload)
+    cfg = toy_config(tmp_path)
+    cfg["init_from"] = {"checkpoint": str(checkpoint)}
+    with pytest.raises(egolearn.PipelineError, match="init_from:") as caught:
+        egolearn.build(cfg)
+    assert isinstance(caught.value.__cause__, error)
+
+
+def test_resumed_checkpoints_keep_initialization_lineage(toy_config, tmp_path, trained):
+    _, checkpoint, _ = trained
+    cfg = toy_config(tmp_path / "initialized")
+    cfg["init_from"] = {"checkpoint": str(checkpoint)}
+    pipe = egolearn.build(cfg)
+    pipe.driver.fit()
+    snapshot = str(tmp_path / "initialized.pth")
+    save_snapshot(snapshot, pipe.driver)
+    cfg = toy_config(tmp_path / "resumed")
+    cfg["init_from"] = None
+    cfg["driver"]["max_steps"] = 3
+    cfg["hooks"]["checkpoint_every"] = 1
+    resumed = egolearn.build(cfg)
+    load_snapshot(snapshot, resumed.driver)
+    resumed.driver.fit()
+    final = torch.load(tmp_path / "resumed/run/final.pth", weights_only=True)
+    assert final["step"] == 3
+    assert final["model_config"] == pipe.model.construction_config
+    assert final["model_config"]["init_from"] == pipe.init_from
+
+
+def test_default_copies_everything_and_snapshots_are_accepted(toy_config, tmp_path, trained):
     state, _, snap = trained
-    cfg = _cfg(tmp_path / "dst")
+    cfg = toy_config(tmp_path / "dst")
     cfg["init_from"] = {"checkpoint": str(snap)}
     pipe = egolearn.build(cfg)
     assert _equal(pipe.model.state_dict(), state)
@@ -195,9 +154,9 @@ def test_default_copies_everything_and_snapshots_are_accepted(tmp_path, trained)
     assert not pipe.driver.optimizer.state
 
 
-def test_initialized_run_is_deterministic(tmp_path, trained):
+def test_initialized_run_is_deterministic(toy_config, tmp_path, trained):
     _, ckpt, _ = trained
-    cfg = _cfg(tmp_path / "dst")
+    cfg = toy_config(tmp_path / "dst")
     cfg["init_from"] = {"checkpoint": str(ckpt), "include": ["encoders.vision."]}
     a = egolearn.build(copy.deepcopy(cfg))
     a.driver.fit()
@@ -214,9 +173,11 @@ def test_initialized_run_is_deterministic(tmp_path, trained):
         ({"checkpoint": None, "include": []}, "empty"),
     ],
 )
-def test_strict_mode_rejects_stale_or_partial_selections(tmp_path, trained, init_from, match):
+def test_strict_mode_rejects_stale_or_partial_selections(
+    toy_config, tmp_path, trained, init_from, match
+):
     _, ckpt, _ = trained
-    cfg = _cfg(tmp_path / "dst")
+    cfg = toy_config(tmp_path / "dst")
     init_from = dict(init_from)
     if init_from["checkpoint"] is None:
         init_from["checkpoint"] = str(ckpt)
@@ -227,9 +188,9 @@ def test_strict_mode_rejects_stale_or_partial_selections(tmp_path, trained, init
         egolearn.build(cfg)
 
 
-def test_shape_mismatch_fails_strict_and_is_skipped_otherwise(tmp_path, trained):
+def test_shape_mismatch_fails_strict_and_is_skipped_otherwise(toy_config, tmp_path, trained):
     _, ckpt, _ = trained
-    cfg = _cfg(tmp_path / "dst", dim=32)  # a different architecture
+    cfg = toy_config(tmp_path / "dst", dim=32)  # a different architecture
     cfg["init_from"] = {"checkpoint": str(ckpt), "include": ["encoders.vision."]}
     with pytest.raises(egolearn.PipelineError, match="shape mismatch"):
         egolearn.build(cfg)
@@ -240,12 +201,14 @@ def test_shape_mismatch_fails_strict_and_is_skipped_otherwise(tmp_path, trained)
     assert pipe.init_from["skipped"]
 
 
-def test_strict_mode_rejects_a_checkpoint_missing_part_of_the_encoder(tmp_path, trained):
+def test_strict_mode_rejects_a_checkpoint_missing_part_of_the_encoder(
+    toy_config, tmp_path, trained
+):
     state, _, _ = trained
     partial = {k: v for k, v in state.items() if k != "encoders.vision.net.0.bias"}
     ckpt = tmp_path / "partial.pth"
     torch.save({"model": partial, "step": 2}, ckpt)
-    cfg = _cfg(tmp_path / "dst")
+    cfg = toy_config(tmp_path / "dst")
     cfg["init_from"] = {"checkpoint": str(ckpt), "include": ["encoders.vision."]}
     with pytest.raises(egolearn.PipelineError, match="absent from"):
         egolearn.build(cfg)

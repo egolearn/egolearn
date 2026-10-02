@@ -14,6 +14,7 @@ everything else comes from the core toolbox.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pickle import UnpicklingError
 
 from egolearn.evaluation.probe import Probe
 from egolearn.model.build import build_model
@@ -206,7 +207,15 @@ def build(cfg: dict) -> Pipeline:
 
         try:
             init_summary = load_pretrained_weights(model, **dict(cfg["init_from"]))
-        except (FileNotFoundError, KeyError, TypeError, ValueError) as e:
+        except (
+            OSError,
+            KeyError,
+            TypeError,
+            ValueError,
+            RuntimeError,
+            UnpicklingError,
+            EOFError,
+        ) as e:
             raise PipelineError(f"init_from: {e}") from e
         model.construction_config = dict(model.construction_config or {})
         model.construction_config["init_from"] = init_summary

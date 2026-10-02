@@ -10,7 +10,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 - `init_from` initializes selected model components from a checkpoint or snapshot
   before optimizer construction, with strict tensor checks and source provenance.
-  Training rejects simultaneous `init_from` and `resume` before pipeline construction.
+  Training rejects simultaneous `init_from` and `resume` before pipeline construction;
+  snapshot resume preserves initialization provenance in subsequent checkpoints.
 
 - Standalone evaluation API (`evaluate`, `evaluate_checkpoint`, `load_model`) and
   `python -m egolearn.evaluate`, with benchmark configs, structured JSON results,
