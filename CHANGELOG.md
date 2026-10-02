@@ -11,7 +11,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 - PR message guidance and template sections for Summary, optional Decisions,
   experiment Results, Test plan, and Checklist. The stdlib-only
   `scripts/check_pr_message.py` checks drafts locally and warns when project or
-  YAML config changes have no Results section; it is not a CI gate.
+  YAML config changes have no Results section. Checklist checks use the template's
+  top-level boxes and ignore nested task examples; it is not a CI gate.
 
 - Standalone evaluation API (`evaluate`, `evaluate_checkpoint`, `load_model`) and
   `python -m egolearn.evaluate`, with benchmark configs, structured JSON results,

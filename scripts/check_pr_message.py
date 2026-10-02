@@ -1,24 +1,8 @@
 """Check a pull request message against CONTRIBUTING.md, "The PR message".
 
-    # Bash 4.4+: preserve filenames containing whitespace or glob characters.
-    mapfile -d '' -t changed_files < <(git diff --name-only -z origin/main...HEAD)
-    python scripts/check_pr_message.py --title "describe the change" --body-file body.md \\
-        --files "${changed_files[@]}"
-    python scripts/check_pr_message.py --pr 67
-
-Checks the shape only: title, the sections and their order, ticked checklist
-boxes, leftover comments, length, and a Results section when the changed files
-touch projects/ or a configs/*.yaml or *.yml file (the file list comes from --files or
-from gh). Fenced code is content, never structure. Exit 1 on any error;
-warnings do not fail. It cannot judge the prose.
-
-Put --files last: every following argument is a literal filename, including
-names beginning with a dash or matching an option such as --help.
-
-Markdown is parsed approximately: a fence is indented at most three spaces and
-closes on a matching delimiter; four spaces open a code block unless the line
-continues a list; tabs count as four spaces; code indented inside a list item
-is read as part of the list.
+Use --title TITLE --body-file PATH for a draft, or --pr N with authenticated gh.
+Optional --files must come last; all following arguments are literal paths.
+Exit 1 on shape errors; warnings do not fail. This does not judge the prose.
 """
 
 # Adapted from agentic-learning-ai-lab/jepa-agent PR #72, commit a8d22e2ce0f4.
@@ -27,7 +11,6 @@ is read as part of the list.
 from __future__ import annotations
 
 import argparse
-import itertools
 import json
 import re
 import subprocess
@@ -39,20 +22,18 @@ ISSUE_REF = re.compile(r"\b(Closes|Part of)\s+#\d+")
 MAX_TITLE = 72
 TARGET_LINES = 40
 MAX_LINES = 60
-LIST = r"(?:[-*+]|\d+[.)])"
-BOX = re.compile(rf"^\s*{LIST}\s+\[([ xX])\]\s*(.*)$")
-ITEM = re.compile(rf"^\s*{LIST}\s")
-BULLET = re.compile(rf"^ {{0,3}}{LIST}\s")
+BOX = re.compile(r"^- \[([ xX])\]\s+(.*)$")
+BULLET = re.compile(r"^ {0,3}[-*+]\s")
 NOT_PROSE = re.compile(r"^\s*(#|\||\x00)|^ {4,}")
 ISSUE_ONLY = re.compile(r"^\s*(?:(?:Closes|Part of)\s+#\d+|and|[,.\s])+$")
 EXPERIMENT_PATH = re.compile(r"^projects/|(^|/)configs/.*\.ya?ml$", re.DOTALL)
 NO_RESULTS = "the diff touches projects/ or YAML configs: add a Results section, or say why not"
 CHECKLIST_TOPICS = {
-    "secrets": r"secrets",
-    "500 KB": r"500\s*kb",
-    "uv.lock": r"uv\.lock",
-    "CHANGELOG": r"changelog",
-    "attribution": r"attribution",
+    "secrets": r"No secrets\b",
+    "500 KB": r"No binaries\b.*500\s*KB\b",
+    "uv.lock": r"`?uv\.lock\b",
+    "CHANGELOG": r"CHANGELOG\b",
+    "attribution": r"Ported\b.*\battribution\b",
 }
 
 
@@ -100,26 +81,6 @@ def mask_fences(lines: list[str]) -> list[str]:
     return out
 
 
-def boxes_in(lines: list[str]) -> list[re.Match[str]]:
-    """Task boxes in a section: at up to three spaces, or nested under a list item.
-
-    Four or more spaces of indentation open an indented code block, unless the
-    line continues a list.
-    """
-    out: list[re.Match[str]] = []
-    in_list = False
-    for line in lines:
-        indent = len(line) - len(line.lstrip(" "))
-        item = ITEM.match(line) is not None
-        if item and (indent <= 3 or in_list):
-            if m := BOX.match(line):
-                out.append(m)
-            in_list = True
-        else:
-            in_list = in_list and indent > 0
-    return out
-
-
 def body_of(lines: list[str], heads: list[tuple[int, str]], name: str) -> list[str]:
     for k, (start, head) in enumerate(heads):
         if head == name:
@@ -153,7 +114,7 @@ def check(title: str, body: str, files: list[str] | None = None) -> tuple[list[s
         warnings.append(f"body has {len(nonblank)} non-blank lines; aim under {TARGET_LINES}")
     if nonblank and nonblank[0].startswith("# "):
         errors.append("body starts with a top-level heading (the title repeated)")
-    elif nonblank and nonblank[0] != "## Summary":
+    elif nonblank and nonblank[0].rstrip() != "## Summary":
         errors.append("body must start with '## Summary', nothing before it")
     if any("<!--" in line for line in lines):  # a comment shown inside a fence is content
         errors.append("HTML comments left in the body (the template's, or any other)")
@@ -201,22 +162,14 @@ def check(title: str, body: str, files: list[str] | None = None) -> tuple[list[s
     ):
         warnings.append(NO_RESULTS)
     if "Checklist" in names:
-        boxes = boxes_in(body_of(lines, heads, "Checklist"))
+        boxes = [m for line in body_of(lines, heads, "Checklist") if (m := BOX.match(line))]
         unticked = [m for m in boxes if m.group(1) == " "]
         if unticked:
             errors.append(f"{len(unticked)} checklist box(es) unticked")
         ticked = [m.group(2) for m in boxes if m.group(1) != " "]
-        candidates = {
-            topic: [i for i, text in enumerate(ticked) if re.search(pattern, text, re.I)]
-            for topic, pattern in CHECKLIST_TOPICS.items()
-        }
-        for topic, found in candidates.items():
-            if not found:
+        for topic, pattern in CHECKLIST_TOPICS.items():
+            if not any(re.match(pattern, text, re.I) for text in ticked):
                 errors.append(f"Checklist lacks a ticked box about {topic}")
-        if all(candidates.values()) and not any(
-            len(set(pick)) == len(pick) for pick in itertools.product(*candidates.values())
-        ):
-            errors.append("Checklist needs a separate ticked box for each of the five topics")
     return errors, warnings
 
 

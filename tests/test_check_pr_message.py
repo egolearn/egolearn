@@ -66,7 +66,7 @@ def test_subheading_inside_summary_is_not_a_section() -> None:
     assert errors("t", body) == []
 
 
-def test_unticked_indented_box_fails() -> None:
+def test_extra_unticked_box_fails() -> None:
     body = GOOD.replace("- [x] No binaries", "- [ ] extra\n- [x] No binaries")
     assert "1 checklist box(es) unticked" in errors("t", body)
 
@@ -85,15 +85,24 @@ def test_title_length_boundary() -> None:
     assert errors("x" * 73, GOOD) == ["title is 73 characters, max 72"]
 
 
-def test_title_rules() -> None:
-    assert "title has a period" in errors("Add a thing.", GOOD)
-    assert "title carries an issue number; put it in the body" in errors("Fix #12", GOOD)
-    assert "title says WIP" in errors("Add a thing (wip)", GOOD)
-    assert "title has a period" in errors("Fix config. Preserve defaults", GOOD)
+@pytest.mark.parametrize(
+    "title, expected",
+    [
+        ("Add a thing.", "title has a period"),
+        ("Fix #12", "title carries an issue number; put it in the body"),
+        ("Add a thing (wip)", "title says WIP"),
+        ("Fix config. Preserve defaults", "title has a period"),
+        ("  ", "title is empty"),
+        ("a\rb", "title must be one line"),
+        ("\nAdd a thing", "title must be one line"),
+    ],
+)
+def test_title_rules(title: str, expected: str) -> None:
+    assert errors(title, GOOD) == [expected]
+
+
+def test_version_in_title_passes() -> None:
     assert errors("Bump to v0.1 defaults", GOOD) == []
-    assert "title is empty" in errors("  ", GOOD)
-    assert "title must be one line" in errors("a\rb", GOOD)
-    assert "title must be one line" in errors("\nAdd a thing", GOOD)
 
 
 def test_duplicate_sections_fail_before_order_checks() -> None:
@@ -101,26 +110,50 @@ def test_duplicate_sections_fail_before_order_checks() -> None:
     assert errors("t", body) == ["section '## Checklist' appears more than once"]
 
 
-def test_checklist_topics_and_bullet_styles() -> None:
-    assert "Checklist lacks a ticked box about uv.lock" in errors(
-        "t", GOOD.replace("- [x] `uv.lock` unchanged: no dependency change\n", "")
-    )
-    assert errors("t", GOOD + "* [ ] extra\n") == ["1 checklist box(es) unticked"]
-    assert errors("t", GOOD.replace("- [x] No binaries", "* [X] No binaries")) == []
-    assert errors("t", GOOD.replace("- [x] No binaries", "+ [x] No binaries")) == []
-    assert "1 checklist box(es) unticked" in errors("t", GOOD + "1. [ ] numbered\n")
-    two_topics = "- [x] `uv.lock` unchanged and CHANGELOG.md updated\n"
-    one_box = GOOD.replace("- [x] `uv.lock` unchanged: no dependency change\n", two_topics)
-    one_box = one_box.replace("- [x] CHANGELOG.md updated under [Unreleased]\n", "")
-    assert "Checklist needs a separate ticked box for each of the five topics" in errors(
-        "t", one_box
-    )
+@pytest.mark.parametrize(
+    "topic, text",
+    [
+        ("secrets", "No secrets, credentials, or cluster-specific personal paths"),
+        ("500 KB", "No binaries or files >500 KB"),
+        ("uv.lock", "`uv.lock` unchanged: no dependency change"),
+        ("CHANGELOG", "CHANGELOG.md updated under [Unreleased]"),
+        ("attribution", "Ported third-party-derived code keeps its attribution header"),
+    ],
+)
+@pytest.mark.parametrize("replacement", ["", "- [ ] {text}\n"])
+def test_each_template_box_must_be_present_and_ticked(
+    topic: str, text: str, replacement: str
+) -> None:
+    body = GOOD.replace(f"- [x] {text}\n", replacement.format(text=text))
+    expected = [f"Checklist lacks a ticked box about {topic}"]
+    if replacement:
+        expected.insert(0, "1 checklist box(es) unticked")
+    assert errors("t", body) == expected
 
 
-def test_checklist_notes_may_mention_other_topics() -> None:
-    secrets = "- [x] No secrets, credentials, or cluster-specific personal paths"
-    assert errors("t", GOOD.replace(secrets, secrets + " (also checked uv.lock)")) == []
-    assert errors("t", GOOD.replace(">500 KB", ">500KB")) == []
+@pytest.mark.parametrize(
+    "before, after",
+    [
+        ("- [x]", "- [X]"),
+        ("personal paths", "personal paths (also checked uv.lock)"),
+        (">500 KB", ">500KB"),
+    ],
+)
+def test_checklist_notes_and_spelling_variations_pass(before: str, after: str) -> None:
+    assert errors("t", GOOD.replace(before, after)) == []
+
+
+def test_mentioning_another_topic_does_not_replace_its_box() -> None:
+    body = GOOD.replace("- [x] `uv.lock` unchanged: no dependency change\n", "")
+    body = body.replace("personal paths", "personal paths (also checked uv.lock)")
+    assert errors("t", body) == ["Checklist lacks a ticked box about uv.lock"]
+
+
+def test_filled_template_checklist_passes() -> None:
+    template = SCRIPT.parents[1] / ".github" / "pull_request_template.md"
+    checklist = template.read_text(encoding="utf-8").split("## Checklist")[1]
+    body = GOOD.split("## Checklist")[0] + "## Checklist" + checklist.replace("[ ]", "[x]")
+    assert check("t", body) == ([], [])
 
 
 def test_fenced_code_is_not_a_paragraph() -> None:
@@ -137,18 +170,25 @@ def test_fence_closes_only_on_a_compatible_delimiter() -> None:
     assert check("t", GOOD.replace("The problem and the outcome.", example)) == ([], [])
 
 
-def test_experiment_diff_wants_a_results_section() -> None:
-    warning = check_pr_message.NO_RESULTS
-    assert check("t", GOOD, ["projects/x/run.py"])[1] == [warning]
-    assert check("t", GOOD, ["src/egolearn/configs/train.yaml"])[1] == [warning]
-    assert check("t", GOOD, ["src/egolearn/configs/train.yml"])[1] == [warning]
-    assert check("t", GOOD, ["configs/train.yaml"])[1] == [warning]
-    assert check("t", GOOD, ["configs/line\nbreak.yaml"])[1] == [warning]
-    assert check("t", GOOD, ["./projects/x/README.md"])[1] == [warning]
-    assert check("t", GOOD, ["src/egolearn/pipeline.py"])[1] == []
-    assert check("t", GOOD, ["docs/configs.md", "docs/projects/notes.md"])[1] == []
+@pytest.mark.parametrize(
+    "path, needs_results",
+    [
+        ("projects/x/run.py", True),
+        ("src/pkg/configs/train.yaml", True),
+        ("src/pkg/configs/train.yml", True),
+        ("configs/train.yaml", True),
+        ("configs/line\nbreak.yaml", True),
+        ("./projects/x/README.md", True),
+        ("src/pkg/pipeline.py", False),
+        ("docs/configs.md", False),
+        ("docs/projects/notes.md", False),
+    ],
+)
+def test_experiment_diff_wants_a_results_section(path: str, needs_results: bool) -> None:
+    warnings = [check_pr_message.NO_RESULTS] if needs_results else []
+    assert check("t", GOOD, [path]) == ([], warnings)
     with_results = GOOD.replace("## Test plan", "## Results\n\nNot run yet.\n\n## Test plan")
-    assert check("t", with_results, ["projects/x/run.py"]) == ([], [])
+    assert check("t", with_results, [path]) == ([], [])
 
 
 def test_headings_inside_a_code_example_do_not_count() -> None:
@@ -176,20 +216,13 @@ def test_issue_reference_alone_is_not_a_paragraph() -> None:
     assert errors("t", GOOD.replace("Part of #1.", "Part of #1 and #2, closes #3.")) == []
 
 
-def test_indented_code_is_not_a_checklist() -> None:
-    lines = [("    " + line if line.startswith("- [x]") else line) for line in GOOD.splitlines()]
-    indented = "\n".join(lines)
-    assert "Checklist lacks a ticked box about secrets" in errors("t", indented + "\n")
-    assert errors("t", GOOD.replace("- [x] No binaries", "  - [x] No binaries")) == []
-    nested = GOOD.replace("- [x] No binaries", "    - [ ] pending\n- [x] No binaries")
-    assert "1 checklist box(es) unticked" in errors("t", nested)
-    nested_ok = GOOD.replace("- [x] No binaries", "    - [x] done\n- [x] No binaries")
-    assert errors("t", nested_ok) == []
-    tabbed = [("\t" + line if line.startswith("- [x]") else line) for line in GOOD.splitlines()]
-    assert "Checklist lacks a ticked box about secrets" in errors("t", "\n".join(tabbed) + "\n")
-    fence_in_item = "    ```text\n    example\n    ```\n    - [ ] pending\n- [x] No binaries"
-    with_fence = GOOD.replace("- [x] No binaries", fence_in_item)
-    assert "1 checklist box(es) unticked" in errors("t", with_fence)
+@pytest.mark.parametrize("indent", ["  ", "    ", "\t"])
+@pytest.mark.parametrize("delimiter", ["```", "~~~"])
+def test_fenced_example_inside_checklist_item_is_not_a_box(indent: str, delimiter: str) -> None:
+    example = f"{indent}{delimiter}markdown\n{indent}- [ ] example\n{indent}{delimiter}\n"
+    body = GOOD + example
+    assert check("t", body) == ([], [])
+    assert errors("t", body + "- [ ] extra\n") == ["1 checklist box(es) unticked"]
 
 
 def test_an_indented_fence_is_code_not_a_fence() -> None:
@@ -200,6 +233,11 @@ def test_an_indented_fence_is_code_not_a_fence() -> None:
 def test_a_comment_shown_inside_a_fence_is_content() -> None:
     example = "The problem and the outcome.\n\n```html\n<!-- an example comment -->\n```"
     assert check("t", GOOD.replace("The problem and the outcome.", example)) == ([], [])
+
+
+@pytest.mark.parametrize("whitespace", [" ", "   ", "\t"])
+def test_summary_heading_accepts_trailing_whitespace(whitespace: str) -> None:
+    assert check("t", GOOD.replace("## Summary", "## Summary" + whitespace)) == ([], [])
 
 
 def test_body_starts_with_summary() -> None:
@@ -249,11 +287,6 @@ def test_missing_issue_reference_is_a_warning() -> None:
         "## Checklist", "Part of #1.\n\n## Checklist"
     )
     assert check("t", moved)[1] == [warning]
-
-
-def test_attribution_box_is_required() -> None:
-    body = GOOD.replace("- [x] Ported third-party-derived code keeps its attribution header\n", "")
-    assert errors("t", body) == ["Checklist lacks a ticked box about attribution"]
 
 
 @pytest.mark.parametrize("section", ["Summary", "Test plan", "Checklist"])
