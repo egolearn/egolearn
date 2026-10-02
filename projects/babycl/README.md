@@ -37,36 +37,27 @@ python -m egolearn.train --config-dir projects/babycl/configs --config-name sayc
 python -m egolearn.train --config-dir projects/babycl/configs --config-name saycam_default
 ```
 
-## IID training
+## Offline BabyCL variant
 
-`saycam_iid` uses the full BabyCL model, losses, AdamW groups, and augmentations
-with all selected sessions available before training starts. Supply the offline
-storyboard JSON as well as the frame, transcript, and vocabulary paths:
+`saycam_iid` trains the full BabyCL objective with the complete selected dataset
+available from the start. It inherits the streaming model, augmentations, losses,
+and solver from `saycam_shared.yaml`.
 
-```bash
-python -m egolearn.train --config-dir projects/babycl/configs --config-name saycam_iid \
-  stream.root_dir="$DATA_ROOT" stream.transcript_json="$TRANSCRIPT_JSON" \
-  tokenizer.vocab_json="$VOCAB_JSON" driver.batch.storyboard_json="$STORYBOARD_JSON"
-```
+This differs from the paper's CVCL-only IID baseline:
 
-Each batch contains three independently sampled storyboard segments, 32 frames
-per segment with two visual views, and 32 utterance/frame pairs. Segment sampling
-uses replacement and TCL uses labels 0, 1, 2 local to each batch, as in BabyCL.
-The storyboard must cover every selected session and match its exact frame order;
-its embedded data root is ignored in favor of `stream.root_dir`. Utterance chunks
-use the streaming AN-chunk builder's timestamp alignment and deduplication.
+| Setting | Paper IID baseline | `saycam_iid` |
+|---|---|---|
+| Losses | CVCL only | NT-Xent + TCL + CLIP-InfoNCE |
+| Batch | 8 image/text pairs | 3 x 32 visual frames + 32 image/text pairs |
+| Epochs | 400 | 1 by default; override `driver.epochs` |
+| AdamW learning rate | 1e-4 | 1e-3 vision/embed head; 1e-4 remaining parameters |
+| Weight decay | 0.1 | 1e-4, with vision/embed BN and bias exempt |
+| Schedule | ReduceLROnPlateau | Cosine with warmup |
 
-Choose the epoch definition explicitly:
-
-- `driver.batch.epoch_basis=utterances` (default): visit every utterance chunk once
-  in shuffled order, dropping the incomplete final batch. Visual segments are
-  drawn independently for each batch. This follows the original IID baseline.
-- `driver.batch.epoch_basis=frame_budget`: run
-  `floor(dataset_frame_count / (segments_per_batch * frames_per_segment + pairs_per_batch))`
-  updates per epoch. Each update samples from the complete pools; frames and
-  utterance chunks can recur across updates. At batch size 128, this matches an
-  image-only IID epoch's number of image draws, not unique frame coverage.
-
+An epoch shuffles every aligned utterance chunk once and drops the incomplete
+batch; visual segments are sampled independently with replacement. Supply a
+complete storyboard manifest using the [offline input guide](docs/offline.md),
+which documents its format and the launch command.
 
 Published ablations as config diffs:
 

@@ -126,7 +126,6 @@ def iid_config(tmp_path):
                 "segments_per_batch": 2,
                 "frames_per_segment": 2,
                 "pairs_per_batch": 2,
-                "epoch_basis": "utterances",
             },
             "epochs": 1,
         },
@@ -164,9 +163,7 @@ def test_index_preserves_alignment_deduplicates_and_covers_frames(iid_config):
         assert torch.equal(batch[slot][K.SLOT_VIEWS], repeated[slot][K.SLOT_VIEWS])
 
 
-@pytest.mark.parametrize("basis,steps", [("utterances", 3), ("frame_budget", 4)])
-def test_all_three_losses_train_both_encoders_and_every_head(iid_config, basis, steps):
-    iid_config["driver"]["batch"]["epoch_basis"] = basis
+def test_all_three_losses_train_both_encoders_and_every_head(iid_config):
     pipe = egolearn.build(iid_config)
     before = {k: v.clone() for k, v in pipe.model.state_dict().items()}
     history = []
@@ -177,7 +174,7 @@ def test_all_three_losses_train_both_encoders_and_every_head(iid_config, basis, 
 
     pipe.driver.hooks.append(Capture())
     pipe.driver.fit()
-    assert pipe.ctx.clock.step == steps
+    assert pipe.ctx.clock.step == 3
     for logs in history:
         terms = [logs["instance/ntxent"], logs["temporal/tcl"], logs["cross_modal/clip_infonce"]]
         assert all(v > 0 for v in terms)
@@ -194,26 +191,42 @@ def test_all_three_losses_train_both_encoders_and_every_head(iid_config, basis, 
     assert all(torch.isfinite(v).all() for v in after.values())
 
 
-@pytest.mark.parametrize("basis", ["utterances", "frame_budget"])
+@pytest.mark.parametrize("pairs_only", [False, True])
 @pytest.mark.parametrize("prefetch", [False, True])
-def test_resume_reproduces_uninterrupted_training(iid_config, tmp_path, basis, prefetch):
-    iid_config["driver"]["batch"]["epoch_basis"] = basis
-    iid_config["driver"]["prefetch"] = prefetch
-    iid_config["loader"] = {"workers": 1 if prefetch else 0}
-    full = egolearn.build(copy.deepcopy(iid_config))
+def test_cosine_resume_across_epoch_boundary(iid_config, tmp_path, pairs_only, prefetch):
+    cfg = _pairs_only(iid_config) if pairs_only else iid_config
+    cfg["driver"].update(epochs=2, prefetch=prefetch)
+    cfg["loader"] = {"workers": 1 if prefetch else 0}
+    cfg["solver"]["schedule"] = {"warmup_frac": 0.25, "warmup_min_steps": 2, "floor": 0.1}
+    path = str(tmp_path / "mid_run.pth")
+    full_history: list[tuple[int, float, dict]] = []
+    resumed_history: list[tuple[int, float, dict]] = []
+
+    class Capture(Hook):
+        def __init__(self, history, snapshot=False):
+            self.history, self.snapshot = history, snapshot
+
+        def on_step(self, driver, logs):
+            self.history.append(
+                (driver.ctx.clock.step, driver.optimizer.param_groups[0]["lr"], logs)
+            )
+            if self.snapshot and driver.ctx.clock.step == 2:
+                save_snapshot(path, driver)
+
+    full = egolearn.build(copy.deepcopy(cfg))
+    full.driver.hooks.append(Capture(full_history, snapshot=True))
     full.driver.fit()
-    expected = {k: v.clone() for k, v in full.model.state_dict().items()}
-    partial_config = copy.deepcopy(iid_config)
-    partial_config["driver"]["max_steps"] = 2
-    partial = egolearn.build(partial_config)
-    path = str(tmp_path / "snapshot.pth")
-    partial.driver.fit()
-    save_snapshot(path, partial.driver)
-    resumed = egolearn.build(copy.deepcopy(iid_config))
+    assert full.ctx.clock.step == 6  # three batches per epoch
+    assert len({lr for _, lr, _ in full_history}) > 2
+    resumed = egolearn.build(copy.deepcopy(cfg))
     load_snapshot(path, resumed.driver)
+    assert resumed.ctx.clock.step == 2
+    assert resumed.driver.schedule.state_dict() == full.driver.schedule.state_dict()
+    resumed.driver.hooks.append(Capture(resumed_history))
     resumed.driver.fit()
+    assert resumed_history == full_history[2:]
     for key, value in resumed.model.state_dict().items():
-        assert torch.equal(value, expected[key]), key
+        assert torch.equal(value, full.model.state_dict()[key]), key
 
 
 @pytest.mark.parametrize(
@@ -249,8 +262,12 @@ def test_iid_preset_keeps_babycl_losses_without_streaming_components():
     config_dir = str(Path(__file__).resolve().parents[1] / "projects/babycl/configs")
     with initialize_config_dir(config_dir=config_dir, version_base="1.3"):
         cfg = OmegaConf.to_container(compose(config_name="saycam_iid"), resolve=True)
+        streaming = OmegaConf.to_container(compose(config_name="saycam_default"), resolve=True)
     assert isinstance(cfg, dict)
+    assert isinstance(streaming, dict)
     assert cfg["driver"]["mode"] == "offline"
+    for key in ("model", "losses", "solver", "views", "tokenizer"):
+        assert cfg[key] == streaming[key], key
     for key in ("memories", "admission", "routes", "recipe", "embedders", "probes"):
         assert not cfg[key], key
     assert [loss["weight"] for loss in cfg["losses"]] == [0.5, 0.5, 0.5]
@@ -305,21 +322,3 @@ def test_pairs_only_rejects_visual_losses_and_stray_storyboards(iid_config):
     stray["driver"]["batch"]["storyboard_json"] = iid_config["driver"]["batch"]["storyboard_json"]
     with pytest.raises(ValueError, match="pairs-only"):
         egolearn.build(stray)
-
-
-def test_pairs_only_resume_reproduces_uninterrupted_training(iid_config, tmp_path):
-    cfg = _pairs_only(iid_config)
-    full = egolearn.build(copy.deepcopy(cfg))
-    full.driver.fit()
-    expected = {k: v.clone() for k, v in full.model.state_dict().items()}
-    partial_config = copy.deepcopy(cfg)
-    partial_config["driver"]["max_steps"] = 1
-    partial = egolearn.build(partial_config)
-    path = str(tmp_path / "pairs_snapshot.pth")
-    partial.driver.fit()
-    save_snapshot(path, partial.driver)
-    resumed = egolearn.build(copy.deepcopy(cfg))
-    load_snapshot(path, resumed.driver)
-    resumed.driver.fit()
-    for key, value in resumed.model.state_dict().items():
-        assert torch.equal(value, expected[key]), key

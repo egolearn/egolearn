@@ -1,19 +1,8 @@
-"""IID BabyCL batches from a complete offline storyboard and aligned utterances.
+"""Index complete storyboard segments and aligned, deduplicated utterance chunks.
 
-The learner starts from scratch with the whole dataset available. Every step draws
-three storyboard segments independently with replacement, samples 32 frames from
-each, and adds 32 image/utterance pairs. TCL retains BabyCL's batch-local labels.
-
-An ``utterances`` epoch shuffles the complete AN-chunk index without replacement
-and drops its incomplete final batch (the original BabyCL IID baseline's epoch).
-A ``frame_budget`` epoch instead draws independent batches for
-``floor(dataset_frames / images_per_batch)`` steps, matching an image-only IID
-epoch's image budget. This is an exposure budget, not a once-per-frame traversal.
-Sampling and augmentation derive from compose_seq, so prefetch and resume agree.
-
-``segments_per_batch: 0`` is the pairs-only (CVCL-style) batch: every step draws
-image/utterance pairs and nothing else, no storyboard is needed, and the visual
-losses have no slot to consume.
+Each epoch shuffles the chunks once and drops the incomplete batch. Visual
+segments are drawn with replacement; sampling and augmentation derive from
+compose_seq so prefetch and snapshot resume reproduce the consumed batches.
 """
 
 from __future__ import annotations
@@ -46,8 +35,7 @@ def build_offline_index(stream: SaycamStream, storyboard_json: str | None) -> Ba
     Ignore the storyboard's stored root_dir: the configured stream owns paths.
     Use the same ANChunkEmitter as streaming to retain its timestamp matching,
     contiguous-run splitting, missing-frame handling, and lifetime deduplication.
-    Without a storyboard (pairs-only batches) the index holds no segments and
-    still counts every frame, so frame-budget epochs keep their meaning.
+    Without a storyboard, pairs-only batches index utterances and no segments.
     """
     videos: dict[str, dict] | None = None
     storyboard_sha256 = None
@@ -112,11 +100,8 @@ class BabyCLOfflineDriver(OfflineDriver):
         segments_per_batch: int = 3,
         frames_per_segment: int = 32,
         pairs_per_batch: int = 32,
-        epoch_basis: str = "utterances",
         **kwargs,
     ):
-        if epoch_basis not in ("utterances", "frame_budget"):
-            raise ValueError("epoch_basis must be 'utterances' or 'frame_budget'")
         if segments_per_batch < 0 or min(frames_per_segment, pairs_per_batch) < 1:
             raise ValueError("BabyCL batch counts must be positive (segments_per_batch may be 0)")
         segment_views = list(segment_views or [])
@@ -132,7 +117,7 @@ class BabyCLOfflineDriver(OfflineDriver):
             )
         super().__init__(
             slot="segments+pairs" if segments_per_batch > 0 else "pairs",
-            n=pairs_per_batch if epoch_basis == "utterances" else 1,
+            n=pairs_per_batch,
             views=[*segment_views, pair_view],
             **kwargs,
         )
@@ -143,13 +128,9 @@ class BabyCLOfflineDriver(OfflineDriver):
         if not isinstance(self.stream, SaycamStream):
             raise ValueError("BabyCL offline storyboard requires a SAYCam/BabyView frame stream")
         self.storyboard_json = storyboard_json
-        self.epoch_basis = epoch_basis
         self.segments_per_batch = int(segments_per_batch)
         self.frames_per_segment = int(frames_per_segment)
         self.pairs_per_batch = int(pairs_per_batch)
-        self.images_per_batch = (
-            self.segments_per_batch * self.frames_per_segment + self.pairs_per_batch
-        )
         self.composer = Composer(self.loader, tokenizer=self.tokenizer)
         slots = []
         if self.segments_per_batch > 0:
@@ -187,7 +168,7 @@ class BabyCLOfflineDriver(OfflineDriver):
 
     @property
     def index_units(self) -> str:
-        return "utterance chunks" if self.epoch_basis == "utterances" else "frame-budget batches"
+        return "utterance chunks"
 
     @property
     def batch_description(self) -> str:
@@ -196,7 +177,7 @@ class BabyCLOfflineDriver(OfflineDriver):
             if self.segments_per_batch > 0
             else ""
         )
-        return f"{visual}pairs({self.pairs_per_batch} frames, text); epoch_basis={self.epoch_basis}"
+        return f"{visual}pairs({self.pairs_per_batch} frames, text)"
 
     def _build_index(self):
         if self.index is None:
@@ -207,16 +188,14 @@ class BabyCLOfflineDriver(OfflineDriver):
             raise ValueError("not enough utterance chunks for a complete BabyCL batch")
         print(
             f"[babycl-iid] {index.num_frames} frames, {len(index.segments)} segments, "
-            f"{len(index.pairs)} utterance chunks; epoch_basis={self.epoch_basis}; "
+            f"{len(index.pairs)} utterance chunks; "
             f"batch={self.segments_per_batch}x{self.frames_per_segment} visual"
             f"+{self.pairs_per_batch} image/text; storyboard_sha256={index.storyboard_sha256}",
             flush=True,
         )
         if not self.segments_per_batch:
             print("[babycl-iid] pairs-only batches (segments_per_batch=0)", flush=True)
-        if self.epoch_basis == "utterances":
-            return index.pairs
-        return range(index.num_frames // self.images_per_batch)
+        return index.pairs
 
     def _compose(self, refs, seq: int | None = None) -> dict:
         if self.index is None:
@@ -226,15 +205,10 @@ class BabyCLOfflineDriver(OfflineDriver):
             self.ctx.clock.compose_seq = seq + 1
         rng = self.ctx.fresh_rng(f"babycl.offline.draw.{seq}")
         segments = rng.choices(self.index.segments, k=self.segments_per_batch)
-        pairs = (
-            refs
-            if self.epoch_basis == "utterances"
-            else rng.sample(self.index.pairs, self.pairs_per_batch)
-        )
         batch = self.composer.compose(
             self.batch_recipe,
             {},
-            {"VisualSegment": segments, "AlignedPair": pairs},
+            {"VisualSegment": segments, "AlignedPair": refs},
             self.ctx,
             seq=seq,
         )
