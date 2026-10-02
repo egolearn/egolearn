@@ -110,7 +110,7 @@ As with training resume, load checkpoints only from trusted sources.
 ## Command line
 
 ```bash
-uv run egolearn eval imagenet_linear_eval \
+uv run egl eval imagenet_linear_eval \
   checkpoint=run/final.pth data_root=/datasets/imagenet \
   device=cuda output_json=imagenet_results.json
 ```
@@ -118,10 +118,9 @@ uv run egolearn eval imagenet_linear_eval \
 For an older checkpoint, append `model_config=run/.hydra/config.yaml`.
 The packaged ImageNet config exposes its protocol settings under `benchmarks.0`,
 for example `benchmarks.0.encoder=vision` or `benchmarks.0.batch_size=256`.
-`egolearn eval --help` lists the default evaluation configuration. Custom suites
-can use `egolearn eval path/to/suite.yaml` or native `--config-dir` and
-`--config-name` flags, just like training. The existing
-`python -m egolearn.evaluate` entry point remains supported.
+`egl eval --help` lists the default evaluation configuration. Custom suites
+can use `egl eval path/to/suite.yaml`. See the [CLI guide](cli.md) for overrides
+and configuration search paths.
 
 ## ImageNet migration
 

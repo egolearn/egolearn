@@ -18,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 egolearn = "egolearn.cli:main"
+egl = "egolearn.cli:main"
 
 # Optional extras are added together with the code that needs them (see docs/roadmap.md).
 # Still planned:

@@ -24,9 +24,6 @@ def _hydra_arguments(arguments: list[str]) -> list[str]:
         return arguments
 
     rest = arguments[1:]
-    config_flags = {"--config-name", "-cn", "--config-dir", "-cd", "--config-path", "-cp"}
-    if any(arg.split("=", 1)[0] in config_flags for arg in rest):
-        raise ValueError("use a leading config name/path or Hydra config flags, not both")
     path = Path(config).expanduser()
     if "/" in config or path.suffix in {".yaml", ".yml"}:
         if path.suffix != ".yaml":

@@ -26,38 +26,25 @@ uv run pre-commit install    # local gates: ruff, gitleaks, large-file blocker
 uv run pytest                # unit tests (slow/gpu/llm tiers excluded by default)
 
 # validate a full pipeline without reading any data
-uv run egolearn train projects/babycl/configs/saycam_default.yaml dry_run=true
+uv run egl train projects/babycl/configs/saycam_default.yaml dry_run=true
 # train (dataset roots come from the command line / config, never code)
-uv run egolearn train projects/babycl/configs/saycam_default.yaml stream.root_dir=$DATA_ROOT
+uv run egl train projects/babycl/configs/saycam_default.yaml stream.root_dir=$DATA_ROOT
 ```
 
 Requires [uv](https://docs.astral.sh/uv/); Python 3.12 is provisioned automatically.
 
 ## Command line
 
-After `uv sync`, use `uv run egolearn` (or `egolearn` in the activated environment):
+Use `egl` (also available as `egolearn`) after `uv sync`, or prefix it with `uv run`:
 
 ```bash
-egolearn --help
-egolearn --version
-egolearn train toy_streaming dry_run=true
-egolearn train projects/babycl/configs/saycam_default.yaml seed=42
-egolearn eval imagenet_linear_eval checkpoint=runs/example/final.pth data_root=/path/to/imagenet
+egl --help
+egl train toy_streaming dry_run=true
+egl train projects/babycl/configs/saycam_default.yaml seed=42
+egl eval imagenet_linear_eval checkpoint=runs/example/final.pth data_root=/path/to/imagenet
 ```
 
-The first argument after `train` or `eval` may be a packaged config name or an
-existing `.yaml` file. Relative paths are resolved from your current directory.
-Explicit files can inherit packaged defaults (for example, `defaults: [/config, _self_]`);
-configs in the file's own directory take precedence over packaged configs.
-Hydra controls all subsequent arguments, including `--help`, `--cfg job`,
-`--multirun`, `+key=value`, and `~key`. Native invocation also works:
-`egolearn train --config-dir projects/babycl/configs --config-name saycam_default`.
-Use either the shorthand config or native config-selection flags in one command.
-`eval` without a config uses the packaged `evaluate` defaults, as before.
-
-The existing `python -m egolearn.train` and `python -m egolearn.evaluate` entry
-points remain supported. Dataset, cluster, and suite commands are tracked in
-[issue #23](https://github.com/agentic-learning-ai-lab/egolearn/issues/23).
+See the [CLI guide](docs/cli.md) for configuration paths, overrides, and multirun.
 
 ## SAYCam dataset access
 
@@ -96,7 +83,7 @@ faithful ports of the original code, each expressed as a config file. The
 full walkthrough: [docs/design/architecture.md](docs/design/architecture.md).
 
 Trained checkpoints can be evaluated independently through
-`egolearn.evaluation.evaluate_checkpoint` or `egolearn eval`.
+`egolearn.evaluation.evaluate_checkpoint` or `egl eval`.
 Full ImageNet decoding runs as a standalone benchmark, with dataset preparation
 deferred until evaluation. See [the evaluation guide](docs/evaluation.md) for
 Python usage, CLI configuration, and checkpoint compatibility.

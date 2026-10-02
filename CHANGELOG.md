@@ -8,8 +8,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
-- Installed `egolearn train` and `egolearn eval` commands accept packaged config
-  names or YAML paths and preserve the existing Hydra options and module entry points.
+- Installed `egl train` and `egl eval` commands accept packaged config names or
+  YAML paths, with `egolearn` as an equivalent command alias. Hydra handles later
+  config-selection flags, including abbreviations, using its normal precedence.
   Explicit files retain access to packaged defaults and user-supplied search paths.
 
 - Standalone evaluation API (`evaluate`, `evaluate_checkpoint`, `load_model`) and

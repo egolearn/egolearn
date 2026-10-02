@@ -13,9 +13,9 @@ from omegaconf import OmegaConf
 from egolearn import __version__
 
 
-def run_cli(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def run_cli(cwd: Path, *args: str, entrypoint: str = "egl") -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [str(Path(sys.executable).parent / "egolearn"), *args],
+        [str(Path(sys.executable).parent / entrypoint), *args],
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -25,15 +25,16 @@ def run_cli(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_help_version_and_invalid_command(tmp_path):
+@pytest.mark.parametrize("entrypoint", ["egl", "egolearn"])
+def test_help_version_and_invalid_command(tmp_path, entrypoint):
     for args in [(), ("--help",)]:
-        result = run_cli(tmp_path, *args)
+        result = run_cli(tmp_path, *args, entrypoint=entrypoint)
         assert result.returncode == 0, result.stderr
         assert "train" in result.stdout and "eval" in result.stdout
-    result = run_cli(tmp_path, "--version")
+    result = run_cli(tmp_path, "--version", entrypoint=entrypoint)
     assert result.returncode == 0
     assert result.stdout.strip() == f"egolearn {__version__}"
-    assert run_cli(tmp_path, "unknown").returncode == 2
+    assert run_cli(tmp_path, "unknown", entrypoint=entrypoint).returncode == 2
 
 
 def test_top_level_help_does_not_import_training_or_hydra(tmp_path):
@@ -151,11 +152,13 @@ def test_native_hydra_flags_and_eval_default(tmp_path):
     assert "seed: 7" in result.stdout
 
 
-@pytest.mark.parametrize("flag", ["--config-name=other", "-cn=other", "--config-dir=."])
-def test_conflicting_config_selectors_are_rejected(tmp_path, flag):
-    result = run_cli(tmp_path, "train", "toy_streaming", flag)
-    assert result.returncode == 2
-    assert "not both" in result.stderr
+@pytest.mark.parametrize("flag", ["--config-name=config", "--config-n=config", "-cn=config"])
+def test_later_hydra_config_flags_take_precedence(tmp_path, flag):
+    result = run_cli(tmp_path, "train", "toy_streaming", flag, "--cfg", "job")
+    assert result.returncode == 0, result.stderr
+    config = OmegaConf.create(result.stdout)
+    assert config.seed == 0  # packaged config, not toy_streaming's seed=7
+    assert "stream" not in config
 
 
 def test_missing_file_and_hydra_errors_fail(tmp_path):
