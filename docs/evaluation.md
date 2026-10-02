@@ -60,11 +60,11 @@ with approval from their institution's IRB and follow the applicable Databrary
 data-use terms. See the [CVCL dataset notes][cvcl-data] and
 [BabyVLM preparation notes][babyvlm-preparation] for the source releases.
 
-| Benchmark | Image source | Labels / code terms | Preparation |
+| Benchmark | Image source | Labels and code terms | Preparation |
 | --- | --- | --- | --- |
-| Labeled-S 4AFC | Labeled-S release on Databrary | Frozen BabyCL trials; CVCL vocabulary/code is MIT; image access as above | [Manifest and vocabulary](#labeled-s-4afc-data) |
-| VTWT | Multimodal SAYCam-S frames on Databrary | BabyVLM added tasks: [Apache-2.0][babyvlm-license] | [Frames and CSV inputs](#babyvlm-benchmark-data) |
-| Baby Winoground | SAYCam-S frames and `BabyVLM_V1` synthetic images on Databrary | BabyVLM added tasks: [Apache-2.0][babyvlm-license] | [Frames, negatives, and CSV inputs](#babyvlm-benchmark-data) |
+| Labeled-S 4AFC | Labeled-S release on Databrary | Frozen BabyCL trials; [CVCL vocabulary][cvcl-vocab] (MIT) | [Manifest and vocabulary](#labeled-s-4afc-data) |
+| VTWT | Multimodal SAYCam-S frames on Databrary | [VTWT labels][vtwt-labels]; [Apache-2.0][babyvlm-license] task code | [Frames and CSV inputs](#babyvlm-benchmark-data) |
+| Baby Winoground | SAYCam-S frames and `BabyVLM_V1` synthetic images on Databrary | [Baby Winoground labels][bw-labels]; [Apache-2.0][babyvlm-license] task code | [Frames, negatives, and CSV inputs](#babyvlm-benchmark-data) |
 
 [cvcl-data]: https://github.com/wkvong/multimodal-baby#datasets
 [babyvlm-preparation]: https://github.com/ShawnKing98/babylmms-eval#data-preparation
@@ -97,44 +97,13 @@ present; the checkpoint's embedding weights alone do not recover word names.
 
 Export the paths to the category-folder root as `LABELED_S_ROOT`, the original
 trial JSON as `LABELED_S_TRIALS`, and the model's vocabulary as `VOCAB_JSON`.
-This conversion checks the frozen trial/category counts, target
-vocabulary coverage, and local image paths before writing the manifest:
+The converter checks the frozen trial/category counts, target vocabulary coverage,
+and local image paths, and refuses to overwrite an existing output:
 
 ```bash
-uv run python - <<'PY'
-import json
-import os
-from pathlib import Path
-
-root = Path(os.environ["LABELED_S_ROOT"]).expanduser().resolve()
-source = json.loads(Path(os.environ["LABELED_S_TRIALS"]).read_text())["data"]
-vocab = json.loads(Path(os.environ["VOCAB_JSON"]).read_text())
-if len(source) != 4150 or len({row["target_category"] for row in source}) != 23:
-    raise ValueError("Expected BabyCL's frozen 4,150 trials over 23 categories")
-
-trials = []
-for row in source:
-    category = row["target_category"]
-    if category not in vocab or len(category.split()) != 1:
-        raise ValueError(f"Target must be one token in the model vocabulary: {category}")
-    paths = [row["target_img_filename"], *row["foil_img_filenames"]]
-    if len(paths) != 4:
-        raise ValueError("Each trial must contain one target and three foils")
-    images = []
-    for raw in paths:
-        original = Path(raw)
-        path = root / original.parent.name / original.name
-        if not path.is_file():
-            raise FileNotFoundError(path)
-        images.append(str(path))
-    trials.append({"text": category, "images": images, "answer": 0})
-
-output = Path("data/labeled_s_4afc_manifest.json")
-output.parent.mkdir(parents=True, exist_ok=True)
-with output.open("x") as handle:
-    json.dump({"trials": trials}, handle, indent=2)
-print(f"Wrote {len(trials)} trials to {output}")
-PY
+uv run python -m egolearn.evaluation.benchmarks.labeled_s_4afc.prepare \
+  --data_root "$LABELED_S_ROOT" --trials_json "$LABELED_S_TRIALS" \
+  --vocab_json "$VOCAB_JSON" --output data/labeled_s_4afc_manifest.json
 ```
 
 Pass the result as `manifest`, the same vocabulary as `vocab_json`, and the
@@ -152,11 +121,6 @@ The Visual Two-Word Test (VTWT, `probe:vtwt`) and Baby Winoground
 Pretraining of VLMs Inspired by Infant Learning* (2025). See the
 [paper website](https://shawnking98.github.io/BabyVLM/) and the authors'
 [evaluation repository](https://github.com/ShawnKing98/babylmms-eval).
-
-| Benchmark | Public labels | Required images |
-| --- | --- | --- |
-| VTWT | [VTWT labels][vtwt-labels] | SAYCam frames |
-| Baby Winoground | [Baby Winoground labels][bw-labels] | SAYCam frames and synthetic negatives |
 
 After obtaining [SAYCam access](#saycam-access), follow the
 [BabyVLM preparation notes][babyvlm-preparation]:

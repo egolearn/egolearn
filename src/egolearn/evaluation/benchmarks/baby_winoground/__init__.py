@@ -7,8 +7,7 @@ Task attribution: BabyVLM / babylmms-eval, Apache-2.0:
 https://github.com/ShawnKing98/babylmms-eval/blob/main/LICENSE
 Data access and preparation: docs/evaluation.md#babyvlm-benchmark-data
 
-1:1 port of BabyCL's original evaluation script (protocol from Wang et al.,
-BabyVLM).  Each instance pairs (pos_image, positive_phrase) with a
+Each instance pairs (pos_image, positive_phrase) with a
 synthetically perturbed (neg_image, negative_phrase).  All four image-phrase
 cosine similarities are computed, and the instance is GROUP-correct only
 when both of these hold (strict >):
@@ -24,10 +23,9 @@ CSV format (rows grouped by instance_id)::
 
 Positive images are looked up in `pos_dir` (SAYCam frames); negative images
 in `neg_dir` (the synthetic negatives directory).  Tokenization and
-preprocessing are shared verbatim with the VTWT probe (out-of-vocabulary
+preprocessing use the VTWT protocol (out-of-vocabulary
 words map to padding index 0, no <sos>/<eos>, normalization chosen per model
-family); instances with a missing row or image are skipped and counted, as
-in the original.
+family); instances with a missing row or image are skipped and counted.
 """
 
 from __future__ import annotations
