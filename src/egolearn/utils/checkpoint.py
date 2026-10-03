@@ -17,6 +17,8 @@ def read_checkpoint(
     Ordinary checkpoints use restricted unpickling. Only explicitly trusted
     snapshots may contain arbitrary Python objects; there is no unsafe retry.
     """
+    if not isinstance(trusted_snapshot, bool):
+        raise TypeError("trusted_snapshot must be a bool; only True enables unrestricted loading")
     path = Path(checkpoint).expanduser()
     with path.open("rb") as file:
         digest = hashlib.file_digest(file, "sha256").hexdigest()

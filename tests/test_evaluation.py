@@ -539,3 +539,16 @@ def test_split_identity_survives_relocation_and_tracks_order_and_labels(tmp_path
     assert (
         replace(original, train=(changed, *original.train[1:])).metadata()["split_sha256"] != digest
     )
+
+
+def test_split_metadata_accepts_numpy_integer_labels():
+    import numpy as np
+
+    def split(label):
+        return ClassificationSplit(
+            classes=("one",),
+            train=(LabeledImage("train.png", label),),
+            test=(LabeledImage("test.png", label),),
+        )
+
+    assert split(np.int64(0)).metadata() == split(0).metadata()

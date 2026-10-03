@@ -50,6 +50,8 @@ class EvaluationResult:
     package_version: str = __version__
     code_revision: dict[str, str | bool] = field(default_factory=code_revision)
     schema_version: int = 2
+    status: str = "complete"
+    failed_benchmark: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -67,6 +69,9 @@ class EvaluationError(RuntimeError):
         super().__init__(f"evaluation failed for benchmark {benchmark!r}")
         self.benchmark = benchmark
         self.partial_result = partial_result
+
+    def __reduce__(self):
+        return type(self), (self.benchmark, self.partial_result)
 
 
 @contextmanager
@@ -194,5 +199,7 @@ def evaluate(
                 result.versions[benchmark.name] = str(benchmark.version)
                 result.metadata[benchmark.name] = metadata
             except Exception as exc:
+                result.status = "partial"
+                result.failed_benchmark = benchmark.name
                 raise EvaluationError(benchmark.name, result) from exc
     return result

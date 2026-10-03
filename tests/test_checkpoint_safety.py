@@ -20,15 +20,16 @@ class PickleSideEffect:
 
 
 @pytest.mark.parametrize("entry_point", ["evaluation", "initialization"])
-def test_checkpoint_objects_are_rejected_without_executing_pickle(tmp_path, entry_point):
+@pytest.mark.parametrize("trust", [False, "false"])
+def test_checkpoint_objects_are_rejected_without_executing_pickle(tmp_path, entry_point, trust):
     marker = tmp_path / "executed"
     checkpoint = tmp_path / "untrusted.pth"
     torch.save({"model": {}, "extra": PickleSideEffect(marker)}, checkpoint)
-    with pytest.raises(UnpicklingError):
+    with pytest.raises(UnpicklingError if trust is False else TypeError):
         if entry_point == "evaluation":
-            load_model(checkpoint)
+            load_model(checkpoint, trusted_snapshot=trust)
         else:
-            load_pretrained_weights(torch.nn.Linear(2, 2), str(checkpoint))
+            load_pretrained_weights(torch.nn.Linear(2, 2), str(checkpoint), trusted_snapshot=trust)
     assert not marker.exists()
 
 
@@ -64,3 +65,10 @@ def test_checkpoint_null_encoders_reports_model_validation(tmp_path):
     torch.save({"model": {}, "model_config": {"model": {"encoders": None}}}, checkpoint)
     with pytest.raises(ValueError, match="model needs at least one entry"):
         load_model(checkpoint)
+
+
+@pytest.mark.parametrize("value", ["false", "true", 0, 1, None])
+def test_snapshot_trust_requires_a_boolean_before_reading(tmp_path, value):
+    # A quoted YAML/environment value must never silently opt into unsafe pickle.
+    with pytest.raises(TypeError, match="trusted_snapshot must be a bool"):
+        read_checkpoint(tmp_path / "not-read.pth", trusted_snapshot=value)

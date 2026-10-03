@@ -440,6 +440,8 @@ def test_imagenet_cli_runs_from_outside_repository(tmp_path, imagefolder, model_
     assert set(result["results"]["imagenet_linear"]) == {"top1", "train_top1_running"}
     assert result["configs"]["imagenet_linear"]["epochs"] == 1
     assert result["versions"]["imagenet_linear"] == "1"
+    assert result["status"] == "complete"
+    assert result["failed_benchmark"] is None
     assert result["checkpoint"]["sha256"] == hashlib.sha256(checkpoint.read_bytes()).hexdigest()
 
 
@@ -469,7 +471,9 @@ def test_failed_benchmark_keeps_completed_results_and_checkpoint(
     assert result.checkpoint["filename"] == path.name
     for field in (result.results, result.configs, result.versions, result.metadata):
         assert set(field) == {"weights"}
-    assert result.code_revision["commit"] != "unavailable"
+    assert set(result.code_revision) == {"commit", "dirty"}
+    assert result.status == "partial"
+    assert result.failed_benchmark == "failed"
     output = tmp_path / "partial.json"
     result.save_json(output)
     assert json.loads(output.read_text())["results"] == result.results
@@ -494,7 +498,10 @@ def test_evaluation_restores_mps_rng_on_success_and_failure(model_config, monkey
     assert state.item() == 11
 
 
-def test_cli_writes_partial_results_and_exits_with_failure(tmp_path, imagefolder, model_config):
+@pytest.mark.parametrize("completed_first", [False, True])
+def test_cli_writes_partial_results_and_exits_with_failure(
+    tmp_path, imagefolder, model_config, completed_first
+):
     model = build_model(model_config)
     checkpoint = tmp_path / "model.pth"
     torch.save({"model": model.state_dict(), "model_config": model.construction_config}, checkpoint)
@@ -514,7 +521,10 @@ def test_cli_writes_partial_results_and_exits_with_failure(tmp_path, imagefolder
             "checkpoint": str(checkpoint),
             "output_json": str(output),
             "_imports_": ["egolearn.evaluation.benchmarks.imagenet_linear"],
-            "benchmarks": [benchmark, {**benchmark, "name": "failed", "data_root": "missing"}],
+            "benchmarks": [
+                *([benchmark] if completed_first else []),
+                {**benchmark, "name": "failed", "data_root": "missing"},
+            ],
         },
         tmp_path / "partial.yaml",
     )
@@ -538,8 +548,10 @@ def test_cli_writes_partial_results_and_exits_with_failure(tmp_path, imagefolder
     assert completed.returncode != 0
     assert "FileNotFoundError" in completed.stderr
     result = json.loads(output.read_text())
-    assert set(result["results"]) == {"finished"}
+    assert set(result["results"]) == ({"finished"} if completed_first else set())
     assert result["checkpoint"]["filename"] == checkpoint.name
+    assert result["status"] == "partial"
+    assert result["failed_benchmark"] == "failed"
 
 
 @pytest.mark.parametrize("probe_type", ["linear", "linear_sgd"])
@@ -568,3 +580,18 @@ def test_constructed_probes_record_protocol_and_split(
     assert result.metadata["linear"]["n_train"] == 4
     assert str(imagefolder) not in json.dumps(result.metadata)
     result.save_json(tmp_path / "result.json")
+
+
+def test_evaluation_error_keeps_partial_results_through_pickling(model_config):
+    import pickle
+
+    from egolearn.evaluation import EvaluationError
+
+    with pytest.raises(EvaluationError) as caught:
+        evaluate(
+            build_model(model_config), benchmarks=[WeightBenchmark(), RandomBenchmark(fail=True)]
+        )
+    restored = pickle.loads(pickle.dumps(caught.value))
+    assert restored.benchmark == "random"
+    assert restored.partial_result.to_dict() == caught.value.partial_result.to_dict()
+    assert str(restored) == str(caught.value)

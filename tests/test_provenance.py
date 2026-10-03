@@ -22,7 +22,17 @@ def test_revision_tracks_checkout_commit_and_dirty_files(tmp_path, monkeypatch):
 
     git("init")
     git("add", ".")
-    git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "test")
+    git(
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "test",
+    )
     commit = git("rev-parse", "HEAD")
     assert provenance.code_revision() == {"commit": commit, "dirty": False}
     source.write_text("# modified source\n")
@@ -43,4 +53,16 @@ def test_revision_is_best_effort(monkeypatch, error):
         raise error
 
     monkeypatch.setattr(subprocess, "run", unavailable)
+    assert provenance.code_revision() == {"commit": "unavailable", "dirty": "unavailable"}
+
+
+def test_vendored_install_does_not_claim_enclosing_repository(tmp_path, monkeypatch):
+    root = tmp_path / "unrelated"
+    (root / ".git").mkdir(parents=True)
+    monkeypatch.setattr(provenance, "__file__", str(root / "vendor/egolearn/utils/provenance.py"))
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("queried unrelated repository")
+
+    monkeypatch.setattr(subprocess, "run", forbidden)
     assert provenance.code_revision() == {"commit": "unavailable", "dirty": "unavailable"}

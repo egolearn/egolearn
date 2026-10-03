@@ -91,7 +91,7 @@ class ClassificationSplit:
             digest.update(name.encode() + b"\n")
             for item in items:
                 relative = Path(item.image).absolute().relative_to(root).as_posix()
-                digest.update(json.dumps((relative, item.label)).encode() + b"\n")
+                digest.update(json.dumps((relative, int(item.label))).encode() + b"\n")
         return {
             "classes": list(self.classes),
             "n_train": len(self.train),

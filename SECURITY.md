@@ -31,8 +31,11 @@ For evaluation or `init_from` of such a snapshot, explicitly set
 `trusted_snapshot=True` (Hydra: `trusted_snapshot=true` or
 `+init_from.trusted_snapshot=true`). This opt-in permits arbitrary code execution;
 a file name, hash, or download from the Hub does not establish trust.
-Model configuration and registration imports also execute code: inspect external
-configs before loading them. Restricted unpickling does not sandbox model code.
+The opt-in must be a boolean; strings such as `"false"` are rejected.
+Model configuration and registration imports also execute code, including those
+embedded in checkpoints. Inspect external configs and embedded construction
+metadata before evaluating a checkpoint. Restricted unpickling does not sandbox
+model code.
 
 ## If a secret lands in a commit
 

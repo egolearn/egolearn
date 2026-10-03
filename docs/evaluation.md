@@ -61,8 +61,10 @@ records the verified canonical split hash and source.
 
 If a benchmark fails, `EvaluationError.partial_result` retains completed
 benchmarks and their provenance; `benchmark` identifies the failed benchmark
-and `__cause__` retains its original error. The CLI saves this partial result to
-`output_json` before exiting unsuccessfully. In Python:
+and `__cause__` retains its original error. Serialized results record
+`status: "partial"` and `failed_benchmark`; successful suites record
+`status: "complete"`. The CLI replaces `output_json` with this partial result
+before exiting unsuccessfully, including when the first benchmark fails. In Python:
 
 ```python
 from egolearn.evaluation import EvaluationError
@@ -110,8 +112,9 @@ appropriate `image_norm` (`imagenet` for EgoLearn-trained BabyCL models,
 
 ## Checkpoint compatibility
 
-Both `CheckpointHook` files (`step_*.pth`, `final.pth`) and training snapshots
-(`snapshot_*.pth`) are supported with an explicit `trusted_snapshot=True` opt-in. New files produced from a pipeline-built model
+`CheckpointHook` files (`step_*.pth`, `final.pth`) use restricted loading by
+default. Training snapshots (`snapshot_*.pth`) require an explicit
+`trusted_snapshot=True` opt-in. New files produced from a pipeline-built model
 include a versioned construction config: encoders, heads, predictors, frozen
 roles, registration imports, and resolved values such as vocabulary size.
 

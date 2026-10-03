@@ -9,9 +9,10 @@ from pathlib import Path
 def code_revision() -> dict[str, str | bool]:
     """Return the source commit and dirty flag, or explicit unavailable values."""
     unavailable: dict[str, str | bool] = {"commit": "unavailable", "dirty": "unavailable"}
-    root = Path(__file__).resolve().parents[3]
+    source = Path(__file__).resolve()
+    root = source.parents[3]
     # Wheels have no checkout metadata. Do not report a caller's unrelated repo.
-    if not (root / ".git").exists():
+    if source.parents[1] != root / "src" / "egolearn" or not (root / ".git").exists():
         return unavailable
     try:
 
