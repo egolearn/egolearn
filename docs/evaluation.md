@@ -59,12 +59,17 @@ Generic split hashes, also recorded by ImageNet, cover ordered relative paths,
 labels and classes, not image bytes. Manifest-backed probes also record the manifest's byte hash; Labeled-S
 records the verified canonical split hash and source.
 
-If a benchmark fails, `EvaluationError.partial_result` retains completed
+If benchmark preparation, execution, metric conversion, or metadata collection
+fails, `EvaluationError.partial_result` retains completed
 benchmarks and their provenance; `benchmark` identifies the failed benchmark
 and `__cause__` retains its original error. Serialized results record
 `status: "partial"` and `failed_benchmark`; successful suites record
 `status: "complete"`. The CLI replaces `output_json` with this partial result
-before exiting unsuccessfully, including when the first benchmark fails. In Python:
+before exiting unsuccessfully, including when no benchmark has completed.
+Setup errors (checkpoint loading, imports, benchmark construction, or suite
+validation) propagate normally and leave any existing output file unchanged.
+Consumers must check the process exit status before using `output_json`; a file
+from an earlier run may still exist after a setup failure. In Python:
 
 ```python
 from egolearn.evaluation import EvaluationError
