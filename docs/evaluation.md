@@ -56,12 +56,12 @@ There is one scoring implementation for training probes and standalone use.
 Linear probes record their own seed (for SGD), hyperparameters, class names,
 split sizes and split SHA-256, including when passed as constructed objects.
 Generic split hashes, also recorded by ImageNet, cover ordered relative paths,
-labels and classes, not image bytes. Manifest-backed probes also record the manifest's byte hash; Labeled-S
-records the verified canonical split hash and source.
+labels and classes, not image bytes. Manifest-backed probes also record the
+manifest's byte hash; Labeled-S records the verified canonical split hash and source.
 
 If benchmark preparation, execution, metric conversion, or metadata collection
-fails, `EvaluationError.partial_result` retains completed
-benchmarks and their provenance; `benchmark` identifies the failed benchmark
+fails, `EvaluationError.partial_result` retains completed benchmarks and their
+provenance; `benchmark` identifies the failed benchmark
 and `__cause__` retains its original error. Serialized results record
 `status: "partial"` and `failed_benchmark`; successful suites record
 `status: "complete"`. The CLI replaces `output_json` with this partial result
