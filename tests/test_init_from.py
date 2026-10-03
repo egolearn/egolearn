@@ -88,6 +88,7 @@ def test_include_copies_only_the_named_encoder(toy_config, tmp_path, trained):
     assert not _equal(_sub(got, "heads."), _sub(state, "heads."))
     assert pipe.init_from["tensors"] == len(_sub(state, "encoders.vision."))
     assert pipe.init_from["step"] == 2
+    assert pipe.init_from["checkpoint"] == ckpt.name
     assert "init_from" in pipe.summary()
     # provenance travels with the model so later checkpoints record their lineage
     assert pipe.model.construction_config["init_from"]["sha256"] == pipe.init_from["sha256"]
@@ -145,7 +146,7 @@ def test_resumed_checkpoints_keep_initialization_lineage(toy_config, tmp_path, t
 def test_default_copies_everything_and_snapshots_are_accepted(toy_config, tmp_path, trained):
     state, _, snap = trained
     cfg = toy_config(tmp_path / "dst")
-    cfg["init_from"] = {"checkpoint": str(snap)}
+    cfg["init_from"] = {"checkpoint": str(snap), "trusted_snapshot": True}
     pipe = egolearn.build(cfg)
     assert _equal(pipe.model.state_dict(), state)
     assert pipe.init_from["step"] == 2  # read from the snapshot's clock

@@ -111,6 +111,11 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- Share restricted checkpoint reading between evaluation and initialization;
+  full snapshots now require explicit trust, and source provenance stores only
+  checkpoint file names and hashes.
+- Record evaluation code revisions and linear-probe settings and split hashes,
+  preserve completed benchmark results on failure, and restore MPS RNG state.
 - Determinism (from PR review): the configured seed now also seeds the
   global torch/python RNGs and snapshots carry their state, so the same
   seed gives bit-identical weights and a resumed run matches an

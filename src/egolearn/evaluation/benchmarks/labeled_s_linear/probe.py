@@ -45,7 +45,7 @@ def load_split_text(split_file: str | Path | None) -> tuple[str, str, str]:
     else:
         path = Path(split_file)
         raw = path.read_bytes()
-        source = str(path.resolve())
+        source = path.name
 
     digest = hashlib.sha256(raw).hexdigest()
     if digest != SPLIT_SHA256:
@@ -151,6 +151,9 @@ class LabeledSLinearProbe(LinearProbe):
         l2: float = 1e-3,
         max_iter: int = 500,
     ):
+        self.data_root = str(data_root)
+        self.split_file = str(split_file) if split_file is not None else None
+        self.check_files = bool(check_files)
         text, self.split_source, self.split_sha256 = load_split_text(split_file)
         split = parse_split(text, data_root, check_files=check_files)
         super().__init__(
@@ -164,3 +167,21 @@ class LabeledSLinearProbe(LinearProbe):
             l2=l2,
             max_iter=max_iter,
         )
+
+    def configuration(self) -> dict:
+        config = super().configuration()
+        config.pop("manifest")
+        config.pop("split")
+        return {
+            **config,
+            "data_root": self.data_root,
+            "split_file": self.split_file,
+            "check_files": self.check_files,
+        }
+
+    def metadata(self) -> dict:
+        return {
+            **super().metadata(),
+            "split_source": self.split_source,
+            "split_sha256": self.split_sha256,
+        }

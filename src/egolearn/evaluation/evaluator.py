@@ -9,7 +9,7 @@ import random
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,7 @@ from egolearn.config.instantiate import instantiate
 from egolearn.core.context import _stable_seed
 from egolearn.evaluation.benchmark import Benchmark
 from egolearn.model.model import ComposedModel
+from egolearn.utils.provenance import code_revision
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,8 @@ class EvaluationResult:
     checkpoint: dict[str, Any] | None = None
     model_config: dict[str, Any] | None = None
     package_version: str = __version__
-    schema_version: int = 1
+    code_revision: dict[str, str | bool] = field(default_factory=code_revision)
+    schema_version: int = 2
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -58,6 +60,15 @@ class EvaluationResult:
         destination.write_text(json.dumps(self.to_dict(), indent=2, allow_nan=False) + "\n")
 
 
+class EvaluationError(RuntimeError):
+    """A failed benchmark with completed results and the original error as cause."""
+
+    def __init__(self, benchmark: str, partial_result: EvaluationResult):
+        super().__init__(f"evaluation failed for benchmark {benchmark!r}")
+        self.benchmark = benchmark
+        self.partial_result = partial_result
+
+
 @contextmanager
 def _isolated_evaluation_rng(seed: int) -> Iterator[None]:
     python_state = random.getstate()
@@ -65,6 +76,7 @@ def _isolated_evaluation_rng(seed: int) -> Iterator[None]:
     numpy_state = np.random.get_state()  # noqa: NPY002
     # fork_rng preserves CPU and every CUDA device, including classifier init.
     devices = list(range(torch.cuda.device_count())) if torch.cuda.is_available() else []
+    mps_state = torch.mps.get_rng_state() if torch.backends.mps.is_available() else None
     try:
         with torch.random.fork_rng(devices=devices):
             random.seed(seed)
@@ -72,6 +84,8 @@ def _isolated_evaluation_rng(seed: int) -> Iterator[None]:
             torch.manual_seed(seed)
             yield
     finally:
+        if mps_state is not None:
+            torch.mps.set_rng_state(mps_state)
         random.setstate(python_state)
         np.random.set_state(numpy_state)  # noqa: NPY002
 
@@ -163,12 +177,22 @@ def evaluate(
                     f"benchmark {benchmark.name!r} needs capabilities {sorted(missing)}"
                 )
         for benchmark, config in configured:
-            # Each benchmark starts from the same seed, independent of suite order.
-            with _isolated_evaluation_rng(ctx.seed), torch.inference_mode(False), torch.no_grad():
-                benchmark.prepare()
-                metrics = benchmark.run(model, ctx)
-            result.results[benchmark.name] = {key: float(value) for key, value in metrics.items()}
-            result.configs[benchmark.name] = config
-            result.versions[benchmark.name] = str(benchmark.version)
-            result.metadata[benchmark.name] = benchmark.metadata()
+            try:
+                # Each benchmark starts from the same seed, independent of suite order.
+                with (
+                    _isolated_evaluation_rng(ctx.seed),
+                    torch.inference_mode(False),
+                    torch.no_grad(),
+                ):
+                    benchmark.prepare()
+                    metrics = {
+                        key: float(value) for key, value in benchmark.run(model, ctx).items()
+                    }
+                    metadata = deepcopy(benchmark.metadata())
+                result.results[benchmark.name] = metrics
+                result.configs[benchmark.name] = config
+                result.versions[benchmark.name] = str(benchmark.version)
+                result.metadata[benchmark.name] = metadata
+            except Exception as exc:
+                raise EvaluationError(benchmark.name, result) from exc
     return result

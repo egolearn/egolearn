@@ -26,9 +26,12 @@ JSON remains available as a loader for custom datasets and existing configs::
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F
@@ -70,6 +73,34 @@ class ClassificationSplit:
                         f"[0, {len(self.classes) - 1}]"
                     )
 
+    def metadata(self) -> dict:
+        """Identify ordered split membership without recording machine-specific roots.
+
+        The digest covers class names, relative image paths and labels, not image bytes.
+        """
+        root = Path(
+            os.path.commonpath(
+                [str(Path(item.image).absolute().parent) for item in (*self.train, *self.test)]
+            )
+        )
+        identity = {
+            "classes": self.classes,
+            **{
+                name: [
+                    (str(Path(item.image).absolute().relative_to(root)), item.label)
+                    for item in items
+                ]
+                for name, items in (("train", self.train), ("test", self.test))
+            },
+        }
+        digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+        return {
+            "classes": list(self.classes),
+            "n_train": len(self.train),
+            "n_test": len(self.test),
+            "split_sha256": digest,
+        }
+
     @classmethod
     def from_mapping(cls, value: Mapping) -> ClassificationSplit:
         def read_items(items: Sequence[Mapping]) -> tuple[LabeledImage, ...]:
@@ -104,20 +135,45 @@ class LinearProbe(Probe):
         self.name = name
         if (manifest is None) == (split is None):
             raise ValueError("linear probe needs exactly one of manifest or split")
+        self.manifest = str(manifest) if manifest is not None else None
+        self.manifest_sha256 = None
         if split is None:
             assert manifest is not None
-            with open(manifest) as f:
-                split = ClassificationSplit.from_mapping(json.load(f))
+            raw = Path(manifest).read_bytes()
+            self.manifest_sha256 = hashlib.sha256(raw).hexdigest()
+            split = ClassificationSplit.from_mapping(json.loads(raw))
         self.split = split
         self.classes = list(split.classes)
         self.train_set = split.train
         self.test_set = split.test
         self.encoder = encoder
         self.head = head
-        self.transform = VIEWS.get(view)(size=size)
+        self.view = view
+        self.size = int(size)
+        self.transform = VIEWS.get(view)(size=self.size)
         self.batch_size = int(batch_size)
         self.l2 = float(l2)
         self.max_iter = int(max_iter)
+
+    def configuration(self) -> dict:
+        return {
+            "name": self.name,
+            "manifest": self.manifest,
+            "encoder": self.encoder,
+            "head": self.head,
+            "view": self.view,
+            "size": self.size,
+            "batch_size": self.batch_size,
+            "l2": self.l2,
+            "max_iter": self.max_iter,
+            "split": self.split.metadata(),
+        }
+
+    def metadata(self) -> dict:
+        metadata = self.split.metadata()
+        if self.manifest_sha256 is not None:
+            metadata["manifest_sha256"] = self.manifest_sha256
+        return metadata
 
     def _extract(
         self, model, ctx, items: Sequence[LabeledImage]

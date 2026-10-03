@@ -14,18 +14,24 @@ from omegaconf import DictConfig, OmegaConf
 
 @hydra.main(version_base="1.3", config_path="pkg://egolearn.configs", config_name="evaluate")
 def main(cfg: DictConfig) -> None:
-    from egolearn.evaluation import evaluate_checkpoint
+    from egolearn.evaluation import EvaluationError, evaluate_checkpoint
 
     plain = OmegaConf.to_container(cfg, resolve=True)
     assert isinstance(plain, dict)
-    result = evaluate_checkpoint(
-        plain["checkpoint"],
-        model_config=plain.get("model_config"),
-        benchmarks=plain["benchmarks"],
-        device=plain.get("device", "cpu"),
-        seed=plain.get("seed", 0),
-        imports=plain.get("_imports_", []),
-    )
+    try:
+        result = evaluate_checkpoint(
+            plain["checkpoint"],
+            model_config=plain.get("model_config"),
+            benchmarks=plain["benchmarks"],
+            device=plain.get("device", "cpu"),
+            seed=plain.get("seed", 0),
+            imports=plain.get("_imports_", []),
+            trusted_snapshot=plain.get("trusted_snapshot", False),
+        )
+    except EvaluationError as exc:
+        if plain.get("output_json"):
+            exc.partial_result.save_json(plain["output_json"])
+        raise
     if plain.get("output_json"):
         result.save_json(plain["output_json"])
     print(json.dumps(result.to_dict(), indent=2, allow_nan=False))

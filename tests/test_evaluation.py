@@ -99,6 +99,11 @@ def test_labeled_s_adapter_follows_the_frozen_protocol(tmp_path, monkeypatch):
         size=32,
     )
 
+    metadata = probe.metadata()
+    assert metadata["split_sha256"] == hashlib.sha256(split_text.encode()).hexdigest()
+    assert metadata["split_source"] == split_file.name
+    assert metadata["n_train"] == 2886 and metadata["n_test"] == 2901
+    assert probe.configuration()["size"] == 32
     assert probe.split.classes == expected_classes
     assert len(probe.split.train) == 2886
     assert len(probe.split.test) == 2901
@@ -511,3 +516,26 @@ def test_imagenet_linear_adapter_reads_imagefolder_layout(tmp_path, view):
     image = _patterned_image(359, 271)
     expected_transform = VIEWS.get(view or "imagenet_center_crop")(size=224)
     assert torch.equal(probe.scorer.transform(image), expected_transform(image))
+
+
+def test_split_identity_survives_relocation_and_tracks_order_and_labels(tmp_path):
+    from dataclasses import replace
+
+    def split(root):
+        return ClassificationSplit(
+            classes=("red", "blue"),
+            train=(
+                LabeledImage(str(root / "red/a.jpg"), 0),
+                LabeledImage(str(root / "blue/b.jpg"), 1),
+            ),
+            test=(LabeledImage(str(root / "red/c.jpg"), 0),),
+        )
+
+    original = split(tmp_path / "first")
+    digest = original.metadata()["split_sha256"]
+    assert split(tmp_path / "moved").metadata()["split_sha256"] == digest
+    assert replace(original, train=original.train[::-1]).metadata()["split_sha256"] != digest
+    changed = replace(original.train[0], label=1)
+    assert (
+        replace(original, train=(changed, *original.train[1:])).metadata()["split_sha256"] != digest
+    )

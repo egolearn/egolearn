@@ -101,15 +101,10 @@ class ImageNetLinearBenchmark(Benchmark):
 
     def configuration(self) -> dict:
         return {
+            **self.scorer.configuration(),
             "name": self.name,
             "data_root": self.data_root,
             "expected_classes": self.expected_classes,
-            **{
-                key: value
-                for key, value in vars(self.scorer).items()
-                # The benchmark owns its name; the transform is derived from view and size.
-                if key not in {"name", "transform"}
-            },
         }
 
     def metadata(self) -> dict:

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from pathlib import Path
+
 from egolearn.config.registry import PROBES
 from egolearn.core import keys as K
 from egolearn.evaluation.linear_probe import ClassificationSplit
@@ -35,12 +39,13 @@ class LinearSGDProbe(LinearSGDEvaluator, Probe):
         self.name = name
         if (manifest is None) == (split is None):
             raise ValueError("linear SGD probe needs exactly one of manifest or split")
+        self.manifest = str(manifest) if manifest is not None else None
+        self.manifest_sha256 = None
         if split is None:
-            import json
-
             assert manifest is not None
-            with open(manifest) as file:
-                split = ClassificationSplit.from_mapping(json.load(file))
+            raw = Path(manifest).read_bytes()
+            self.manifest_sha256 = hashlib.sha256(raw).hexdigest()
+            split = ClassificationSplit.from_mapping(json.loads(raw))
         super().__init__(
             name=name,
             encoder=encoder,
@@ -59,6 +64,19 @@ class LinearSGDProbe(LinearSGDEvaluator, Probe):
         )
         self.split = split
         self.classes = list(split.classes)
+
+    def configuration(self) -> dict:
+        return {
+            **super().configuration(),
+            "manifest": self.manifest,
+            "split": self.split.metadata(),
+        }
+
+    def metadata(self) -> dict:
+        metadata = self.split.metadata()
+        if self.manifest_sha256 is not None:
+            metadata["manifest_sha256"] = self.manifest_sha256
+        return metadata
 
     def run(self, model, ctx) -> dict[str, float]:
         return self.evaluate(model, ctx, self.split)

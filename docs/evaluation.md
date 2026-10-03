@@ -14,7 +14,7 @@ benchmarks = [
         "_target_": "benchmark:imagenet_linear_sgd",
         "name": "imagenet",
         "data_root": "/datasets/imagenet",
-        "encoder": "vision",
+        "encoder": "image",
     }
 ]
 imports = ["egolearn.evaluation.benchmarks.imagenet_linear"]
@@ -44,13 +44,35 @@ the pretrained encoder remains frozen.
 
 The result records metrics by benchmark name, constructor settings including
 defaults for config-driven calls, protocol versions, dataset metadata, seeds,
-package version, and resolved model config. Checkpoint evaluations also record
-the checkpoint path, SHA-256, and training step when available. Benchmark names
+package version, source commit and dirty flag, and resolved model config.
+`code_revision` reports `"unavailable"` outside a source checkout or when Git
+cannot be queried. Checkpoint evaluations record the file name, SHA-256, and
+training step when available; no checkpoint directory is stored. Benchmark names
 must be unique within an evaluation.
 
 Existing small evaluations remain available with their `probe:*` configuration
 targets. Pass those configs in `benchmarks` to evaluate them after training.
 There is one scoring implementation for training probes and standalone use.
+Linear probes record their own seed (for SGD), hyperparameters, class names,
+split sizes and split SHA-256, including when passed as constructed objects.
+Generic split hashes cover ordered relative paths, labels and classes, not image
+bytes. Manifest-backed probes also record the manifest's byte hash; Labeled-S
+records the verified canonical split hash and source.
+
+If a benchmark fails, `EvaluationError.partial_result` retains completed
+benchmarks and their provenance; `benchmark` identifies the failed benchmark
+and `__cause__` retains its original error. The CLI saves this partial result to
+`output_json` before exiting unsuccessfully. In Python:
+
+```python
+from egolearn.evaluation import EvaluationError
+
+try:
+    result = evaluate_checkpoint("run/final.pth", benchmarks=benchmarks, imports=imports)
+except EvaluationError as error:
+    error.partial_result.save_json("partial-evaluation.json")
+    raise
+```
 
 ## BabyVLM benchmark data
 
@@ -89,12 +111,12 @@ appropriate `image_norm` (`imagenet` for EgoLearn-trained BabyCL models,
 ## Checkpoint compatibility
 
 Both `CheckpointHook` files (`step_*.pth`, `final.pth`) and training snapshots
-(`snapshot_*.pth`) are supported. New files produced from a pipeline-built model
+(`snapshot_*.pth`) are supported with an explicit `trusted_snapshot=True` opt-in. New files produced from a pipeline-built model
 include a versioned construction config: encoders, heads, predictors, frozen
 roles, registration imports, and resolved values such as vocabulary size.
 
 For older checkpoints, or checkpoints of manually assembled models, pass
-`model_config="run/.hydra/config.yaml"`. An explicit model-section mapping also
+`model_config="outputs/<date>/<time>/.hydra/config.yaml"`. An explicit model-section mapping also
 works. Use a resolved config, not an uncomposed YAML containing Hydra defaults.
 Only model-related nodes are resolved: training dataset environment variables
 and probe data paths are not needed. An old `vocab_size: auto` setting still
@@ -103,9 +125,9 @@ needs the original tokenizer config/file or an explicit vocabulary size.
 Weights load strictly, and the export contract is checked when present.
 Pretrained encoder initialization is disabled while restoring a checkpoint.
 Training RNGs, optimizer state, and stream replay are never restored. Existing
-checkpoint files still deserialize their stored contents before unrelated
-training state is released; this API does not change that file-format cost.
-As with training resume, load checkpoints only from trusted sources.
+checkpoint files are read in full; only the model is kept. Ordinary checkpoints
+use restricted unpickling; there is no automatic unsafe fallback for snapshots.
+See the [checkpoint trust rule](../SECURITY.md#checkpoint-trust).
 
 ## Command line
 
@@ -115,9 +137,12 @@ uv run python -m egolearn.evaluate --config-name imagenet_linear_eval \
   device=cuda output_json=imagenet_results.json
 ```
 
-For an older checkpoint, append `model_config=run/.hydra/config.yaml`.
+For an older checkpoint, append
+`'model_config=outputs/<date>/<time>/.hydra/config.yaml'`, substituting the training
+run's date and time (or your explicit `hydra.run.dir`). For a trusted full
+snapshot, also pass `trusted_snapshot=true`.
 The packaged ImageNet config exposes its protocol settings under `benchmarks.0`,
-for example `benchmarks.0.encoder=vision` or `benchmarks.0.batch_size=256`.
+for example `benchmarks.0.encoder=image` or `benchmarks.0.batch_size=256`.
 `python -m egolearn.evaluate --help` lists the default evaluation configuration.
 Custom suites can use `--config-dir` and `--config-name`, just like training.
 

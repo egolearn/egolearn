@@ -123,9 +123,11 @@ def test_checkpoint_round_trip_without_building_training_pipeline(
     monkeypatch.setattr(STREAMS.get("toy"), "__init__", forbidden)
     monkeypatch.setattr("egolearn.utils.snapshot.load_snapshot", forbidden)
     monkeypatch.setattr("egolearn.training.solver.build_optimizer", forbidden)
-    result = evaluate_checkpoint(path, benchmarks=[WeightBenchmark()])
+    result = evaluate_checkpoint(path, benchmarks=[WeightBenchmark()], trusted_snapshot=snapshot)
     assert result.results == expected
     assert result.checkpoint is not None
+    assert result.checkpoint["filename"] == path.name
+    assert str(tmp_path) not in json.dumps(result.checkpoint)
     assert result.checkpoint["step"] == 17
     assert result.checkpoint["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
     assert result.model_config == pipe.model.construction_config
@@ -433,3 +435,130 @@ def test_imagenet_cli_runs_from_outside_repository(tmp_path, imagefolder, model_
     assert result["configs"]["imagenet_linear"]["epochs"] == 1
     assert result["versions"]["imagenet_linear"] == "1"
     assert result["checkpoint"]["sha256"] == hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("stage", ["prepare", "run", "metadata"])
+def test_failed_benchmark_keeps_completed_results_and_checkpoint(
+    tmp_path, model_config, monkeypatch, stage
+):
+    from egolearn.evaluation import EvaluationError
+
+    model = build_model(model_config)
+    path = tmp_path / "checkpoint.pth"
+    torch.save({"model": model.state_dict(), "model_config": model.construction_config}, path)
+    failed = RandomBenchmark("failed")
+    cause = ValueError("broken benchmark")
+
+    def fail(*args):
+        raise cause
+
+    monkeypatch.setattr(failed, stage, fail)
+    with pytest.raises(EvaluationError) as caught:
+        evaluate_checkpoint(path, benchmarks=[WeightBenchmark(), failed])
+    error = caught.value
+    assert error.benchmark == "failed"
+    assert error.__cause__ is cause
+    result = error.partial_result
+    assert result.checkpoint is not None
+    assert result.checkpoint["filename"] == path.name
+    for field in (result.results, result.configs, result.versions, result.metadata):
+        assert set(field) == {"weights"}
+    assert result.code_revision["commit"] != "unavailable"
+    output = tmp_path / "partial.json"
+    result.save_json(output)
+    assert json.loads(output.read_text())["results"] == result.results
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_evaluation_restores_mps_rng_on_success_and_failure(model_config, monkeypatch, fail):
+    from egolearn.evaluation import EvaluationError
+
+    # Emulate the MPS RNG on CPU CI, including torch.manual_seed's MPS side effect.
+    state = torch.tensor([11], dtype=torch.uint8)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+    monkeypatch.setattr(torch.mps, "get_rng_state", lambda: state.clone())
+    monkeypatch.setattr(torch.mps, "set_rng_state", lambda value: state.copy_(value))
+    monkeypatch.setattr(torch.mps, "manual_seed", lambda seed: state.fill_(seed))
+    model = build_model(model_config)
+    if fail:
+        with pytest.raises(EvaluationError):
+            evaluate(model, benchmarks=[RandomBenchmark(fail=True)], seed=23)
+    else:
+        evaluate(model, benchmarks=[RandomBenchmark()], seed=23)
+    assert state.item() == 11
+
+
+def test_cli_writes_partial_results_and_exits_with_failure(tmp_path, imagefolder, model_config):
+    model = build_model(model_config)
+    checkpoint = tmp_path / "model.pth"
+    torch.save({"model": model.state_dict(), "model_config": model.construction_config}, checkpoint)
+    benchmark = {
+        "_target_": "benchmark:imagenet_linear_sgd",
+        "name": "finished",
+        "data_root": str(imagefolder),
+        "expected_classes": 2,
+        "size": 16,
+        "workers": 0,
+        "batch_size": 4,
+        "epochs": 1,
+    }
+    output = tmp_path / "partial.json"
+    OmegaConf.save(
+        {
+            "checkpoint": str(checkpoint),
+            "output_json": str(output),
+            "_imports_": ["egolearn.evaluation.benchmarks.imagenet_linear"],
+            "benchmarks": [benchmark, {**benchmark, "name": "failed", "data_root": "missing"}],
+        },
+        tmp_path / "partial.yaml",
+    )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "egolearn.evaluate",
+            "--config-path",
+            str(tmp_path),
+            "--config-name",
+            "partial",
+            f"hydra.run.dir={tmp_path / 'hydra'}",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    assert completed.returncode != 0
+    assert "FileNotFoundError" in completed.stderr
+    result = json.loads(output.read_text())
+    assert set(result["results"]) == {"finished"}
+    assert result["checkpoint"]["filename"] == checkpoint.name
+
+
+@pytest.mark.parametrize("probe_type", ["linear", "linear_sgd"])
+def test_constructed_probes_record_protocol_and_split(
+    imagefolder, model_config, tmp_path, probe_type
+):
+    from egolearn.evaluation.linear_probe import LinearProbe
+
+    split = imagenet.build_split(imagefolder, expected_classes=2)
+    common: dict = dict(name="linear", split=split, size=16, batch_size=4)
+    probe: LinearProbe | LinearSGDProbe
+    if probe_type == "linear":
+        probe = LinearProbe(**common, l2=0.03, max_iter=3)
+    else:
+        probe = LinearSGDProbe(**common, seed=19, workers=0, epochs=1, lr=0.1)
+    result = evaluate(build_model(model_config), benchmarks=[probe], seed=31)
+    config = result.configs["linear"]
+    assert config["size"] == 16
+    assert config["batch_size"] == 4
+    if probe_type == "linear":
+        assert config["l2"] == 0.03 and config["max_iter"] == 3
+    else:
+        assert config["seed"] == 19 and config["lr"] == 0.1
+        assert config["larc_trust_coefficient"] == 0.001
+    assert result.metadata["linear"] == split.metadata()
+    assert result.metadata["linear"]["n_train"] == 4
+    assert str(imagefolder) not in json.dumps(result.metadata)
+    result.save_json(tmp_path / "result.json")

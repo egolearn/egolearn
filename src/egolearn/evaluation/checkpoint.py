@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -11,9 +10,15 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 from egolearn.evaluation.benchmark import Benchmark
-from egolearn.evaluation.evaluator import EvaluationResult, _isolated_evaluation_rng, evaluate
+from egolearn.evaluation.evaluator import (
+    EvaluationError,
+    EvaluationResult,
+    _isolated_evaluation_rng,
+    evaluate,
+)
 from egolearn.model.build import build_model
 from egolearn.model.model import ComposedModel
+from egolearn.utils.checkpoint import read_checkpoint
 
 
 def _construction_config(source: str | Path | Mapping) -> tuple[dict, list[str], int | None]:
@@ -33,7 +38,9 @@ def _construction_config(source: str | Path | Mapping) -> tuple[dict, list[str],
         raise ValueError("model_config must contain a model mapping")
     imports = list(cfg.get("_imports_", []))
     vocab_size = None
-    if any(spec.get("vocab_size") == "auto" for spec in model_config.get("encoders", {}).values()):
+    if any(
+        spec.get("vocab_size") == "auto" for spec in (model_config.get("encoders") or {}).values()
+    ):
         from egolearn.data.text import VocabTokenizer
 
         if cfg.get("tokenizer") is None:
@@ -53,16 +60,9 @@ def _load_model(
     model_config: str | Path | Mapping | None,
     device: str | torch.device,
     imports: Sequence[str],
+    trusted_snapshot: bool,
 ) -> tuple[ComposedModel, dict[str, Any]]:
-    path = Path(checkpoint).resolve()
-    with path.open("rb") as file:
-        digest = hashlib.file_digest(file, "sha256").hexdigest()
-        file.seek(0)
-        # Training snapshots contain RNGs and event references as well as tensors.
-        # As with load_snapshot, load only checkpoints from trusted sources.
-        state = torch.load(file, map_location="cpu", weights_only=False)
-    if not isinstance(state, dict) or "model" not in state:
-        raise ValueError("expected an EgoLearn checkpoint or snapshot containing 'model'")
+    state, metadata = read_checkpoint(checkpoint, trusted_snapshot=trusted_snapshot)
     source = model_config if model_config is not None else state.get("model_config")
     if source is None:
         raise ValueError(
@@ -83,11 +83,6 @@ def _load_model(
         raise ValueError("model_config does not match the checkpoint's export contract")
     model.load_state_dict(state["model"], strict=True)
     model.to(device).eval()
-    metadata = {
-        "path": str(path),
-        "sha256": digest,
-        "step": state.get("step", (state.get("context") or {}).get("clock", {}).get("step")),
-    }
     # The caller retains only the model and provenance; optimizer/replay state
     # from legacy checkpoints is released before benchmark preparation begins.
     return model, metadata
@@ -99,11 +94,13 @@ def load_model(
     model_config: str | Path | Mapping | None = None,
     device: str | torch.device = "cpu",
     imports: Sequence[str] = (),
+    trusted_snapshot: bool = False,
 ) -> ComposedModel:
-    """Reconstruct a trusted EgoLearn checkpoint/snapshot's model in eval mode.
+    """Reconstruct an EgoLearn checkpoint's model in eval mode.
 
     Existing files need an explicit model config. New pipeline-built checkpoints
     carry their resolved construction config. Training state is never restored.
+    Snapshots require trusted_snapshot=True; see SECURITY.md.
     """
     with _isolated_evaluation_rng(0):
         model, _ = _load_model(
@@ -111,6 +108,7 @@ def load_model(
             model_config=model_config,
             device=device,
             imports=imports,
+            trusted_snapshot=trusted_snapshot,
         )
     return model
 
@@ -123,6 +121,7 @@ def evaluate_checkpoint(
     device: str | torch.device = "cpu",
     seed: int = 0,
     imports: Sequence[str] = (),
+    trusted_snapshot: bool = False,
 ) -> EvaluationResult:
     """Load a trained model and evaluate it independently of its training data."""
     with _isolated_evaluation_rng(seed):
@@ -131,7 +130,14 @@ def evaluate_checkpoint(
             model_config=model_config,
             device=device,
             imports=imports,
+            trusted_snapshot=trusted_snapshot,
         )
-        result = evaluate(model, benchmarks=benchmarks, device=device, seed=seed, imports=imports)
+        try:
+            result = evaluate(
+                model, benchmarks=benchmarks, device=device, seed=seed, imports=imports
+            )
+        except EvaluationError as exc:
+            exc.partial_result.checkpoint = metadata
+            raise
     result.checkpoint = metadata
     return result
