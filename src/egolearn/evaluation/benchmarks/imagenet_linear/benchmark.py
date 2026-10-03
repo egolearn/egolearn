@@ -110,11 +110,7 @@ class ImageNetLinearBenchmark(Benchmark):
     def metadata(self) -> dict:
         if self.split is None:
             return {}
-        return {
-            "classes": list(self.split.classes),
-            "n_train": len(self.split.train),
-            "n_test": len(self.split.test),
-        }
+        return self.split.metadata()
 
     def run(self, model, ctx) -> dict[str, float]:
         self.prepare()

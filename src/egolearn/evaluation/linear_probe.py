@@ -31,6 +31,7 @@ import json
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from itertools import chain
 from pathlib import Path
 
 import torch
@@ -78,27 +79,24 @@ class ClassificationSplit:
 
         The digest covers class names, relative image paths and labels, not image bytes.
         """
-        root = Path(
-            os.path.commonpath(
-                [str(Path(item.image).absolute().parent) for item in (*self.train, *self.test)]
-            )
-        )
-        identity = {
-            "classes": self.classes,
-            **{
-                name: [
-                    (str(Path(item.image).absolute().relative_to(root)), item.label)
-                    for item in items
-                ]
-                for name, items in (("train", self.train), ("test", self.test))
-            },
-        }
-        digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+        # Stream the identity so ImageNet-sized splits need no second full manifest.
+        parents = (Path(item.image).absolute().parent for item in chain(self.train, self.test))
+        root = next(parents)
+        for parent in parents:
+            if not parent.is_relative_to(root):
+                root = Path(os.path.commonpath((root, parent)))
+        digest = hashlib.sha256()
+        digest.update(json.dumps(self.classes).encode() + b"\n")
+        for name, items in (("train", self.train), ("test", self.test)):
+            digest.update(name.encode() + b"\n")
+            for item in items:
+                relative = Path(item.image).absolute().relative_to(root).as_posix()
+                digest.update(json.dumps((relative, item.label)).encode() + b"\n")
         return {
             "classes": list(self.classes),
             "n_train": len(self.train),
             "n_test": len(self.test),
-            "split_sha256": digest,
+            "split_sha256": digest.hexdigest(),
         }
 
     @classmethod

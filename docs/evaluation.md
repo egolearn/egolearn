@@ -55,8 +55,8 @@ targets. Pass those configs in `benchmarks` to evaluate them after training.
 There is one scoring implementation for training probes and standalone use.
 Linear probes record their own seed (for SGD), hyperparameters, class names,
 split sizes and split SHA-256, including when passed as constructed objects.
-Generic split hashes cover ordered relative paths, labels and classes, not image
-bytes. Manifest-backed probes also record the manifest's byte hash; Labeled-S
+Generic split hashes, also recorded by ImageNet, cover ordered relative paths,
+labels and classes, not image bytes. Manifest-backed probes also record the manifest's byte hash; Labeled-S
 records the verified canonical split hash and source.
 
 If a benchmark fails, `EvaluationError.partial_result` retains completed

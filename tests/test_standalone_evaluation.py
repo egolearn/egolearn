@@ -341,10 +341,12 @@ def test_imagenet_is_lazy_reuses_split_and_matches_shared_probe(
     second = evaluate(model, benchmarks=[benchmark], seed=19)
     assert len(calls) == 1
     assert first.results == second.results
+    assert benchmark.split is not None
     assert first.metadata["imagenet"] == {
         "classes": ["class_0", "class_1"],
         "n_train": 4,
         "n_test": 4,
+        "split_sha256": benchmark.split.metadata()["split_sha256"],
     }
     assert first.configs["imagenet"]["view"] == "imagenet_center_crop"
 
@@ -397,6 +399,10 @@ def test_existing_probe_configs_work_in_standalone_runner(tmp_path, imagefolder,
         ],
     )
     assert result.configs["linear"]["view"] == "imagenet_center_crop"
+    assert (
+        result.metadata["linear"]["manifest_sha256"]
+        == hashlib.sha256(manifest.read_bytes()).hexdigest()
+    )
     output = tmp_path / "probe.json"
     result.save_json(output)
     assert json.loads(output.read_text())["results"] == result.results
