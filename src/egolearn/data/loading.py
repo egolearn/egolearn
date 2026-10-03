@@ -122,9 +122,13 @@ class Loader:
         return self._pool
 
     def close(self) -> None:
-        """Shut the worker pool down (the drivers call this when a run ends)."""
+        """Shut the worker pool down (the drivers call this when a run ends).
+
+        Waits for the workers to exit, so none outlive the run; queued decodes
+        are cancelled, and the drivers have drained their prefetch by then.
+        """
         if self._pool is not None:
-            self._pool.shutdown(wait=False, cancel_futures=True)
+            self._pool.shutdown(wait=True, cancel_futures=True)
             self._pool = None
 
     # ---- frame selection --------------------------------------------------

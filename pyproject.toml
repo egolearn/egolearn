@@ -21,8 +21,8 @@ dependencies = [
 #   qa    : openai, anthropic, pandas           (LLM-based QA + memory)
 #   eval  : scikit-learn                        (kNN/SVM readout)
 [project.optional-dependencies]
-video = ["pillow>=10"]
-train = ["torch>=2.4", "torchvision>=0.19", "pillow>=10", "wandb>=0.18"]
+video = ["pillow>=10", "av>=14"]
+train = ["torch>=2.4", "torchvision>=0.19", "pillow>=10", "av>=14", "wandb>=0.18"]
 all = ["egolearn[video,train]"]
 
 [dependency-groups]
