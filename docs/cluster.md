@@ -1,7 +1,7 @@
 # Cluster jobs
 
 Use `scripts/slurm/submit [sbatch options] -- <command>` from a clean checkout.
-The login node needs Bash, Python 3.12+, Git, coreutils and `sbatch`; compute nodes
+The login node needs Bash 4.4+, Python 3.12+, Git, coreutils and `sbatch`; compute nodes
 need Apptainer and `flock`. There is no login-node environment build or image pull.
 
 ## Setup and submission
@@ -24,7 +24,8 @@ Add the transcript and vocabulary overrides required by your config. Set
 No site account, partition, credential, or personal path is built into the repo.
 The compatibility command `scripts/slurm/train.sbatch` also submits through this
 launcher; do not pass it to `sbatch` directly. Use the generic submit command to
-select GPU and other resource requests.
+select other resources. Both compatibility wrappers retain one GPU, eight CPUs
+and 64 GB memory; training defaults to 48 hours and benchmarking to two hours.
 
 A stamp covers `uv.lock`, `pyproject.toml`, `.python-version`, sync arguments,
 the image digest and the submitted commit. Environments are reused under
@@ -32,12 +33,15 @@ the image digest and the submitted commit. Environments are reused under
 submit schedules a short CPU prep job to pull the image and run
 `uv sync --frozen --no-editable` **inside** it. Training depends on `afterok` prep;
 user AND dependencies are retained. OR dependencies are rejected when prep is
-needed. The prep job drops inherited GPU partition/resource requests.
+needed. The prep job drops inherited `SBATCH_*` settings except the account; CPU
+placement and other prep settings come from `EGOLEARN_PREP_SBATCH_ARGS`. Main jobs
+explicitly export the required environment, and inherited arrays are refused.
 
 The package is installed as a wheel from the archived code. Changing the commit
 creates a new environment; uv's shared package cache avoids repeated downloads.
 Concurrent preparations use an exclusive environment lock, and running jobs hold
-shared locks. No running job's dependencies are mutated by another submission.
+shared locks. A redundant queued prep exits as soon as the same environment is
+ready, even while training holds a shared lock. No running job's dependencies are mutated by another submission.
 `EGOLEARN_SYNC_ARGS` defaults to `--extra train --extra video`; it and prep options
 are whitespace-separated arguments without shell evaluation.
 
@@ -77,6 +81,19 @@ Use absolute paths for input data and external configs; tracked relative config
 paths resolve inside the snapshot. Do not modify archived code or environments.
 Retain the run directory and environment until all dependent jobs finish; these
 artifacts remain local and may contain private config paths. Nothing is uploaded.
+
+For `resume=auto`, use an absolute persistent `run_dir`, unique to that experiment
+and seed, so a resubmission finds the earlier snapshots, for example:
+`run_dir=$EGOLEARN_ARTIFACTS/babycl-seed0 resume=auto`.
+The launcher warns when `resume=auto` has no explicit absolute `run_dir` override;
+it cannot inspect a command's configuration files. Alternatively supply an
+absolute `resume=/path/to/snapshot.pth` and choose a new output directory.
+
+Relative `--output`, `--error` and `--input` paths (including Slurm environment
+settings) are resolved from the submitting checkout before the working-directory
+change. Invalid command files and paths fail before snapshot creation. A failed
+main submission cancels its prep and removes the snapshot; if cancellation fails,
+the directory is retained and its location reported.
 
 ## Arrays and dry runs
 

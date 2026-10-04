@@ -39,7 +39,13 @@ if [[ ! -f $SIF ]]; then
   ) 9>>"$SIF_DIR/$(basename "$SIF").lock"
 fi
 (
-  flock -x 8
+  # Another queued prep may have finished, with training already holding a
+  # shared lock. Do not block on an exclusive lock when the environment is ready.
+  while ! flock -xn 8; do
+    environment_ready && exit 0
+    sleep 1
+  done
+  environment_ready && exit 0
   [[ $(stamp) = "$EGOLEARN_EXPECTED_STAMP" ]] || fail "lock/config changed since submission; resubmit"
   apptainer exec --home "$APPTAINER_HOME" "$SIF" /usr/local/bin/uv --version ||
     fail "image has no working uv at /usr/local/bin/uv; select an image with uv (no host fallback)"

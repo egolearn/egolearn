@@ -94,11 +94,13 @@ stamp() {
     printf '%s\n' "${EGOLEARN_CODE_COMMIT:?}"
   } | sha256sum | cut -d ' ' -f 1
 }
+environment_ready() {
+  [[ -x ${EGOLEARN_VENV:?}/bin/python && -f $EGOLEARN_VENV/.egolearn-sync-stamp &&
+     $(cat "$EGOLEARN_VENV/.egolearn-sync-stamp") = "${EGOLEARN_EXPECTED_STAMP:?}" ]]
+}
 check_stamp() {
-  [[ $(stamp) = "${EGOLEARN_EXPECTED_STAMP:?submit this job with scripts/slurm/submit}" &&
-     -x ${EGOLEARN_VENV:?}/bin/python && -f ${EGOLEARN_VENV:?}/.egolearn-sync-stamp &&
-     $(cat "${EGOLEARN_VENV:?}/.egolearn-sync-stamp") = "$EGOLEARN_EXPECTED_STAMP" ]] ||
-    fail "venv stamp changed or missing; resubmit with scripts/slurm/submit"
+  [[ $(stamp) = "${EGOLEARN_EXPECTED_STAMP:?submit this job with scripts/slurm/submit}" ]] &&
+    environment_ready || fail "venv stamp changed or missing; resubmit with scripts/slurm/submit"
 }
 container_env() {
   mkdir -p "$APPTAINER_HOME" "$APPTAINER_CACHEDIR" "$APPTAINER_CONFIGDIR"
@@ -149,6 +151,9 @@ container_env() {
     for existing in "${dests[@]}"; do
       [[ $existing != "$dest" ]] || continue 2
     done
+    if [[ ${EGOLEARN_READONLY:-0} = 1 && ( $dest = "$PWD" || $dest = "$EGOLEARN_VENV" ) ]]; then
+      bind="${bind%%:*}:$dest:ro"
+    fi
     binds+=("$bind") dests+=("$dest")
   done
   APPTAINER_BIND=$(IFS=,; printf '%s' "${binds[*]}")

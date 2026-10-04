@@ -10,7 +10,7 @@ scripts/slurm/submit [sbatch options] -- python -m egolearn.train [Hydra options
 `submit` snapshots a clean commit, prepares the pinned container/environment in a
 CPU job when needed, and submits the requested command with a dependency.
 `--sweep` and `--commands` create one array. `--dry-run` prints the planned calls.
-`train.sbatch` is a compatibility wrapper to run on the login node without sbatch;
+`train.sbatch` and `bench.sbatch` are compatibility wrappers to run on the login node without sbatch (one GPU by default);
 `prep.sbatch`, `run.sbatch` and `run_array.sbatch` are internal entry points.
 
 The scripts are adapted from the MIT-licensed jepa-agent cluster stack at commit

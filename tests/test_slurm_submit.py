@@ -9,6 +9,10 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.skipif(
+    not shutil.which("flock") or not shutil.which("sha256sum"),
+    reason="Slurm launcher tests require Linux flock and sha256sum",
+)
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -41,7 +45,7 @@ def cluster(tmp_path):
     sbatch = bindir / "sbatch"
     sbatch.write_text(
         "#!/usr/bin/env python3\nimport json,os,sys\n"
-        "with open(os.environ['SBATCH_LOG'],'a') as f:\n"
+        "with open(os.environ['TEST_SUBMIT_LOG'],'a') as f:\n"
         " f.write(json.dumps({'args':sys.argv[1:],'env':dict(os.environ)})+'\\n')\n"
         "print('12345')\n"
     )
@@ -56,7 +60,9 @@ def cluster(tmp_path):
         ["bash", "-c", "source scripts/slurm/env.example.sh; env -0"], cwd=checkout, env=env
     )
     env = dict(item.split("=", 1) for item in loaded.stdout.split("\0") if "=" in item)
-    env.update(PATH=f"{bindir}:{os.environ['PATH']}", SBATCH_LOG=str(tmp_path / "sbatch.jsonl"))
+    env.update(
+        PATH=f"{bindir}:{os.environ['PATH']}", TEST_SUBMIT_LOG=str(tmp_path / "sbatch.jsonl")
+    )
     env["EGOLEARN_PREP_SBATCH_ARGS"] = "--partition=cpu"
     env["SBATCH_PARTITION"] = "gpu"
     return checkout, env
@@ -64,7 +70,7 @@ def cluster(tmp_path):
 
 def submit(cluster, *args, ok=True):
     checkout, env = cluster
-    log = Path(env["SBATCH_LOG"])
+    log = Path(env["TEST_SUBMIT_LOG"])
     log.unlink(missing_ok=True)
     result = run(["bash", "scripts/slurm/submit", *args], cwd=checkout, env=env)
     assert (result.returncode == 0) == ok, result.stderr
@@ -194,7 +200,7 @@ def test_run_uses_snapshot_and_readonly_bind(cluster, gpu):
     _, calls = submit(cluster, "--", "true")
     call = calls[-1]
     ready(call)
-    fake = Path(env["SBATCH_LOG"]).parent / "bin/apptainer"
+    fake = Path(env["TEST_SUBMIT_LOG"]).parent / "bin/apptainer"
     fake.write_text(
         "#!/usr/bin/env python3\nimport json,os,sys\n"
         "print(json.dumps({'args':sys.argv[1:],'bind':os.environ['APPTAINER_BIND'],"
@@ -211,6 +217,11 @@ def test_run_uses_snapshot_and_readonly_bind(cluster, gpu):
     data = json.loads(result.stdout.splitlines()[-1])
     assert ("--nv" in data["args"]) is gpu
     assert f"{job}/code:{job}/code:ro" in data["bind"]
+    destinations = [
+        entry.split(":")[1] if ":" in entry else entry for entry in data["bind"].split(",")
+    ]
+    assert len(destinations) == len(set(destinations))
+    assert f"{child_env['EGOLEARN_VENV']}:{child_env['EGOLEARN_VENV']}:ro" in data["bind"]
     assert data["cwd"] == str(job / "work")
     assert data["path"] == child_env["EGOLEARN_VENV"] + "/bin"
 
@@ -218,7 +229,7 @@ def test_run_uses_snapshot_and_readonly_bind(cluster, gpu):
 def test_prep_pulls_on_cpu_and_syncs_in_container(cluster):
     checkout, env = cluster
     _, calls = submit(cluster, "--", "true")
-    fake = Path(env["SBATCH_LOG"]).parent / "bin/apptainer"
+    fake = Path(env["TEST_SUBMIT_LOG"]).parent / "bin/apptainer"
     fake.write_text(
         "#!/usr/bin/env python3\nimport json,os,sys\nfrom pathlib import Path\n"
         "with open(os.environ['PREP_LOG'],'a') as f:\n"
@@ -267,3 +278,106 @@ def test_reserved_options_refused(cluster, option):
     result, calls = submit(cluster, option, "--", "true", ok=False)
     assert "managed by submit" in result.stderr
     assert not calls
+
+
+def test_redundant_prep_does_not_wait_for_running_jobs(cluster):
+    import fcntl
+
+    checkout, _ = cluster
+    _, calls = submit(cluster, "--", "true")
+    ready(calls[-1])
+    child_env = {**calls[-1]["env"], "SLURM_JOB_ID": "12"}
+    job = Path(child_env["EGOLEARN_RUN_DIR"])
+    lock = Path(child_env["EGOLEARN_VENV"]) / ".egolearn-sync.lock"
+    with lock.open("r+") as handle:
+        fcntl.flock(handle, fcntl.LOCK_SH)
+        result = subprocess.run(
+            ["bash", str(job / "code/scripts/slurm/prep.sbatch")],
+            cwd=checkout,
+            env=child_env,
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("script", ["train", "bench"])
+def test_compatibility_wrappers_are_executable_and_request_gpus(cluster, script):
+    checkout, env = cluster
+    wrapper = checkout / f"scripts/slurm/{script}.sbatch"
+    assert os.access(wrapper, os.X_OK)
+    args = ["configs", "name"] if script == "train" else ["config.yaml"]
+    result = run([str(wrapper), *args], cwd=checkout, env=env)
+    assert result.returncode == 0, result.stderr
+    calls = [json.loads(line) for line in Path(env["TEST_SUBMIT_LOG"]).read_text().splitlines()]
+    assert "--gres=gpu:1" in calls[-1]["args"]
+    assert any(arg.startswith("--time=") for arg in calls[-1]["args"])
+    assert "uv" not in calls[-1]["args"]
+
+
+@pytest.mark.parametrize("style", ["--error", "-e", "--error=", "-ejoined", "env"])
+def test_relative_stderr_path_is_resolved_before_chdir(cluster, style):
+    checkout, env = cluster
+    if style == "env":
+        env["SBATCH_ERROR"] = "logs/%j.err"
+        args = []
+    elif style == "-ejoined":
+        args = ["-elogs/%j.err"]
+    elif style.endswith("="):
+        args = [style + "logs/%j.err"]
+    else:
+        args = [style, "logs/%j.err"]
+    _, calls = submit(cluster, *args, "--", "true")
+    assert f"--error={checkout}/logs/%j.err" in calls[-1]["args"]
+    assert (checkout / "logs").is_dir()
+
+
+def test_prep_drops_inherited_slurm_settings_and_exports_required_environment(cluster):
+    _, env = cluster
+    for key in (
+        "GPUS_PER_TASK",
+        "CPUS_PER_GPU",
+        "MEM_PER_GPU",
+        "TRES_PER_TASK",
+        "QOS",
+        "CONSTRAINT",
+        "RESERVATION",
+        "EXPORT",
+    ):
+        env["SBATCH_" + key] = "fixture"
+    env["SBATCH_ACCOUNT"] = "lab"
+    _, calls = submit(cluster, "--", "true")
+    assert {key for key in calls[0]["env"] if key.startswith("SBATCH_")} == {"SBATCH_ACCOUNT"}
+    assert "--export=ALL" in calls[-1]["args"]
+
+
+def test_failed_validation_does_not_leave_snapshot(cluster):
+    _, env = cluster
+    _, calls = submit(cluster, "--commands", "/missing/commands", ok=False)
+    assert not calls and not list(Path(env["EGOLEARN_JOB_ROOT"]).glob("run-*"))
+
+
+def test_failed_submission_cancels_prep_and_removes_snapshot(cluster):
+    _, env = cluster
+    bindir = Path(env["TEST_SUBMIT_LOG"]).parent / "bin"
+    sbatch = bindir / "sbatch"
+    sbatch.write_text(
+        sbatch.read_text().replace(
+            "print('12345')",
+            "if any(a.endswith('/run.sbatch') for a in sys.argv): sys.exit(2)\nprint('12345')",
+        )
+    )
+    cancel = bindir / "scancel"
+    cancel.write_text('#!/bin/sh\nprintf \'%s\' "$1" > "$CANCEL_LOG"\n')
+    cancel.chmod(0o755)
+    env["CANCEL_LOG"] = str(bindir.parent / "cancelled")
+    _, calls = submit(cluster, "--", "true", ok=False)
+    assert len(calls) == 2
+    assert Path(env["CANCEL_LOG"]).read_text() == "12345"
+    assert not list(Path(env["EGOLEARN_JOB_ROOT"]).glob("run-*"))
+
+
+def test_auto_resume_mentions_persistent_output_directory(cluster):
+    result, _ = submit(cluster, "--", "python", "program.py", "resume=auto")
+    assert "absolute run_dir" in result.stderr

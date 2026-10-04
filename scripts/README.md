@@ -9,7 +9,7 @@ versioned with the code they launch.
 | `setup_branch_protection.sh` | Apply/refresh branch protection on `main` (see header for usage). Gate: 1 approving review from a code owner + 5 green checks. `enforce_admins=false` is a setup-phase-only override — re-run with defaults to restore admin enforcement. |
 | `slurm/submit` | Snapshot, prepare and submit container jobs and sweep arrays ([setup](../docs/cluster.md)) |
 | `slurm/train.sbatch` | Compatibility wrapper for the submit command |
-| `slurm/bench.sbatch` | Data-plane benchmark launcher |
+| `slurm/bench.sbatch` | Data-plane benchmark wrapper using the same snapshot/prep path |
 | `bench/bench_dataloading.py` | Data-plane-only benchmark: ingest rate, batch-composition throughput, decode-vs-augment micro breakdown |
 | `bench/bench_full_pipeline.py` | N real training steps of any config + the per-stage latency ledger |
 

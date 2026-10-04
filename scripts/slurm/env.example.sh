@@ -8,6 +8,7 @@ export SIF_DIR=$SCRATCH/images
 export EGOLEARN_JOB_ROOT=$SCRATCH/egolearn-jobs
 export EGOLEARN_ENV_ROOT=$SCRATCH/egolearn-envs
 export EGOLEARN_DATA=$SCRATCH/datasets
+export EGOLEARN_ARTIFACTS=$SCRATCH/egolearn-artifacts
 
 # Slurm account/partitions are supplied by your site. No values are built in.
 # export SBATCH_ACCOUNT=ACCOUNT
