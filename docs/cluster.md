@@ -28,7 +28,9 @@ select other resources. Both compatibility wrappers retain one GPU, eight CPUs
 and 64 GB memory; training defaults to 48 hours and benchmarking to two hours.
 Site time, memory and GPU `SBATCH_*` settings override these defaults. The wrappers
 also translate `SBATCH_CPUS_PER_TASK` into `--cpus-per-task`; Slurm itself does not
-read that variable. `SBATCH_CPUS_PER_GPU` takes precedence over this wrapper setting.
+read that variable. `SBATCH_CPUS_PER_GPU` or a CPU entry in `SBATCH_TRES_PER_TASK`
+takes precedence over this wrapper setting. TRES entries replace only the matching
+CPU or GPU default; a CPU-only request retains the default GPU.
 Generic `submit` uses site defaults for CPU and memory unless the caller requests
 resources. Runtime OpenMP threads follow CPUs per task, falling back to the batch
 step's allocated CPUs, unless `OMP_NUM_THREADS` was explicitly set.

@@ -325,6 +325,7 @@ def test_compatibility_wrappers_are_executable_and_request_gpus(cluster, script)
     assert result.returncode == 0, result.stderr
     calls = [json.loads(line) for line in Path(env["TEST_SUBMIT_LOG"]).read_text().splitlines()]
     assert "--gres=gpu:1" in calls[-1]["args"]
+    assert "--cpus-per-task=8" in calls[-1]["args"]
     assert any(arg.startswith("--time=") for arg in calls[-1]["args"])
     assert "uv" not in calls[-1]["args"]
 
@@ -418,6 +419,30 @@ def test_wrapper_resource_environment_overrides_defaults(cluster, script, per_gp
     assert calls[-1]["env"]["SBATCH_GRES"] == "gpu:typed:2"
     assert ("--cpus-per-task=16" in calls[-1]["args"]) is not per_gpu
     assert "--cpus-per-task=8" not in calls[-1]["args"]
+
+
+@pytest.mark.parametrize("script", ["train", "bench"])
+@pytest.mark.parametrize(
+    ("resource_env", "cpu_default", "gpu_default"),
+    [
+        ({"SBATCH_TRES_PER_TASK": "cpu=16"}, False, True),
+        ({"SBATCH_TRES_PER_TASK": "gres/gpu=1"}, True, False),
+        ({"SBATCH_TRES_PER_TASK": "license/ansys=1,gres/gpu:a100=2,cpu=16"}, False, False),
+        ({"SBATCH_TRES_PER_TASK": "license/ansys=1"}, True, True),
+        ({"SBATCH_GPUS_PER_SOCKET": "1"}, True, True),
+    ],
+)
+def test_wrapper_tres_overrides_only_matching_resources(
+    cluster, script, resource_env, cpu_default, gpu_default
+):
+    checkout, env = cluster
+    env.update(resource_env)
+    args = ["configs", "name"] if script == "train" else ["config.yaml"]
+    result = run([str(checkout / f"scripts/slurm/{script}.sbatch"), *args], cwd=checkout, env=env)
+    assert result.returncode == 0, result.stderr
+    calls = [json.loads(line) for line in Path(env["TEST_SUBMIT_LOG"]).read_text().splitlines()]
+    assert ("--cpus-per-task=8" in calls[-1]["args"]) is cpu_default
+    assert ("--gres=gpu:1" in calls[-1]["args"]) is gpu_default
 
 
 @pytest.mark.parametrize("source", ["/dev/null", "/data/input-%a.txt", "/data/task-%a/input.txt"])
