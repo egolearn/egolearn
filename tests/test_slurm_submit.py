@@ -427,6 +427,8 @@ def test_wrapper_resource_environment_overrides_defaults(cluster, script, per_gp
     [
         ({"SBATCH_TRES_PER_TASK": "cpu=16"}, False, True),
         ({"SBATCH_TRES_PER_TASK": "gres/gpu=1"}, True, False),
+        ({"SBATCH_TRES_PER_TASK": "gres/shard=1"}, True, False),
+        ({"SBATCH_TRES_PER_TASK": "gres/mps=50"}, True, False),
         ({"SBATCH_TRES_PER_TASK": "license/ansys=1,gres/gpu:a100=2,cpu=16"}, False, False),
         ({"SBATCH_TRES_PER_TASK": "license/ansys=1"}, True, True),
         ({"SBATCH_GPUS_PER_SOCKET": "1"}, True, True),

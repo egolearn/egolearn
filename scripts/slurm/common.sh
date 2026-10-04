@@ -181,5 +181,7 @@ default_resources() {
   # sbatch itself has no SBATCH_CPUS_PER_TASK input; translate it for these wrappers.
   [[ -n ${SBATCH_CPUS_PER_GPU:-} || $tres = *,cpu[=:]* ]] || resources+=("--cpus-per-task=${SBATCH_CPUS_PER_TASK:-8}")
   [[ -n ${SBATCH_MEM_PER_NODE:-}${SBATCH_MEM_PER_CPU:-}${SBATCH_MEM_PER_GPU:-} ]] || resources+=(--mem=64G)
-  [[ -n ${SBATCH_GRES:-}${SBATCH_GPUS:-}${SBATCH_GPUS_PER_NODE:-}${SBATCH_GPUS_PER_TASK:-} || $tres = *,gres/gpu[=:]* ]] || resources+=(--gres=gpu:1)
+  [[ -n ${SBATCH_GRES:-}${SBATCH_GPUS:-}${SBATCH_GPUS_PER_NODE:-}${SBATCH_GPUS_PER_TASK:-} ||
+     $tres = *,gres/gpu[=:]* || $tres = *,gres/shard[=:]* || $tres = *,gres/mps[=:]* ]] ||
+    resources+=(--gres=gpu:1)
 }
