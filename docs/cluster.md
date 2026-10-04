@@ -26,9 +26,12 @@ The compatibility command `scripts/slurm/train.sbatch` also submits through this
 launcher; do not pass it to `sbatch` directly. Use the generic submit command to
 select other resources. Both compatibility wrappers retain one GPU, eight CPUs
 and 64 GB memory; training defaults to 48 hours and benchmarking to two hours.
-Site `SBATCH_*` resource variables override these defaults. Generic `submit`
-uses site defaults for CPU and memory unless the caller requests resources. Runtime OpenMP thread
-count follows allocated CPUs unless `OMP_NUM_THREADS` was explicitly set.
+Site time, memory and GPU `SBATCH_*` settings override these defaults. The wrappers
+also translate `SBATCH_CPUS_PER_TASK` into `--cpus-per-task`; Slurm itself does not
+read that variable. `SBATCH_CPUS_PER_GPU` takes precedence over this wrapper setting.
+Generic `submit` uses site defaults for CPU and memory unless the caller requests
+resources. Runtime OpenMP threads follow CPUs per task, falling back to the batch
+step's allocated CPUs, unless `OMP_NUM_THREADS` was explicitly set.
 
 A stamp covers `uv.lock`, `pyproject.toml`, `.python-version`, sync arguments,
 the image digest and the submitted commit. Environments are reused under

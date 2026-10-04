@@ -177,7 +177,8 @@ job_context() {
 default_resources() {
   resources=()
   [[ -n ${SBATCH_TIMELIMIT:-} ]] || resources+=("--time=$1")
-  [[ -n ${SBATCH_CPUS_PER_TASK:-}${SBATCH_CPUS_PER_GPU:-} ]] || resources+=(--cpus-per-task=8)
+  # sbatch itself has no SBATCH_CPUS_PER_TASK input; translate it for these wrappers.
+  [[ -n ${SBATCH_CPUS_PER_GPU:-} ]] || resources+=("--cpus-per-task=${SBATCH_CPUS_PER_TASK:-8}")
   [[ -n ${SBATCH_MEM_PER_NODE:-}${SBATCH_MEM_PER_CPU:-}${SBATCH_MEM_PER_GPU:-} ]] || resources+=(--mem=64G)
   [[ -n ${SBATCH_GRES:-}${SBATCH_GPUS:-}${SBATCH_GPUS_PER_NODE:-}${SBATCH_GPUS_PER_TASK:-}${SBATCH_GPUS_PER_SOCKET:-}${SBATCH_TRES_PER_TASK:-} ]] || resources+=(--gres=gpu:1)
 }

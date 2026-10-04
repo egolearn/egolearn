@@ -195,7 +195,17 @@ def test_required_cache_cannot_fall_back_to_home(cluster):
 
 
 @pytest.mark.parametrize("gpu", [False, True])
-def test_run_uses_snapshot_and_readonly_bind(cluster, gpu):
+@pytest.mark.parametrize(
+    ("cpu_env", "threads"),
+    [
+        ({}, "1"),
+        ({"SLURM_CPUS_PER_TASK": "4"}, "4"),
+        ({"SLURM_CPUS_ON_NODE": "8", "SLURM_CPUS_PER_GPU": "8"}, "8"),
+        ({"SLURM_CPUS_PER_TASK": "4", "SLURM_CPUS_ON_NODE": "8"}, "4"),
+        ({"OMP_NUM_THREADS": "2", "SLURM_CPUS_PER_TASK": "4", "SLURM_CPUS_ON_NODE": "8"}, "2"),
+    ],
+)
+def test_run_uses_snapshot_and_readonly_bind(cluster, gpu, cpu_env, threads):
     checkout, env = cluster
     _, calls = submit(cluster, "--", "true")
     call = calls[-1]
@@ -204,10 +214,12 @@ def test_run_uses_snapshot_and_readonly_bind(cluster, gpu):
     fake.write_text(
         "#!/usr/bin/env python3\nimport json,os,sys\n"
         "print(json.dumps({'args':sys.argv[1:],'bind':os.environ['APPTAINER_BIND'],"
-        "'cwd':os.getcwd(),'path':os.environ['APPTAINERENV_PREPEND_PATH']}))\n"
+        "'cwd':os.getcwd(),'path':os.environ['APPTAINERENV_PREPEND_PATH'],"
+        "'threads':os.environ['APPTAINERENV_OMP_NUM_THREADS']}))\n"
     )
     fake.chmod(0o755)
     child_env = {**call["env"], "SLURM_JOB_ID": "1", "SLURM_GPUS_ON_NODE": "1" if gpu else "0"}
+    child_env.update(cpu_env)
     child_env.pop("CUDA_VISIBLE_DEVICES", None)
     job = Path(child_env["EGOLEARN_RUN_DIR"])
     result = run(
@@ -224,6 +236,7 @@ def test_run_uses_snapshot_and_readonly_bind(cluster, gpu):
     assert f"{child_env['EGOLEARN_VENV']}:{child_env['EGOLEARN_VENV']}:ro" in data["bind"]
     assert data["cwd"] == str(job / "work")
     assert data["path"] == child_env["EGOLEARN_VENV"] + "/bin"
+    assert data["threads"] == threads
 
 
 def test_prep_pulls_on_cpu_and_syncs_in_container(cluster):
@@ -390,15 +403,21 @@ def test_unignored_logs_cannot_dirty_the_next_submission(cluster):
 
 
 @pytest.mark.parametrize("script", ["train", "bench"])
-def test_wrapper_resource_environment_overrides_defaults(cluster, script):
+@pytest.mark.parametrize("per_gpu", [False, True])
+def test_wrapper_resource_environment_overrides_defaults(cluster, script, per_gpu):
     checkout, env = cluster
     env.update(SBATCH_TIMELIMIT="01:00:00", SBATCH_GRES="gpu:typed:2", SBATCH_MEM_PER_GPU="32G")
+    env["SBATCH_CPUS_PER_TASK"] = "16"
+    if per_gpu:
+        env["SBATCH_CPUS_PER_GPU"] = "8"
     args = ["configs", "name"] if script == "train" else ["config.yaml"]
     result = run([str(checkout / f"scripts/slurm/{script}.sbatch"), *args], cwd=checkout, env=env)
     assert result.returncode == 0, result.stderr
     calls = [json.loads(line) for line in Path(env["TEST_SUBMIT_LOG"]).read_text().splitlines()]
     assert not any(arg.startswith(("--time=", "--gres=", "--mem=")) for arg in calls[-1]["args"])
     assert calls[-1]["env"]["SBATCH_GRES"] == "gpu:typed:2"
+    assert ("--cpus-per-task=16" in calls[-1]["args"]) is not per_gpu
+    assert "--cpus-per-task=8" not in calls[-1]["args"]
 
 
 @pytest.mark.parametrize("source", ["/dev/null", "/data/input-%a.txt", "/data/task-%a/input.txt"])
