@@ -172,7 +172,14 @@ use `fetch` when checksum verification is required. `HF_HOME` controls that cach
 Dataset references materialize the full snapshot once so manifests can safely
 read sibling files. This can download data during `dry_run=true`; that option
 skips training-stream iteration, not artifact resolution. Model file references
-download only the named file. Materialized copies require additional cache space.
+download only the named file. Materialized copies require additional cache space
+and are not tracked by `hf cache` cleanup tools. Their path is
+`<Hub cache>/datasets--<org>--<repo>/egolearn-materialized/<generation>/<commit>`;
+remove the `egolearn-materialized` directory manually when no job uses its copies.
+Existing complete copies can be reused from a read-only shared cache. First-time
+materialization needs a writable cache; alternatively use `fetch --dest` to put a
+real-file collection on writable storage. If an offline snapshot was partial,
+newly cached files produce a new materialization rather than reusing that subset.
 
 An explicit `hf://models/<org>/<repo>@<revision>/vocab.json` lets a tokenizer or
 benchmark read vocabulary from a model repo; `hf://datasets/` forces a dataset
@@ -214,8 +221,8 @@ uv run python -m egolearn.hub checksum prepared/
 unchanged, and creates a **private** repo. `--public` is required to create or
 upload to a public repo; it does not change an existing repo's visibility.
 The supported license identifiers are checked before repository creation (an
-unsupported identifier reports the accepted list). Choose a license you have authority to grant and inspect the directory before
-uploading: non-hidden payload files are included. Do not upload IRB data, embedded
+unsupported identifier reports the accepted list). Choose a license you have
+authority to grant and inspect the directory before uploading: non-hidden payload files are included. Do not upload IRB data, embedded
 frames, credentials or personal run metadata. Checkpoint names follow
 `egolearn-<method>-<data>-seed<n>`. SAYCam-trained weights stay in **private** model
 repos until publication rights under the Databrary agreement have been confirmed.

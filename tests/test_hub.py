@@ -274,3 +274,33 @@ def test_unknown_license_fails_before_creating_repository(remote):
     with pytest.raises(ValueError, match="unsupported license"):
         hub.push(root, name="sample", license_id="LicenseRef-Foo")
     assert not state.creates and not state.uploads
+
+
+def test_existing_materialization_can_be_read_without_cache_writes(tmp_path, monkeypatch):
+    cache = tmp_path / "snapshots" / ("a" * 40)
+    cache.mkdir(parents=True)
+    blob = tmp_path / "blob"
+    blob.write_text("synthetic")
+    (cache / "data.txt").symlink_to(blob)
+    target = hub._materialize(cache)
+
+    def no_write(*args, **kwargs):
+        raise PermissionError("shared cache is read-only")
+
+    monkeypatch.setattr(Path, "mkdir", no_write)
+    monkeypatch.setattr(Path, "open", no_write)
+    assert hub._materialize(cache) == target
+
+
+def test_repaired_partial_snapshot_gets_a_complete_materialization(tmp_path):
+    cache = tmp_path / "snapshots" / ("a" * 40)
+    cache.mkdir(parents=True)
+    blob = tmp_path / "blob"
+    blob.write_text("synthetic")
+    (cache / "first.txt").symlink_to(blob)
+    partial = hub._materialize(cache)
+    (cache / "second.txt").symlink_to(blob)
+    complete = hub._materialize(cache)
+    assert partial != complete
+    assert not (partial / "second.txt").exists()
+    assert (complete / "second.txt").read_text() == "synthetic"

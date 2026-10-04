@@ -7,6 +7,7 @@ at a7124e81efc81eae88efdb889da0a52c33f562a8 (MIT; see LICENSE).
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import logging
@@ -82,20 +83,35 @@ def _materialize(snapshot: Path) -> Path:
     The commit is immutable. Copy once, under a lock, then reuse it offline.
     Validators keep their normal symlink-escape protection for all local data.
     """
-    if not any(p.is_symlink() for p in snapshot.rglob("*")):
+    files = sorted(p for p in snapshot.rglob("*") if p.is_file())
+    if not any(p.is_symlink() for p in files):
         return snapshot
     import fcntl
 
-    parent = snapshot.parent.parent / "egolearn-materialized"
-    parent.mkdir(parents=True, exist_ok=True)
+    # Offline caches can be partial. A repaired/expanded snapshot gets a new copy
+    # instead of permanently reusing the earlier partial materialization.
+    inventory = [(p.relative_to(snapshot).as_posix(), p.stat().st_size) for p in files]
+    generation = hashlib.sha256(json.dumps(inventory).encode()).hexdigest()
+    parent = snapshot.parent.parent / "egolearn-materialized" / generation
     target = parent / snapshot.name
-    with (parent / f".{snapshot.name}.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        if not target.exists():
-            with tempfile.TemporaryDirectory(prefix=".materialize-", dir=parent) as temporary:
-                stage = Path(temporary) / "data"
-                shutil.copytree(snapshot, stage)
-                stage.rename(target)
+    if target.is_dir():
+        return target  # immutable, atomically installed copies can be shared read-only
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+        with (parent / f".{snapshot.name}.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if not target.exists():
+                with tempfile.TemporaryDirectory(prefix=".materialize-", dir=parent) as temporary:
+                    stage = Path(temporary) / "data"
+                    shutil.copytree(snapshot, stage)
+                    stage.rename(target)
+    except OSError as error:
+        if error.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
+            raise PermissionError(
+                "Hub dataset materialization needs a writable cache; use a writable HF_HOME "
+                "or egolearn.hub fetch --dest <writable-directory>"
+            ) from error
+        raise
     return target
 
 
@@ -365,13 +381,13 @@ def push(
         # the next fetch fail verification. Preserve Hub's .gitattributes only.
         stale = sorted(set(remote) - keep - {".gitattributes"})
         operations = [
-            CommitOperationAdd(path_in_repo=name, path_or_fileobj=str(stage / name))
-            for name in sorted(keep)
+            CommitOperationAdd(path_in_repo=rel, path_or_fileobj=str(stage / rel))
+            for rel in sorted(keep)
         ]
         result = api.create_commit(
             repo_id=rid,
             repo_type=repo_type,
-            operations=[*operations, *(CommitOperationDelete(path_in_repo=p) for p in stale)],
+            operations=[*(CommitOperationDelete(path_in_repo=p) for p in stale), *operations],
             commit_message=f"upload {name} with checksums",
             parent_commit=current.sha,
         )
