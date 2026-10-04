@@ -1,0 +1,149 @@
+#!/bin/bash
+# Adapted from agentic-learning-ai-lab/jepa-agent at a7124e81 (MIT; see LICENSE).
+# source env.sh, then:
+#   scripts/slurm/submit [sbatch options] -- command [args...]
+#   scripts/slurm/submit --sweep [sbatch options] -- python train.py a=1,2
+#   scripts/slurm/submit --commands FILE [sbatch options]
+# Own flags: --dry-run, --max-parallel N (cap array concurrency; no cap by
+# default). See docs/cluster.md.
+set -euo pipefail
+# shellcheck source=scripts/slurm/common.sh
+source "$(dirname "$0")/common.sh"
+check_env
+dry=0 sweep=0 commands='' max_parallel=
+opts=() cmd=()
+output=
+while (($#)); do
+  case "$1" in
+    --dry-run) dry=1; shift;;
+    --sweep) sweep=1; shift;;
+    --commands|--max-parallel)
+      (($# >= 2)) || fail "$1 needs a value"
+      if [[ $1 = --commands ]]; then
+        commands=$2
+      else
+        max_parallel=$2
+        [[ $max_parallel =~ ^[1-9][0-9]*$ ]] || fail "--max-parallel must be positive"
+      fi
+      shift 2;;
+    --) shift; cmd=("$@"); break;;
+    --output|-o)
+      (($# >= 2)) || fail "$1 needs a value"
+      output=$2; shift 2;;
+    --output=*) output=${1#*=}; shift;;
+    -o?*) output=${1#-o}; shift;;
+    --chdir*|-D*|--export*|--wrap*|--array*|-a*)
+      fail "$1 is managed by submit; use --sweep or --commands for arrays";;
+    *) opts+=("$1"); shift;;
+  esac
+done
+[[ -z $commands || ( $sweep = 0 && ${#cmd[@]} = 0 ) ]] ||
+  fail "--commands cannot be combined with --sweep or a command"
+[[ -n $commands || ${#cmd[@]} -gt 0 ]] || fail "provide -- <command...> or --commands FILE"
+export EGOLEARN_CODE_COMMIT
+EGOLEARN_CODE_COMMIT=$(git rev-parse HEAD)
+export EGOLEARN_EXPECTED_STAMP
+EGOLEARN_EXPECTED_STAMP=$(stamp)
+export EGOLEARN_IMAGE
+EGOLEARN_IMAGE=$(pinned_image) || fail "invalid containers/IMAGE: expected <registry>/<name>[:tag]@sha256:<digest>"
+export SIF
+SIF=$(sif_path "$EGOLEARN_IMAGE")
+outside_home "$SIF"
+# One snapshot per submitted command/array. Dependencies may be shared by stamp;
+# source is always taken from this job's immutable commit archive.
+export EGOLEARN_VENV="$EGOLEARN_ENV_ROOT/$EGOLEARN_EXPECTED_STAMP"
+export EGOLEARN_RUN_DIR
+EGOLEARN_RUN_DIR=$(python3 scripts/slurm/snapshot.py "$EGOLEARN_JOB_ROOT")
+opts+=("--chdir=$EGOLEARN_RUN_DIR/work")
+array=0
+[[ $sweep = 1 || -n $commands ]] && array=1
+if [[ -z $output ]]; then
+  if ((array)); then output=$EGOLEARN_RUN_DIR/%x-%A_%a.out; else output=$EGOLEARN_RUN_DIR/%x-%j.out; fi
+fi
+[[ $output = /* ]] || output="$PWD/$output"
+opts+=("--output=$output")
+outdir=$(dirname "$output")
+[[ $outdir = /* ]] || outdir="$PWD/$outdir"
+[[ $outdir != *%* ]] || fail "put %-patterns in the file name, not the directory"
+outside_home "$outdir"
+mkdir -p "$outdir"
+script=$EGOLEARN_RUN_DIR/code/scripts/slurm/run.sbatch
+if ((array)); then
+  export MANIFEST
+  MANIFEST=$EGOLEARN_RUN_DIR/commands.sh
+  if [[ -n $commands ]]; then
+    [[ -f $commands && -r $commands ]] || fail "commands file is not readable: $commands"
+    awk '!/^[[:space:]]*(#|$)/ {print}' "$commands" > "$MANIFEST"
+  else
+    bash "$EGOLEARN_RUN_DIR/code/scripts/slurm/sweep.sh" "${cmd[@]}" > "$MANIFEST"
+  fi
+  n=$(awk 'END {print NR}' "$MANIFEST")
+  ((n > 0)) || fail "commands file is empty"
+  echo "$n commands ($MANIFEST):"
+  head -n 3 "$MANIFEST"
+  throttle=
+  [[ -n $max_parallel ]] && throttle="%$max_parallel"
+  opts+=("--array=0-$((n-1))$throttle")
+  script=$EGOLEARN_RUN_DIR/code/scripts/slurm/run_array.sbatch
+  cmd=()
+  # Each array task has its own writable working directory and output files.
+  for ((task=0; task<n; task++)); do
+    mkdir -p "$EGOLEARN_RUN_DIR/tasks/$task/work"
+    while IFS= read -r -d '' entry; do
+      ln -s "$entry" "$EGOLEARN_RUN_DIR/tasks/$task/work/$(basename "$entry")"
+    done < <(find "$EGOLEARN_RUN_DIR/code" -mindepth 1 -maxdepth 1 -print0)
+  done
+  chmod a-w "$MANIFEST"
+fi
+print_submission() { printf 'sbatch'; printf ' %q' "$@"; printf '\n'; }
+stale=0
+[[ -f $SIF && -x $EGOLEARN_VENV/bin/python && -f $EGOLEARN_VENV/.egolearn-sync-stamp &&
+   $(cat "$EGOLEARN_VENV/.egolearn-sync-stamp") = "$EGOLEARN_EXPECTED_STAMP" ]] || stale=1
+if ((stale)); then
+  # A separate dependency option would override the user's. Combine with AND.
+  dep=()
+  opt_count=${#opts[@]}
+  for ((i=0; i<opt_count; i++)); do
+    case "${opts[i]}" in
+      --dependency=*) dep+=("${opts[i]#*=}"); unset 'opts[i]';;
+      --dependency|-d)
+        dep+=("${opts[i+1]:?dependency needs a value}"); unset 'opts[i]'; ((i+=1)); unset 'opts[i]';;
+      -d?*) dep+=("${opts[i]#-d}"); unset 'opts[i]';;
+    esac
+  done
+  for d in "${dep[@]}"; do
+    [[ $d != *'?'* ]] || fail "cannot combine OR dependencies with prep"
+  done
+  # Whitespace-separated sbatch arguments, without shell evaluation.
+  read -r -a prep_opts <<< "${EGOLEARN_PREP_SBATCH_ARGS:-}"
+  prep=(--parsable --time=00:30:00 "--output=$EGOLEARN_RUN_DIR/prep-%j.out" "${prep_opts[@]}" "$EGOLEARN_RUN_DIR/code/scripts/slurm/prep.sbatch")
+  print_submission "${prep[@]}"
+  if ((dry)); then
+    prep_id=PREP_JOB_ID
+  else
+    # SBATCH_PARTITION names the GPU partition; prep uses EGOLEARN_PREP_SBATCH_ARGS or the default.
+    prep_id=$(env -u SBATCH_PARTITION -u SBATCH_GRES -u SBATCH_GPUS -u SBATCH_GPUS_PER_NODE sbatch "${prep[@]}")
+    prep_id=${prep_id%%;*}
+    [[ $prep_id =~ ^[0-9]+$ ]] || fail "invalid prep job id: $prep_id"
+  fi
+  dependency="afterok:$prep_id"
+  for d in "${dep[@]}"; do
+    dependency+=",$d"
+  done
+  opts+=("--dependency=$dependency")
+fi
+print_submission "${opts[@]}" "$script" "${cmd[@]}"
+# Record arguments as JSON without shell expansion; credentials belong in env vars.
+python3 - "$EGOLEARN_RUN_DIR/run.json" "${cmd[@]}" <<'RECORD'
+import json, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+record = json.loads(path.read_text())
+record["command"] = sys.argv[2:]
+record["commands_file"] = "commands.sh" if (path.parent / "commands.sh").exists() else None
+path.write_text(json.dumps(record, indent=2) + "\n")
+RECORD
+if ((!dry)); then
+  sbatch --parsable "${opts[@]}" "$script" "${cmd[@]}" | tee "$EGOLEARN_RUN_DIR/job-id"
+fi
+echo "Run record: $EGOLEARN_RUN_DIR/run.json"

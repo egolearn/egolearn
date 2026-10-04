@@ -30,3 +30,6 @@ runs/
 
 # NOTE: launch scripts (*.sh, *.slurm) are deliberately NOT ignored. They belong
 # in scripts/ and are committed — past lab repos gitignored them and lost launchers.
+
+# Local cluster settings may contain credential environment variables.
+/env.sh

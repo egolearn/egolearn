@@ -6,6 +6,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ## [Unreleased]
 
+- Add one-command Slurm/Apptainer submission with CPU environment preparation, a pinned lab image, scratch caches, arrays and immutable per-run code snapshots.
+
 ### Added
 
 - Standalone evaluation API (`evaluate`, `evaluate_checkpoint`, `load_model`) and
