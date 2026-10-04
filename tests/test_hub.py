@@ -36,10 +36,11 @@ def remote(tmp_path, monkeypatch):
             state.private = kwargs["private"]
 
         def list_repo_files(self, **kwargs):
-            return ["old.txt", ".gitattributes", "data.txt"]
+            return ["old[1].txt", ".gitattributes", "data.txt"]
 
-        def upload_folder(self, **kwargs):
-            stage = Path(kwargs["folder_path"])
+        def create_commit(self, **kwargs):
+            additions = [op for op in kwargs["operations"] if hasattr(op, "path_or_fileobj")]
+            stage = Path(additions[0].path_or_fileobj).parent
             state.uploads.append(kwargs)
             state.card = (stage / hub.CARD).read_text()
             state.files = sorted(p.name for p in stage.iterdir())
@@ -56,6 +57,12 @@ def remote(tmp_path, monkeypatch):
         shutil.copytree(root, cache, dirs_exist_ok=True)
         return str(cache)
 
+    def download_file(*, repo_id, repo_type, revision, filename):
+        return str(
+            Path(download(repo_id=repo_id, repo_type=repo_type, revision=revision)) / filename
+        )
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download_file)
     monkeypatch.setattr(huggingface_hub, "HfApi", API)
     monkeypatch.setattr(huggingface_hub, "snapshot_download", download)
     return root, state
@@ -87,6 +94,7 @@ def test_bad_reference(path):
 
 
 def test_config_and_tokenizer_paths(remote):
+    pytest.importorskip("torch")
     from egolearn.config.instantiate import instantiate
     from egolearn.data.text import VocabTokenizer
 
@@ -186,7 +194,12 @@ def test_push_private_defaults_staging_and_stale_files(remote):
     assert hub.push(root, name="sample", license_id="MIT") == "b" * 40
     assert state.creates[0]["private"] is True
     assert ".env" not in state.files
-    assert state.uploads[0]["delete_patterns"] == ["old.txt"]
+    deleted = [
+        op.path_in_repo
+        for op in state.uploads[0]["operations"]
+        if not hasattr(op, "path_or_fileobj")
+    ]
+    assert deleted == ["old[1].txt"]
     assert "license: mit" in state.card
     assert (root / hub.CHECKSUMS).read_bytes() == before
 
@@ -212,3 +225,52 @@ def test_cli(remote, tmp_path):
     assert hub.main(["verify", str(root)]) == 0
     assert hub.main(["fetch", "sample", "--dest", str(tmp_path / "data")]) == 0
     assert hub.main(["push", str(root), "--name", "sample", "--license", "MIT"]) == 0
+
+
+def test_large_push_is_one_commit_with_exact_deletions(remote):
+    root, state = remote
+    for index in range(300):
+        (root / f"file{index}.txt").write_text(str(index))
+    hub.push(root, name="many", license_id="MIT")
+    assert len(state.uploads) == 1
+    operations = state.uploads[0]["operations"]
+    assert len(operations) == 304  # 301 payload files, card, checksums, one deletion
+    assert [op.path_in_repo for op in operations if not hasattr(op, "path_or_fileobj")] == [
+        "old[1].txt"
+    ]
+
+
+def test_model_file_download_does_not_fetch_other_checkpoints(remote, monkeypatch):
+    import huggingface_hub
+
+    def forbidden(**kwargs):
+        raise AssertionError("model file reference downloaded the whole snapshot")
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", forbidden)
+    path, metadata = hub.resolve_with_metadata("hf://models/org/weights@v1/data.txt")
+    assert path.read_text() == "synthetic"
+    assert metadata == {
+        "reference": "hf://models/org/weights@v1/data.txt",
+        "repo": "org/weights",
+        "repo_type": "model",
+        "revision": "v1",
+        "commit": "a" * 40,
+    }
+
+
+def test_model_vocabulary_can_override_dataset_default(remote):
+    pytest.importorskip("torch")
+    from egolearn.data.text import VocabTokenizer
+
+    root, state = remote
+    (root / "vocab.json").write_text(json.dumps({"hello": 1}))
+    VocabTokenizer.from_json("hf://models/org/weights@v1/vocab.json")
+    assert state.downloads[-1][1] == "model"
+
+
+def test_unknown_license_fails_before_creating_repository(remote):
+    root, state = remote
+    state.exists = False
+    with pytest.raises(ValueError, match="unsupported license"):
+        hub.push(root, name="sample", license_id="LicenseRef-Foo")
+    assert not state.creates and not state.uploads

@@ -26,30 +26,77 @@ ORG = "agentic-learning-ai-lab"
 
 
 def resolve(path: str | Path, *, repo_type: str = "dataset") -> Path:
-    """Resolve hf://org/repo@revision[/file] or pass a local path through.
+    """Resolve a Hub reference or pass a local path through.
 
-    Revisions are tags or commit IDs without slashes. The snapshot cache's
-    commit directory is logged. Checkpoints use repo_type="model" explicitly.
-    This downloads only; use fetch for checksum-verified local collections.
+    Explicit hf://models/ and hf://datasets/ prefixes override repo_type.
+    Dataset snapshots are materialized so manifest containment checks work.
+    Model file references download only that file, not every checkpoint.
     """
-    if not str(path).startswith("hf://"):
-        return Path(path)
-    from huggingface_hub import snapshot_download
+    return resolve_with_metadata(path, repo_type=repo_type)[0]
 
-    match = re.fullmatch(r"hf://([^/@]+/[^/@]+)@([^/@]+)(?:/(.+))?", str(path))
+
+def resolve_with_metadata(
+    path: str | Path, *, repo_type: str = "dataset"
+) -> tuple[Path, dict[str, str]]:
+    """Resolve once and retain the original reference and immutable Hub commit."""
+    if not str(path).startswith("hf://"):
+        return Path(path), {}
+    from huggingface_hub import hf_hub_download, snapshot_download
+
+    match = re.fullmatch(
+        r"hf://(?:(models|datasets)/)?([^/@]+/[^/@]+)@([^/@]+)(?:/(.+))?", str(path)
+    )
     if match is None:
-        raise ValueError("expected hf://org/repo@revision[/file]")
-    repo, revision, relative = match.groups()
+        raise ValueError("expected hf://[models/|datasets/]org/repo@revision[/file]")
+    kind, repo, revision, relative = match.groups()
+    repo_type = {"models": "model", "datasets": "dataset"}.get(kind, repo_type)
     if relative:
         _check_rel(relative)
-    root = Path(snapshot_download(repo_id=repo, repo_type=repo_type, revision=revision))
+    if relative and repo_type == "model":
+        result = Path(
+            hf_hub_download(repo_id=repo, filename=relative, repo_type=repo_type, revision=revision)
+        )
+        root = result
+        for _ in relative.split("/"):
+            root = root.parent
+    else:
+        root = Path(snapshot_download(repo_id=repo, repo_type=repo_type, revision=revision))
+        if repo_type == "dataset":
+            root = _materialize(root)
+        result = root / relative if relative else root
     log.info("Resolved %s to Hub commit %s", path, root.name)
-    # Hub cache files are symlinks into blobs; validate the lexical path above,
-    # without treating those legitimate cache symlinks as traversal.
-    result = root / relative if relative else root
     if not result.exists():
         raise FileNotFoundError(f"{relative} is absent from {repo}@{root.name}")
-    return result
+    return result, {
+        "reference": str(path),
+        "repo": repo,
+        "repo_type": repo_type,
+        "revision": revision,
+        "commit": root.name,
+    }
+
+
+def _materialize(snapshot: Path) -> Path:
+    """Keep a real-file copy beside a symlink-backed Hub cache snapshot.
+
+    The commit is immutable. Copy once, under a lock, then reuse it offline.
+    Validators keep their normal symlink-escape protection for all local data.
+    """
+    if not any(p.is_symlink() for p in snapshot.rglob("*")):
+        return snapshot
+    import fcntl
+
+    parent = snapshot.parent.parent / "egolearn-materialized"
+    parent.mkdir(parents=True, exist_ok=True)
+    target = parent / snapshot.name
+    with (parent / f".{snapshot.name}.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not target.exists():
+            with tempfile.TemporaryDirectory(prefix=".materialize-", dir=parent) as temporary:
+                stage = Path(temporary) / "data"
+                shutil.copytree(snapshot, stage)
+                stage.rename(target)
+    return target
 
 
 def sha256_file(path: Path) -> str:
@@ -262,13 +309,28 @@ def push(
     The caller must hold distribution rights; IRB data never belongs on the Hub.
     --public authorizes a public destination but does not change existing visibility.
     """
-    from huggingface_hub import HfApi
+    from huggingface_hub import CommitOperationAdd, CommitOperationDelete, HfApi
     from huggingface_hub.errors import RepositoryNotFoundError
 
     _check_name(name)
-    # SPDX identifiers (including LicenseRef) are scalar strings, never YAML.
-    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+-]*", license_id) is None:
-        raise ValueError("license must be a single SPDX identifier")
+    # Supported SPDX identifiers whose lowercase spelling is a Hub license ID.
+    # Reject other identifiers before creating a repository or uploading data.
+    licenses = {
+        "mit",
+        "apache-2.0",
+        "bsd-2-clause",
+        "bsd-3-clause",
+        "cc0-1.0",
+        "cc-by-4.0",
+        "cc-by-sa-4.0",
+        "cc-by-nc-4.0",
+        "cc-by-nc-sa-4.0",
+        "cc-by-nd-4.0",
+        "cc-by-nc-nd-4.0",
+        "mpl-2.0",
+    }
+    if license_id.lower() not in licenses:
+        raise ValueError("unsupported license; choose " + ", ".join(sorted(licenses)))
     src = Path(src)
     if not src.is_dir():
         raise NotADirectoryError(src)
@@ -302,11 +364,14 @@ def push(
         # One commit replaces the payload, removing stale files that would make
         # the next fetch fail verification. Preserve Hub's .gitattributes only.
         stale = sorted(set(remote) - keep - {".gitattributes"})
-        result = api.upload_folder(
+        operations = [
+            CommitOperationAdd(path_in_repo=name, path_or_fileobj=str(stage / name))
+            for name in sorted(keep)
+        ]
+        result = api.create_commit(
             repo_id=rid,
             repo_type=repo_type,
-            folder_path=str(stage),
-            delete_patterns=stale or None,
+            operations=[*operations, *(CommitOperationDelete(path_in_repo=p) for p in stale)],
             commit_message=f"upload {name} with checksums",
             parent_commit=current.sha,
         )
@@ -345,7 +410,7 @@ def main(argv: list[str] | None = None) -> int:
             problems = verify_checksums(args["src"])
             print("\n".join(problems) if problems else "ok")
             return int(bool(problems))
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, RuntimeError) as error:
         parser.exit(1, f"{error}\n")
     return 0
 

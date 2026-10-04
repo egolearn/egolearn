@@ -128,15 +128,22 @@ def test_checkpoint_round_trip_without_building_training_pipeline(
     if hub_path:
         import huggingface_hub
 
-        def download(*, repo_id, repo_type, revision):
+        def download(*, repo_id, repo_type, revision, filename):
             assert (repo_id, repo_type, revision) == ("org/model", "model", "v1")
-            return str(tmp_path)
+            cache = tmp_path / "snapshots" / ("a" * 40)
+            cache.mkdir(parents=True)
+            (cache / filename).symlink_to(path)
+            return str(cache / filename)
 
-        monkeypatch.setattr(huggingface_hub, "snapshot_download", download)
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
         checkpoint = "hf://org/model@v1/checkpoint.pth"
     result = evaluate_checkpoint(checkpoint, benchmarks=[WeightBenchmark()])
     assert result.results == expected
     assert result.checkpoint is not None
+    if hub_path:
+        assert result.checkpoint["commit"] == "a" * 40
+        assert result.checkpoint["reference"] == checkpoint
+        assert result.checkpoint["repo"] == "org/model"
     assert result.checkpoint["step"] == 17
     assert result.checkpoint["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
     assert result.model_config == pipe.model.construction_config

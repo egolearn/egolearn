@@ -169,9 +169,19 @@ without slashes. `egolearn.hub.resolve` is torch-free, passes local paths throug
 and logs the resolved snapshot commit. Direct Python callers can use it before
 constructing a dataset. Config resolution downloads to the standard HF cache;
 use `fetch` when checksum verification is required. `HF_HOME` controls that cache.
+Dataset references materialize the full snapshot once so manifests can safely
+read sibling files. This can download data during `dry_run=true`; that option
+skips training-stream iteration, not artifact resolution. Model file references
+download only the named file. Materialized copies require additional cache space.
+
+An explicit `hf://models/<org>/<repo>@<revision>/vocab.json` lets a tokenizer or
+benchmark read vocabulary from a model repo; `hf://datasets/` forces a dataset
+repo. Without a prefix, component inputs default to datasets and checkpoint/model
+config inputs default to models. Checkpoint evaluation records the original
+reference, repo, revision and resolved commit alongside the content digest.
 
 For example, a probe's `manifest` may be
-`hf://agentic-learning-ai-lab/egolearn-shape-bias@v1/manifest.json`.
+`hf://agentic-learning-ai-lab/egolearn-shape-bias@v1/stimulus_manifest.json`.
 Checkpoint and resume inputs use model repos with the same syntax, ending in an
 explicit filename such as `@v1/final.pth`; local checkpoint paths still work.
 Only load trusted checkpoints: Hub checksums establish file integrity, not trust
@@ -203,7 +213,8 @@ uv run python -m egolearn.hub checksum prepared/
 `push` uploads a staging copy with checksums and a minimal card, leaves the source
 unchanged, and creates a **private** repo. `--public` is required to create or
 upload to a public repo; it does not change an existing repo's visibility.
-Choose a license you have authority to grant and inspect the directory before
+The supported license identifiers are checked before repository creation (an
+unsupported identifier reports the accepted list). Choose a license you have authority to grant and inspect the directory before
 uploading: non-hidden payload files are included. Do not upload IRB data, embedded
 frames, credentials or personal run metadata. Checkpoint names follow
 `egolearn-<method>-<data>-seed<n>`. SAYCam-trained weights stay in **private** model

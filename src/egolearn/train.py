@@ -7,8 +7,9 @@
     ... --config-name saycam_default seed=42 driver.rate.steps_per_admit=4
 
 `dry_run=true` builds and validates the full pipeline (including model and
-optimizer) without reading any stream data, so wiring mistakes show up
-before training starts. hydra writes the fully-resolved config to
+optimizer) without iterating the stream, so wiring mistakes show up
+before training starts. Hub references may download artifacts during resolution.
+hydra writes the fully-resolved config to
 `.hydra/config.yaml` in the run's output dir; that is the file to use when
 reproducing the run.
 """

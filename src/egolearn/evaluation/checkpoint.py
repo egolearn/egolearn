@@ -12,7 +12,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from egolearn.evaluation.benchmark import Benchmark
 from egolearn.evaluation.evaluator import EvaluationResult, _isolated_evaluation_rng, evaluate
-from egolearn.hub import resolve
+from egolearn.hub import resolve, resolve_with_metadata
 from egolearn.model.build import build_model
 from egolearn.model.model import ComposedModel
 
@@ -55,7 +55,8 @@ def _load_model(
     device: str | torch.device,
     imports: Sequence[str],
 ) -> tuple[ComposedModel, dict[str, Any]]:
-    path = resolve(checkpoint, repo_type="model").resolve()
+    local_path, provenance = resolve_with_metadata(checkpoint, repo_type="model")
+    path = local_path.resolve()
     with path.open("rb") as file:
         digest = hashlib.file_digest(file, "sha256").hexdigest()
         file.seek(0)
@@ -85,6 +86,7 @@ def _load_model(
     model.load_state_dict(state["model"], strict=True)
     model.to(device).eval()
     metadata = {
+        **provenance,
         "path": str(path),
         "sha256": digest,
         "step": state.get("step", (state.get("context") or {}).get("clock", {}).get("step")),
