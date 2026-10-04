@@ -33,6 +33,8 @@ import os
 
 import torch
 
+from egolearn.hub import resolve
+
 
 def save_snapshot(path: str, driver) -> str:
     composer = getattr(driver, "composer", None)
@@ -72,7 +74,7 @@ def load_snapshot(path: str, driver) -> None:
     """Restore a snapshot and prepare `driver` to continue training."""
     # weights_only=False: snapshots are our own files and hold more than
     # tensors (refs, RNG states, label stores)
-    state = torch.load(path, map_location="cpu", weights_only=False)
+    state = torch.load(resolve(path, repo_type="model"), map_location="cpu", weights_only=False)
 
     # model to its device BEFORE the optimizer loads, so optimizer state is
     # cast onto the parameters' device by torch

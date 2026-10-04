@@ -14,3 +14,5 @@ versioned with the code they launch.
 
 Planned (see `docs/roadmap.md` phase 6): hydra+submitit launching and per-run
 code snapshotting.
+
+- `fetch_data.py`: wrapper for `python -m egolearn.hub` (fetch, push, verify, checksum); see [Hub artifacts](../docs/evaluation.md#hub-artifacts-and-access-tiers).

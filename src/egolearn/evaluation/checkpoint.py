@@ -12,13 +12,14 @@ from omegaconf import DictConfig, OmegaConf
 
 from egolearn.evaluation.benchmark import Benchmark
 from egolearn.evaluation.evaluator import EvaluationResult, _isolated_evaluation_rng, evaluate
+from egolearn.hub import resolve
 from egolearn.model.build import build_model
 from egolearn.model.model import ComposedModel
 
 
 def _construction_config(source: str | Path | Mapping) -> tuple[dict, list[str], int | None]:
     cfg = (
-        OmegaConf.load(source)
+        OmegaConf.load(resolve(source, repo_type="model"))
         if isinstance(source, (str, Path))
         else OmegaConf.create(dict(source))
     )
@@ -54,7 +55,7 @@ def _load_model(
     device: str | torch.device,
     imports: Sequence[str],
 ) -> tuple[ComposedModel, dict[str, Any]]:
-    path = Path(checkpoint).resolve()
+    path = resolve(checkpoint, repo_type="model").resolve()
     with path.open("rb") as file:
         digest = hashlib.file_digest(file, "sha256").hexdigest()
         file.seek(0)

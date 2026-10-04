@@ -77,7 +77,8 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
 
 - [ ] Hydra+submitit compute layer for NYU Torch
 - [ ] Per-run code snapshotting
-- [ ] Hub-hosted checkpoints and split files; retire Drive links
+- [x] Hub artifact mechanism: revisioned paths, verified fetch and private-by-default push
+- [ ] Publish approved checkpoint/split collections and retire Drive links
 
 ## Performance ledger (from PR review, 2026-08)
 

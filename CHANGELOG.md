@@ -6,6 +6,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ## [Unreleased]
 
+- Add torch-free Hub path resolution and checksummed, private-by-default dataset/checkpoint fetch and push commands; document dataset access tiers.
+
 ### Added
 
 - Standalone evaluation API (`evaluate`, `evaluate_checkpoint`, `load_model`) and

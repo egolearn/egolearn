@@ -19,6 +19,8 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
+from egolearn.hub import resolve
+
 from .registry import lookup
 
 TARGET_KEY = "_target_"
@@ -50,6 +52,8 @@ def instantiate(node: Any, **overrides):
             kwargs.update(overrides)
             return _resolve(node[TARGET_KEY])(**kwargs)
         return {k: instantiate(v) for k, v in node.items()}
+    if isinstance(node, str) and node.startswith("hf://"):
+        return str(resolve(node))
     return node
 
 
