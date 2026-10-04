@@ -2,8 +2,6 @@
 # Adapted from agentic-learning-ai-lab/jepa-agent at a7124e81 (MIT; see LICENSE).
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=100G
 set -euo pipefail
 cd "${EGOLEARN_RUN_DIR:?}/code"
 : "${MANIFEST:?}" "${SLURM_ARRAY_TASK_ID:?}"

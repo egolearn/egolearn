@@ -6,9 +6,11 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ## [Unreleased]
 
-- Add one-command Slurm/Apptainer submission with CPU environment preparation, a pinned lab image, scratch caches, arrays and immutable per-run code snapshots.
 
 ### Added
+
+- Add one-command Slurm/Apptainer submission with CPU environment preparation,
+  a pinned lab image, scratch caches, arrays and immutable per-run code snapshots.
 
 - Standalone evaluation API (`evaluate`, `evaluate_checkpoint`, `load_model`) and
   `python -m egolearn.evaluate`, with benchmark configs, structured JSON results,
@@ -66,6 +68,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   manifest.
 
 ### Changed
+
+- Run `scripts/slurm/train.sbatch` and `bench.sbatch` directly on the login node;
+  passing either wrapper to `sbatch` now fails with migration instructions.
+  Benchmark JSON is written to the isolated run's `work/bench.json`.
 
 - Full ImageNet evaluation moves from `probe:imagenet_linear_sgd` to standalone
   `benchmark:imagenet_linear_sgd`. Dataset enumeration is deferred to preparation

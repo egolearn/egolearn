@@ -41,7 +41,9 @@ fi
 (
   # Another queued prep may have finished, with training already holding a
   # shared lock. Do not block on an exclusive lock when the environment is ready.
-  while ! flock -xn 8; do
+  until flock -xn -E 75 8; do
+    lock_status=$?
+    ((lock_status == 75)) || fail "cannot lock $EGOLEARN_VENV/.egolearn-sync.lock (flock exit $lock_status)"
     environment_ready && exit 0
     sleep 1
   done

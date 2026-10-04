@@ -9,6 +9,7 @@ set -euo pipefail
 config_dir=${1:?usage: train.sbatch <config-dir> <config-name> [overrides...]}
 config_name=${2:?usage: train.sbatch <config-dir> <config-name> [overrides...]}
 shift 2
-exec "$(dirname "$0")/submit" --gres=gpu:1 --time=48:00:00 \
-  --cpus-per-task=8 --mem=64G -- python -m egolearn.train \
+source "$(dirname "$0")/common.sh"
+default_resources 48:00:00
+exec "$(dirname "$0")/submit" "${resources[@]}" -- python -m egolearn.train \
   --config-dir "$config_dir" --config-name "$config_name" "$@"

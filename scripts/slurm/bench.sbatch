@@ -8,6 +8,7 @@ set -euo pipefail
 }
 config=${1:?usage: bench.sbatch <config.yaml> [benchmark args...]}
 shift
-exec "$(dirname "$0")/submit" --gres=gpu:1 --time=02:00:00 \
-  --cpus-per-task=8 --mem=64G -- python scripts/bench/bench_dataloading.py \
+source "$(dirname "$0")/common.sh"
+default_resources 02:00:00
+exec "$(dirname "$0")/submit" "${resources[@]}" -- python scripts/bench/bench_dataloading.py \
   --config "$config" --output-json bench.json "$@"

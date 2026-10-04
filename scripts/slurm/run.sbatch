@@ -2,8 +2,6 @@
 # Adapted from agentic-learning-ai-lab/jepa-agent at a7124e81 (MIT; see LICENSE).
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=100G
 set -euo pipefail
 cd "${EGOLEARN_RUN_DIR:?}/code"
 # shellcheck source=scripts/slurm/common.sh
@@ -21,6 +19,7 @@ EGOLEARN_READONLY=1
 container_env
 export APPTAINERENV_UV_PROJECT_ENVIRONMENT="$EGOLEARN_VENV"
 export APPTAINERENV_UV_NO_SYNC=1
+export APPTAINERENV_OMP_NUM_THREADS=${OMP_NUM_THREADS:-${SLURM_CPUS_PER_TASK:-1}}
 unset PYTHONPATH PYTHONHOME APPTAINERENV_PYTHONPATH APPTAINERENV_PYTHONHOME
 export APPTAINERENV_PYTHONDONTWRITEBYTECODE=1
 cd "${EGOLEARN_WORK_DIR:-$EGOLEARN_RUN_DIR/work}"

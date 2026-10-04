@@ -119,14 +119,14 @@ container_env() {
   for name in "${REQUIRED_VARS[@]}" "${STORAGE_VARS[@]}" PWD; do
     path=${!name:-}
     [[ -n $path ]] || continue
-    [[ $path != *:* && $path != *,* ]] || fail "$name contains ':', which APPTAINER_BIND cannot carry: $path"
+    [[ $path != *:* && $path != *,* ]] || fail "$name contains ':' or ',', which APPTAINER_BIND cannot carry: $path"
     # A destination the user already binds is covered by that entry.
     for dest in "${user_dests[@]}"; do
       [[ $dest != "$path" ]] || continue 2
     done
     [[ -d $path ]] || mkdir -p "$path" 2>/dev/null || fail "cannot create $name=$path"
     source=$(realpath "$path")
-    [[ $source != *:* && $source != *,* ]] || fail "$name resolves to a path with ':', which APPTAINER_BIND cannot carry: $source"
+    [[ $source != *:* && $source != *,* ]] || fail "$name resolves to a path with ':' or ',', which APPTAINER_BIND cannot carry: $source"
     # A path inside the checkout is already visible through the checkout's bind.
     if [[ $name != PWD ]]; then
       case "$path" in "$PWD"|"$PWD"/*|"$checkout"|"$checkout"/*)
@@ -171,4 +171,13 @@ job_context() {
   check_env
   export EGOLEARN_VENV="$EGOLEARN_ENV_ROOT/$EGOLEARN_EXPECTED_STAMP"
   outside_home "$EGOLEARN_VENV"
+}
+
+# Preserve #SBATCH-style precedence: explicit site environment settings win.
+default_resources() {
+  resources=()
+  [[ -n ${SBATCH_TIMELIMIT:-} ]] || resources+=("--time=$1")
+  [[ -n ${SBATCH_CPUS_PER_TASK:-}${SBATCH_CPUS_PER_GPU:-} ]] || resources+=(--cpus-per-task=8)
+  [[ -n ${SBATCH_MEM_PER_NODE:-}${SBATCH_MEM_PER_CPU:-}${SBATCH_MEM_PER_GPU:-} ]] || resources+=(--mem=64G)
+  [[ -n ${SBATCH_GRES:-}${SBATCH_GPUS:-}${SBATCH_GPUS_PER_NODE:-}${SBATCH_GPUS_PER_TASK:-}${SBATCH_GPUS_PER_SOCKET:-}${SBATCH_TRES_PER_TASK:-} ]] || resources+=(--gres=gpu:1)
 }

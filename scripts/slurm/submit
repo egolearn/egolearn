@@ -56,15 +56,30 @@ for name in output error input; do
   [[ -n $path ]] || continue
   [[ $path = /* ]] || path="$PWD/$path"
   outside_home "$path"
-  [[ $(dirname "$path") != *%* ]] || fail 'put %-patterns in the file name, not the directory'
-  if [[ $name = input ]]; then [[ -f $path && -r $path ]] || fail "unreadable input: $path"; fi
+  if [[ $name != input ]]; then
+    [[ $(dirname "$path") != *%* ]] || fail 'put %-patterns in the file name, not the directory'
+  fi
+  if [[ $name = input && $path != *%* ]]; then
+    [[ -r $path && ! -d $path ]] || fail "unreadable input: $path"
+  elif [[ $name != input ]]; then
+    resolved=$(canonical "$path")
+    case "$resolved" in "$(realpath "$PWD")"/*)
+      git check-ignore -q -- "$resolved" || fail "log path inside checkout must be git-ignored: $path";;
+    esac
+  fi
   printf -v "$name" '%s' "$path"
 done
-prepared_commands= job_dir= prep_id= submitted=0
+prepared_commands= job_dir= prep_id= submitted=0 main_attempted=0 prep_attempted=0
 cleanup() {
   local result=$?
   [[ -z $prepared_commands ]] || rm -f "$prepared_commands"
   if ((result != 0 && submitted == 0)) && [[ -n $job_dir ]]; then
+    if ((main_attempted)) || { ((prep_attempted)) && [[ -z $prep_id ]]; }; then
+      # A controller timeout or interruption can hide a successfully queued job.
+      # Even a negative squeue lookup cannot exclude one that already finished.
+      echo "Submission outcome uncertain; retaining $job_dir and prep ${prep_id:-none}. Check squeue/sacct before cleanup." >&2
+      return "$result"
+    fi
     if ((dry == 0)) && [[ -n $prep_id ]] && ! scancel "$prep_id"; then
       echo "Could not cancel prep $prep_id; retaining $job_dir" >&2
       return "$result"
@@ -155,6 +170,7 @@ if ((stale)); then
     for name in "${!SBATCH_@}"; do
       [[ $name = SBATCH_ACCOUNT ]] || prep_env+=(-u "$name")
     done
+    prep_attempted=1
     prep_id=$("${prep_env[@]}" sbatch "${prep[@]}")
     prep_id=${prep_id%%;*}
     [[ $prep_id =~ ^[0-9]+$ ]] || fail "invalid prep job id: $prep_id"
@@ -164,7 +180,13 @@ fi
 [[ -z $dependency ]] || opts+=("--dependency=$dependency")
 print_submission "${opts[@]}" "$script" "${cmd[@]}"
 if ((!dry)); then
-  sbatch --parsable "${opts[@]}" "$script" "${cmd[@]}" | tee "$job_dir/job-id"
+  main_attempted=1
+  main_id=$(sbatch --parsable "${opts[@]}" "$script" "${cmd[@]}")
+  submitted=1
+  printf '%s\n' "$main_id"
+  if ! printf '%s\n' "$main_id" > "$job_dir/job-id"; then
+    echo "Job $main_id was accepted; could not write $job_dir/job-id" >&2
+  fi
 fi
 submitted=1
 echo "Run record: $job_dir/run.json"

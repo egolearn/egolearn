@@ -2,7 +2,7 @@
 
 Use `scripts/slurm/submit [sbatch options] -- <command>` from a clean checkout.
 The login node needs Bash 4.4+, Python 3.12+, Git, coreutils and `sbatch`; compute nodes
-need Apptainer and `flock`. There is no login-node environment build or image pull.
+need Bash 4.4+, Apptainer and `flock`. There is no login-node environment build or image pull.
 
 ## Setup and submission
 
@@ -13,7 +13,7 @@ site's writable storage root, edit account/partition settings, and run:
 ```bash
 chmod 600 env.sh
 source env.sh
-scripts/slurm/submit --gres=gpu:1 --time=24:00:00 -- \
+scripts/slurm/submit --gres=gpu:1 --cpus-per-task=8 --mem=64G --time=24:00:00 -- \
   python -m egolearn.train --config-dir projects/babycl/configs \
   --config-name saycam_default stream.root_dir="$EGOLEARN_DATA/saycam"
 ```
@@ -26,6 +26,9 @@ The compatibility command `scripts/slurm/train.sbatch` also submits through this
 launcher; do not pass it to `sbatch` directly. Use the generic submit command to
 select other resources. Both compatibility wrappers retain one GPU, eight CPUs
 and 64 GB memory; training defaults to 48 hours and benchmarking to two hours.
+Site `SBATCH_*` resource variables override these defaults. Generic `submit`
+uses site defaults for CPU and memory unless the caller requests resources. Runtime OpenMP thread
+count follows allocated CPUs unless `OMP_NUM_THREADS` was explicitly set.
 
 A stamp covers `uv.lock`, `pyproject.toml`, `.python-version`, sync arguments,
 the image digest and the submitted commit. Environments are reused under
@@ -84,21 +87,29 @@ artifacts remain local and may contain private config paths. Nothing is uploaded
 
 For `resume=auto`, use an absolute persistent `run_dir`, unique to that experiment
 and seed, so a resubmission finds the earlier snapshots, for example:
-`run_dir=$EGOLEARN_ARTIFACTS/babycl-seed0 resume=auto`.
+`run_dir=$EGOLEARN_ARTIFACTS/babycl-seed0 resume=auto` on resubmission. Omit
+`resume=auto` on the first run, before any snapshot exists.
 The launcher warns when `resume=auto` has no explicit absolute `run_dir` override;
 it cannot inspect a command's configuration files. Alternatively supply an
 absolute `resume=/path/to/snapshot.pth` and choose a new output directory.
 
 Relative `--output`, `--error` and `--input` paths (including Slurm environment
 settings) are resolved from the submitting checkout before the working-directory
-change. Invalid command files and paths fail before snapshot creation. A failed
-main submission cancels its prep and removes the snapshot; if cancellation fails,
-the directory is retained and its location reported.
+change. Logs inside the checkout must be git-ignored (`logs/`, `outputs/` and
+`slurm-*.out`/`slurm-*.err` are covered); otherwise use scratch outside the checkout.
+Input path patterns and `/dev/null` pass through to Slurm. Invalid command
+files and paths fail before snapshot creation. Failures before main submission
+cancel known prep jobs and remove their snapshots when cancellation succeeds.
+Once main submission has been attempted, an error or interruption retains the
+snapshot and prep: a controller timeout may hide a successfully accepted job.
+A prep submission that fails without returning a job ID also retains its snapshot.
+Inspect `squeue`/`sacct` before cancelling or removing retained runs. Even an empty
+queue lookup cannot exclude a job that has already finished.
 
 ## Arrays and dry runs
 
 ```bash
-scripts/slurm/submit --sweep --max-parallel 4 --gres=gpu:1 -- \
+scripts/slurm/submit --sweep --max-parallel 4 --gres=gpu:1 --cpus-per-task=8 --mem=64G -- \
   python -m egolearn.train --config-dir projects/babycl/configs \
   --config-name saycam_default seed=0,1,2 driver.rate.steps_per_admit=1,4
 scripts/slurm/submit --commands /path/to/commands.txt --gres=gpu:1

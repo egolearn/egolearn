@@ -34,7 +34,7 @@ def cluster(tmp_path):
     (checkout / "uv.lock").write_text("fixture lock")
     (checkout / "pyproject.toml").write_text("fixture project")
     (checkout / ".python-version").write_text("3.12")
-    (checkout / ".gitignore").write_text("env.sh\n")
+    shutil.copyfile(ROOT / ".gitignore", checkout / ".gitignore")
     (checkout / "program.py").write_text("print('submitted version')\n")
     subprocess.run(["git", "init", "-q", str(checkout)], check=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=checkout, check=True)
@@ -358,7 +358,7 @@ def test_failed_validation_does_not_leave_snapshot(cluster):
     assert not calls and not list(Path(env["EGOLEARN_JOB_ROOT"]).glob("run-*"))
 
 
-def test_failed_submission_cancels_prep_and_removes_snapshot(cluster):
+def test_uncertain_submission_preserves_code_and_prep(cluster):
     _, env = cluster
     bindir = Path(env["TEST_SUBMIT_LOG"]).parent / "bin"
     sbatch = bindir / "sbatch"
@@ -374,10 +374,82 @@ def test_failed_submission_cancels_prep_and_removes_snapshot(cluster):
     env["CANCEL_LOG"] = str(bindir.parent / "cancelled")
     _, calls = submit(cluster, "--", "true", ok=False)
     assert len(calls) == 2
-    assert Path(env["CANCEL_LOG"]).read_text() == "12345"
-    assert not list(Path(env["EGOLEARN_JOB_ROOT"]).glob("run-*"))
+    assert not Path(env["CANCEL_LOG"]).exists()
+    assert list(Path(env["EGOLEARN_JOB_ROOT"]).glob("run-*/code/program.py"))
 
 
 def test_auto_resume_mentions_persistent_output_directory(cluster):
     result, _ = submit(cluster, "--", "python", "program.py", "resume=auto")
     assert "absolute run_dir" in result.stderr
+
+
+def test_unignored_logs_cannot_dirty_the_next_submission(cluster):
+    result, calls = submit(cluster, "-o", "unignored/job-%j.log", "--", "true", ok=False)
+    assert "must be git-ignored" in result.stderr
+    assert not calls
+
+
+@pytest.mark.parametrize("script", ["train", "bench"])
+def test_wrapper_resource_environment_overrides_defaults(cluster, script):
+    checkout, env = cluster
+    env.update(SBATCH_TIMELIMIT="01:00:00", SBATCH_GRES="gpu:typed:2", SBATCH_MEM_PER_GPU="32G")
+    args = ["configs", "name"] if script == "train" else ["config.yaml"]
+    result = run([str(checkout / f"scripts/slurm/{script}.sbatch"), *args], cwd=checkout, env=env)
+    assert result.returncode == 0, result.stderr
+    calls = [json.loads(line) for line in Path(env["TEST_SUBMIT_LOG"]).read_text().splitlines()]
+    assert not any(arg.startswith(("--time=", "--gres=", "--mem=")) for arg in calls[-1]["args"])
+    assert calls[-1]["env"]["SBATCH_GRES"] == "gpu:typed:2"
+
+
+@pytest.mark.parametrize("source", ["/dev/null", "/data/input-%a.txt", "/data/task-%a/input.txt"])
+def test_slurm_input_devices_and_patterns_pass_through(cluster, source):
+    _, calls = submit(cluster, "--input", source, "--", "true")
+    assert f"--input={source}" in calls[-1]["args"]
+
+
+def test_prep_fails_promptly_on_unsupported_file_locking(cluster):
+    checkout, env = cluster
+    _, calls = submit(cluster, "--", "true")
+    child_env = {**calls[0]["env"], "SLURM_JOB_ID": "12"}
+    image = Path(child_env["SIF"])
+    image.parent.mkdir(parents=True, exist_ok=True)
+    image.touch()
+    fake = Path(env["TEST_SUBMIT_LOG"]).parent / "bin/flock"
+    fake.write_text("#!/bin/sh\nexit 71\n")
+    fake.chmod(0o755)
+    job = Path(child_env["EGOLEARN_RUN_DIR"])
+    result = subprocess.run(
+        ["bash", str(job / "code/scripts/slurm/prep.sbatch")],
+        cwd=checkout,
+        env=child_env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode != 0 and "cannot lock" in result.stderr
+
+
+def test_accepted_job_survives_failure_to_write_job_id(cluster):
+    _, env = cluster
+    sbatch = Path(env["TEST_SUBMIT_LOG"]).parent / "bin/sbatch"
+    sbatch.write_text(
+        sbatch.read_text().replace(
+            "print('12345')",
+            "if any(a.endswith('/run.sbatch') for a in sys.argv):\n"
+            " os.mkdir(os.path.join(os.environ['EGOLEARN_RUN_DIR'],'job-id'))\nprint('12345')",
+        )
+    )
+    result, calls = submit(cluster, "--", "true")
+    assert "was accepted; could not write" in result.stderr
+    job = Path(calls[-1]["env"]["EGOLEARN_RUN_DIR"])
+    assert (job / "code/program.py").is_file()
+
+
+def test_uncertain_prep_submission_preserves_its_code(cluster):
+    _, env = cluster
+    sbatch = Path(env["TEST_SUBMIT_LOG"]).parent / "bin/sbatch"
+    sbatch.write_text(sbatch.read_text().replace("print('12345')", "sys.exit(1)"))
+    result, calls = submit(cluster, "--", "true", ok=False)
+    assert len(calls) == 1
+    assert "Submission outcome uncertain" in result.stderr
+    assert list(Path(env["EGOLEARN_JOB_ROOT"]).glob("run-*/code/scripts/slurm/prep.sbatch"))
