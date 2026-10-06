@@ -8,6 +8,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Evaluation data guide with centralized SAYCam access and frame preparation,
+  Labeled-S 4AFC manifest/vocabulary instructions, and BabyVLM task attribution.
+  A tested `labeled_s_4afc.prepare` command converts frozen trials without resampling.
 - `init_from` initializes selected model components from a checkpoint or snapshot
   before optimizer construction, with strict tensor checks and source provenance.
   Training rejects simultaneous `init_from` and `resume` before pipeline construction;

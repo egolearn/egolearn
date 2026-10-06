@@ -2,33 +2,26 @@
 
 Introduced by BabyVLM V1: https://shawnking98.github.io/BabyVLM/
 Labels: https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/vtwt
-SAYCam images require separate Databrary access; the upstream README describes
-applying with institutional IRB approval. See docs/evaluation.md for data sources
-and local configuration.
+Task attribution: BabyVLM / babylmms-eval, Apache-2.0:
+https://github.com/ShawnKing98/babylmms-eval/blob/main/LICENSE
+Data access and preparation: docs/evaluation.md#babyvlm-benchmark-data
 
-1:1 port of mcl's eval_vtwt.py (protocol from Wang et al., BabyVLM).  For
-each sample the model sees one image and two two-word phrases; it predicts
-whichever phrase has the higher cosine similarity to the image.  Accuracy =
-fraction of samples where positive_phrase wins (strict >).
+Each sample contains one image and two two-word phrases. A sample is correct
+when the positive phrase has strictly higher cosine similarity to the image.
 
-CSV format (mcl eval/vtwt.csv)::
+CSV format::
 
     image,positive_phrase,negative_phrase
     S_20140420_1803_01_082_00.jpg,see person,touch pillow
 
-Faithfulness notes (verbatim from the original):
-  * tokenization: phrase.strip().lower().split()[:32]; out-of-vocabulary
-    (OOV) words map to index 0 (padding_idx, a FIXED ZERO embedding) -- NOT
-    <unk>, and no <sos>/<eos> markers.  The original documents this as
-    intentional: "OOV handling is part of what the evaluation measures."
-    The phrase length counts OOV tokens, so they dilute the mean-pool
-    denominator;
-  * preprocessing: RGB, Resize(224, bicubic), CenterCrop(224), then
-    normalization chosen per model family -- `image_norm: imagenet` for
-    EgoLearn/mcl-trained models, `image_norm: clip` for the CVCL family.
-    Mixing families' preprocessing was a documented pitfall, so it is an
-    explicit config field;
-  * missing images are skipped and counted, as in the original.
+Protocol:
+  * Tokenization uses phrase.strip().lower().split()[:32]. Out-of-vocabulary
+    words map to padding index 0, a fixed zero embedding, and count toward the
+    mean-pool denominator. No <sos>/<eos> markers are added.
+  * Images use RGB, bicubic Resize(224), CenterCrop(224), and model-specific
+    normalization: `imagenet` for EgoLearn-trained BabyCL models, `clip` for
+    the CVCL family.
+  * Missing images are skipped and counted.
 """
 
 from __future__ import annotations
@@ -57,7 +50,7 @@ NORMS = {
 def encode_phrase(
     phrase: str, word2idx: dict, device, max_len: int = 32
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Verbatim port of tokenize/batch_encode_phrase from eval_vtwt.py."""
+    """Return lowercased token IDs and pooling length, including OOV tokens."""
     tokens = phrase.strip().lower().split()[:max_len]
     ids = [word2idx.get(tok, 0) for tok in tokens]  # 0 = padding_idx / OOV
     length = max(len(ids), 1)
