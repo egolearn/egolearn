@@ -26,14 +26,25 @@ uv run pre-commit install    # local gates: ruff, gitleaks, large-file blocker
 uv run pytest                # unit tests (slow/gpu/llm tiers excluded by default)
 
 # validate a full pipeline without reading any data
-uv run python -m egolearn.train --config-dir projects/babycl/configs \
-    --config-name saycam_default dry_run=true
+uv run egl train projects/babycl/configs/saycam_default.yaml dry_run=true
 # train (dataset roots come from the command line / config, never code)
-uv run python -m egolearn.train --config-dir projects/babycl/configs \
-    --config-name saycam_default stream.root_dir=$DATA_ROOT
+uv run egl train projects/babycl/configs/saycam_default.yaml stream.root_dir=$DATA_ROOT
 ```
 
 Requires [uv](https://docs.astral.sh/uv/); Python 3.12 is provisioned automatically.
+
+## Command line
+
+After `uv sync`, use `uv run egl` (also available as `egolearn`), or `egl` in an activated environment:
+
+```bash
+egl --help
+egl train toy_streaming dry_run=true
+egl train projects/babycl/configs/saycam_default.yaml seed=42
+egl eval imagenet_linear_eval checkpoint=runs/example/final.pth data_root=/path/to/imagenet
+```
+
+See the [CLI guide](docs/cli.md) for configuration paths, overrides, and multirun.
 
 ## SAYCam dataset access
 
@@ -61,7 +72,7 @@ faithful ports of the original code, each expressed as a config file. The
 full walkthrough: [docs/design/architecture.md](docs/design/architecture.md).
 
 Trained checkpoints can be evaluated independently through
-`egolearn.evaluation.evaluate_checkpoint` or `python -m egolearn.evaluate`.
+`egolearn.evaluation.evaluate_checkpoint` or `egl eval`.
 Full ImageNet decoding runs as a standalone benchmark, with dataset preparation
 deferred until evaluation. See [the evaluation guide](docs/evaluation.md) for
 Python usage, CLI configuration, and checkpoint compatibility.

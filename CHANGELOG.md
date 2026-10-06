@@ -8,6 +8,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Installed `egl train` and `egl eval` commands accept packaged config names or
+  YAML paths, with `egolearn` as an equivalent command alias. Hydra handles later
+  config-selection flags, including abbreviations, using its normal precedence.
+  Explicit files retain access to packaged defaults and user-supplied search paths.
 - Evaluation data guide with centralized SAYCam access and frame preparation,
   Labeled-S 4AFC manifest/vocabulary instructions, and BabyVLM task attribution.
   A tested `labeled_s_4afc.prepare` command converts frozen trials without resampling.
