@@ -256,6 +256,7 @@ def fetch(
     repo: str | None = None,
     repo_type: str = "dataset",
     allow_unverified: bool = False,
+    replace: bool = True,
 ) -> Path:
     """Stage and verify a pinned download before replacing dest/name.
 
@@ -270,6 +271,8 @@ def fetch(
     root = Path(dest or os.environ.get("EGOLEARN_DATA", "data"))
     root.mkdir(parents=True, exist_ok=True)
     target = root / name
+    if target.exists() and not replace:
+        raise FileExistsError(f"destination already exists: {target}; pass --replace to replace it")
     rid = repo or f"{ORG}/egolearn-{name}"
     info = HfApi().repo_info(repo_id=rid, repo_type=repo_type, revision=revision)
     if not info.sha:
@@ -295,6 +298,8 @@ def fetch(
         (stage / FETCH_RECORD).write_text(json.dumps(record, indent=2) + "\n")
         with (root / f".{name}.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
+            if target.exists() and not replace:
+                raise FileExistsError(f"destination already exists: {target}; pass --replace")
             if target.is_symlink() or (target.exists() and not target.is_dir()):
                 raise ValueError(f"destination must be a directory, not a symlink: {target}")
             backup = Path(temporary) / "previous"

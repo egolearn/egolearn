@@ -6,6 +6,15 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ## [Unreleased]
 
+### Added
+
+- Complete `egl` lifecycle commands: a shared dataset catalog with access tiers,
+  Hub fetch and checksum verification, benchmark preparation under one data root,
+  read-only environment diagnostics, and dispatch to the cluster launcher.
+- Pinned benchmark suites with frozen per-seed configs, local or Slurm-array
+  execution, atomic run records, and complete-seed mean/SD tables with baseline
+  comparisons. Training and evaluation can also opt into `record_json` directly.
+
 
 ### Added
 

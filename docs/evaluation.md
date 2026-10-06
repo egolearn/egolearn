@@ -101,7 +101,7 @@ The converter checks the frozen trial/category counts, target vocabulary coverag
 and local image paths, and refuses to overwrite an existing output:
 
 ```bash
-uv run python -m egolearn.evaluation.benchmarks.labeled_s_4afc.prepare \
+uv run egl data prepare labeled-s-4afc \
   --data_root "$LABELED_S_ROOT" --trials_json "$LABELED_S_TRIALS" \
   --vocab_json "$VOCAB_JSON" --output data/labeled_s_4afc_manifest.json
 ```
@@ -219,7 +219,7 @@ implementation should receive a model; checkpoint loading belongs to the runner.
 
 ## Hub artifacts and access tiers
 
-`uv run python -m egolearn.hub fetch shape-bias --revision <tag-or-commit>`
+`uv run egl data fetch shape-bias --revision <tag-or-commit>`
 fetches `agentic-learning-ai-lab/egolearn-shape-bias` into
 `$EGOLEARN_DATA/shape-bias` (default `data/shape-bias`). The download is staged,
 checked against `checksums.sha256`, and installed only after verification.
@@ -277,7 +277,7 @@ To upload a prepared directory (not a training run directory):
 uv run python -m egolearn.hub push prepared/ --name shape-bias --license CC-BY-4.0
 uv run python -m egolearn.hub push weights/ --name babycl-saycam-seed0 \
   --repo-type model --license MIT
-uv run python -m egolearn.hub verify prepared/
+uv run egl data verify prepared/
 uv run python -m egolearn.hub checksum prepared/
 ```
 

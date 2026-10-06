@@ -1,5 +1,9 @@
 # Command line
 
+Use `uv run egl` after `uv sync`, or `egl` in an activated environment.
+`egolearn` is an equivalent installed alias. Commands are `train`, `eval`, `data`,
+`submit`, `doctor`, and `bench`; each accepts `--help`.
+
 `egl train` and `egl eval` dispatch to the Hydra training and evaluation modules.
 The first argument can be a packaged config name or an existing `.yaml` file;
 relative file paths are resolved from the caller's working directory. `egl eval`
@@ -30,3 +34,78 @@ supplying them later replaces the corresponding shorthand-generated setting.
 
 The existing `python -m egolearn.train` and `python -m egolearn.evaluate` entry
 points remain supported.
+
+## Data
+
+```bash
+egl data list
+egl data list --json
+egl data fetch shape-bias --revision <tag-or-commit>
+egl data verify "$EGOLEARN_DATA/shape-bias"
+egl data prepare shape-bias
+egl data --root /path/to/data prepare babyview-4afc --vocab_json /path/to/vocab.json
+```
+
+The catalog records access tiers and source links. Fetch uses the checksummed Hub
+mechanism; a listed collection is a publication candidate, not a promise that its
+owner has uploaded it. IRB images and upstream-licensed datasets have no automatic
+Hub fetch. Public split metadata is listed separately from restricted pixels.
+`--repo org/name` selects a published dataset collection for a fetchable entry;
+missing checksums require an explicit `--allow-unverified`. Corrupt checksums fail.
+Existing collection directories are preserved unless `--replace` is explicit.
+
+Fetch and preparation defaults share `$EGOLEARN_DATA` (default `./data`). Put
+`--root DIR` before the data subcommand to override that root. Preparation forwards
+the benchmark's existing flags unchanged; explicit source/output options override
+the catalog defaults. Fetch and prepare use the same `ROOT/<name>` collection
+layout; shape-bias source assets live separately under `ROOT/.sources/shape-bias`. Use `egl data prepare NAME --help` for each preparer's
+requirements. Preparation still needs the dependencies and source assets documented
+in the [evaluation guide](evaluation.md). It does not bypass data access requirements.
+
+`data verify DIR` checks the collection's `checksums.sha256` without writing files.
+It reports missing, altered, or unlisted payloads. Legacy preparation outputs have
+their own benchmark validators and may not contain collection checksums; a missing
+checksum file fails verification. The existing `python -m egolearn.hub checksum DIR`
+command can create collection checksums after preparation. Existing module and
+script entry points retain their original defaults.
+
+## Diagnostics and cluster submission
+
+```bash
+egl doctor
+egl doctor --extra train --require-cuda
+egl doctor --cluster --require-env WANDB_API_KEY
+egl submit --gres=gpu:1 --time=01:00:00 -- egl train toy_streaming
+```
+
+Doctor prints one `ok`, `warn`, or `fail` line per check. Failures return status 1;
+warnings alone return 0. It checks the interpreter, virtual environment, installed
+extras, CUDA availability, data-root readability and requested environment variable
+names. CUDA is queried in a bounded child process without allocating a tensor;
+`--skip-cuda` skips that query. Environment variable values are never printed.
+Cluster checks activate with `--cluster` or inside a Slurm job. They share required
+and optional storage-variable names with the launcher and resolve symlinks before
+checking whether paths fall under `$HOME`. Doctor creates no directories, downloads
+no packages and changes no settings.
+
+Submit forwards its arguments to the [cluster launcher](cluster.md), including
+`--sweep`, `--commands`, and `--dry-run`. Run it from a clean EgoLearn checkout root
+after sourcing `env.sh`: that checkout is the artifact the launcher archives.
+The installed CLI can live elsewhere, but a wheel alone cannot supply a checkout
+to archive. `--help` works outside a checkout. The original launcher remains
+available for login nodes without a Python environment. No shared lab package is
+required; the existing launcher is the sole submission implementation.
+
+## Benchmark suites
+
+```bash
+egl bench run benchmarks/toy.yaml --output runs/toy-suite
+egl bench table runs/toy-suite/manifest.json
+egl bench table runs/toy-suite/manifest.json --format json
+egl bench run benchmarks/toy.yaml --output "$EGOLEARN_ARTIFACTS/toy-suite" \
+  --submit --sbatch=--cpus-per-task=2 --sbatch=--time=00:10:00
+```
+
+The [suite guide](benchmark_suites.md) defines pinned inputs, per-seed records,
+baseline comparisons and failure handling. Local execution is sequential; `--submit`
+creates one Slurm array task per seed. The toy suite uses synthetic data and CPU.

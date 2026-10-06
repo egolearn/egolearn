@@ -106,6 +106,8 @@ class OfflineDriver:
         self.max_steps = None if max_steps is None else int(max_steps)
         self.subsample = max(1, int(subsample))
         self.hooks = hooks or []
+        self.skipped_steps = 0
+        self.nonfinite_steps = 0
         self.grad_accumulation = max(1, int(grad_accumulation))
         self.prefetch = bool(prefetch)
         self._base_lrs = [g["lr"] for g in optimizer.param_groups]
@@ -190,6 +192,11 @@ class OfflineDriver:
                     term = loss_fn.weight * lval
                     total = term if total is None else total + term
         if total is None or not torch.isfinite(total):
+            self.skipped_steps += 1
+            self.nonfinite_steps += int(total is not None)
+            for hook in self.hooks:
+                if callback := getattr(hook, "on_skip", None):
+                    callback(self, nonfinite=total is not None)
             print(
                 f"[offline] skipping step {self.ctx.clock.step}: non-finite or empty loss",
                 flush=True,

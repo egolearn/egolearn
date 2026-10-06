@@ -1,0 +1,310 @@
+"""Pin enforcement, frozen configurations, per-seed execution and array dispatch."""
+
+import json
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+from omegaconf import OmegaConf
+
+from egolearn.commands import bench
+from egolearn.commands.bench_table import summarize
+from egolearn.hub import sha256_file, write_checksums
+
+
+def suite_file(tmp_path, **changes):
+    suite = {
+        "version": 1,
+        "name": "toy",
+        "entry": "train",
+        "config": "toy_streaming",
+        "seeds": [7, 8],
+        "overrides": ["++driver.max_steps=1"],
+        "inputs": {},
+        "metrics": {"train/last_step/loss": "min", "train/steps": "max"},
+        **changes,
+    }
+    path = tmp_path / "suite.yaml"
+    OmegaConf.save(OmegaConf.create(suite), path)
+    return path
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        "seed=42",
+        "++seed=42",
+        "hydra.run.dir=elsewhere",
+        "run_dir=elsewhere",
+        "record_json=elsewhere",
+        "~seed",
+        "--multirun",
+        "resume=auto",
+        "dry_run=true",
+        "model={}",
+        "model.weights=elsewhere",
+        "model.weights.child=elsewhere",
+    ],
+)
+def test_overrides_cannot_replace_managed_or_pinned_keys(override):
+    with pytest.raises(ValueError):
+        bench._overrides([override], {"model.weights"})
+
+
+def test_pinned_file_and_directory_are_verified_before_outputs(tmp_path):
+    payload = tmp_path / "payload"
+    payload.mkdir()
+    (payload / "data.txt").write_text("synthetic")
+    checksums = write_checksums(payload)
+    spec = suite_file(
+        tmp_path,
+        inputs={
+            "stream.root_dir": {
+                "path": "payload",
+                "sha256": sha256_file(checksums),
+            }
+        },
+    )
+    suite = bench.load_suite(spec, [])
+    assert suite["inputs"]["stream.root_dir"]["path"] == str(payload)
+    (payload / "data.txt").write_text("changed")
+    with pytest.raises(ValueError, match="altered"):
+        bench.plan_suite(spec, tmp_path / "output", [])
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"seeds": [1, 1]},
+        {"seeds": [True]},
+        {"seeds": []},
+        {"seeds": [-1]},
+        {"entry": "shell"},
+        {"config": "--help"},
+        {"unknown": 1},
+        {"metrics": {}},
+        {"entry": "eval", "config": "evaluate"},
+    ],
+)
+def test_invalid_suite_fails_before_writing(tmp_path, changes):
+    with pytest.raises(ValueError):
+        bench.plan_suite(suite_file(tmp_path, **changes), tmp_path / "output", [])
+    assert not (tmp_path / "output").exists()
+
+
+def test_real_synthetic_training_suite_records_and_summarizes(tmp_path, monkeypatch):
+    monkeypatch.setenv("OMP_NUM_THREADS", "1")
+    monkeypatch.setenv("MKL_NUM_THREADS", "1")
+    spec = suite_file(tmp_path)
+    manifest = bench.plan_suite(spec, tmp_path / "output with spaces", [])
+    # Planning freezes the full composed configuration, not just the primary YAML.
+    spec.write_text("not: the planned config\n")
+    assert bench.run_suite(manifest, False, []) == 0
+    result = summarize(manifest, allow_unverified=True)
+    assert not result["problems"], result
+    assert {row["metric"]: row["n"] for row in result["rows"]} == {
+        "train/last_step/loss": 2,
+        "train/steps": 2,
+    }
+    for seed in (7, 8):
+        record = json.loads((manifest.parent / f"seed-{seed}/record.json").read_text())
+        assert record["config"]["seed"] == seed
+        assert record["metrics"]["train/steps"] == 1
+        assert record["wall_seconds"] > 0
+    with pytest.raises(FileExistsError):
+        bench.run_one(manifest, 0, sha256_file(manifest))
+
+
+def test_modified_config_fails_and_records_error(tmp_path):
+    spec = suite_file(tmp_path, seeds=[7])
+    manifest = bench.plan_suite(spec, tmp_path / "output", [])
+    (manifest.parent / "seed-7/config.yaml").write_text("seed: 99\n")
+    assert bench.run_suite(manifest, False, []) == 1
+    record = json.loads((manifest.parent / "seed-7/record.json").read_text())
+    assert record["status"] == "failed"
+    assert record["error_type"] == "ValueError"
+
+
+def test_array_uses_compute_python_and_preserves_argument_boundaries(tmp_path, monkeypatch):
+    manifest = bench.plan_suite(suite_file(tmp_path), tmp_path / "output with spaces", [])
+    monkeypatch.setattr("egolearn.commands.submit.launcher", lambda: tmp_path / "submit")
+    calls = []
+
+    def submit_call(args):
+        calls.append(args)
+        return 0
+
+    monkeypatch.setattr(subprocess, "call", submit_call)
+    assert bench.run_suite(manifest, True, ["--gres=gpu:1"]) == 0
+    commands = (manifest.parent / "commands.sh").read_text().splitlines()
+    assert len(commands) == 2
+    for index, command in enumerate(commands):
+        args = shlex.split(command)
+        assert args[:4] == ["python", "-m", "egolearn.commands.bench", "_run"]
+        assert args[4:6] == [str(manifest), str(index)]
+        assert str(Path(sys.executable)) not in command
+    assert calls[0] == [
+        "bash",
+        str(tmp_path / "submit"),
+        "--gres=gpu:1",
+        "--no-requeue",
+        "--commands",
+        str(manifest.parent / "commands.sh"),
+    ]
+
+
+def test_cli_bench_help_needs_no_torch(tmp_path):
+    result = subprocess.run(
+        [sys.executable, "-I", "-m", "egolearn.cli", "bench", "--help"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "table" in result.stdout and "run" in result.stdout
+
+
+def test_pins_apply_before_interpolation_and_runtime_env_is_not_frozen(tmp_path, monkeypatch):
+    config = tmp_path / "custom.yaml"
+    config.write_text(
+        "run_dir: old\nderived: ${run_dir}/child\nnode: ${oc.env:EGOLEARN_TEST_NODE}\n"
+    )
+    monkeypatch.setenv("EGOLEARN_TEST_NODE", "login")
+    spec = suite_file(tmp_path, config="custom.yaml", overrides=[], seeds=[1, 2])
+    manifest = bench.plan_suite(spec, tmp_path / "résultats with spaces", [])
+    monkeypatch.setenv("EGOLEARN_TEST_NODE", "compute")
+    for seed in (1, 2):
+        frozen = manifest.parent / f"seed-{seed}/config.yaml"
+        assert "login" not in frozen.read_text()
+        cfg = OmegaConf.load(frozen)
+        assert cfg.derived == str(frozen.parent / "artifacts/child")
+        assert cfg.node == "compute"
+        assert cfg.seed == seed  # the original config did not declare seed
+
+
+def test_non_ascii_input_paths_roundtrip_through_hydra(tmp_path):
+    payload = tmp_path / "données avec espaces.json"
+    payload.write_text("{}")
+    spec = suite_file(
+        tmp_path,
+        seeds=[1],
+        inputs={
+            "new_input": {
+                "path": payload.name,
+                "sha256": sha256_file(payload),
+            }
+        },
+    )
+    manifest = bench.plan_suite(spec, tmp_path / "out", [])
+    cfg = OmegaConf.load(manifest.parent / "seed-1/config.yaml")
+    assert cfg.new_input == str(payload)
+
+
+def test_duplicate_yaml_keys_and_sweeps_are_rejected(tmp_path):
+    spec = suite_file(tmp_path)
+    spec.write_text(spec.read_text() + "name: replacement\n")
+    with pytest.raises(Exception, match=r"duplicate|Duplicate"):
+        bench.load_suite(spec, [])
+    with pytest.raises(ValueError, match="single values"):
+        bench._overrides(["device=cpu,cuda"], set())
+
+
+def test_cluster_visibility_and_readonly_paths_fail_before_writes(tmp_path, monkeypatch):
+    from egolearn.commands.doctor import cluster_variables
+
+    for names in cluster_variables().values():
+        for name in names:
+            monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("APPTAINER_BIND", raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    out = tmp_path / "outside" / "runs"
+    with pytest.raises(ValueError, match="outside configured"):
+        bench.check_cluster_paths(out, {})
+    monkeypatch.setenv("APPTAINER_BIND", f"{out.parent}:{out.parent}:ro")
+    with pytest.raises(ValueError, match="read-only"):
+        bench.check_cluster_paths(out, {})
+    assert not out.exists()
+
+
+def test_inputs_changed_during_execution_do_not_get_averaged(tmp_path, monkeypatch):
+    payload = tmp_path / "payload"
+    payload.write_text("before")
+    spec = suite_file(
+        tmp_path,
+        seeds=[7],
+        inputs={
+            "unused_pin": {
+                "path": "payload",
+                "sha256": sha256_file(payload),
+            }
+        },
+    )
+    manifest = bench.plan_suite(spec, tmp_path / "output", [])
+    identity = bench.source_identity()
+    monkeypatch.setattr(bench, "source_identity", lambda: identity)
+    original = subprocess.run
+
+    def changed(command, **kwargs):
+        if "egolearn.cli" in command:
+            payload.write_text("after")
+            return subprocess.CompletedProcess(command, 0)
+        return original(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", changed)
+    assert bench.run_suite(manifest, False, []) == 1
+    record = json.loads((manifest.parent / "seed-7/record.json").read_text())
+    assert record["status"] == "failed"
+
+
+def test_real_synthetic_evaluation_suite(tmp_path, monkeypatch):
+    import torch
+    from PIL import Image
+
+    from egolearn.model.build import build_model
+
+    monkeypatch.setenv("OMP_NUM_THREADS", "1")
+    model = build_model({"encoders": {"vision": {"_target_": "encoder:toy_cnn", "dim": 8}}})
+    checkpoint = tmp_path / "model.pth"
+    torch.save({"model": model.state_dict(), "model_config": model.construction_config}, checkpoint)
+    rows = []
+    for label, color in enumerate(("red", "blue")):
+        image = tmp_path / f"image-{label}.png"
+        Image.new("RGB", (16, 16), color).save(image)
+        rows.append({"image": str(image), "label": label})
+    split = tmp_path / "split.json"
+    split.write_text(json.dumps({"classes": ["red", "blue"], "train": rows, "test": rows}))
+    config = tmp_path / "suite-eval.yaml"
+    OmegaConf.save(
+        OmegaConf.create(
+            {
+                "defaults": ["/evaluate", "_self_"],
+                "_imports_": ["egolearn.data.views", "egolearn.evaluation.linear_probe"],
+                "benchmarks": [
+                    {"_target_": "probe:linear", "name": "objects", "size": 16, "max_iter": 2}
+                ],
+            }
+        ),
+        config,
+    )
+    spec = suite_file(
+        tmp_path,
+        entry="eval",
+        config="suite-eval.yaml",
+        seeds=[0],
+        overrides=[],
+        inputs={
+            "checkpoint": {"path": "model.pth", "sha256": sha256_file(checkpoint)},
+            "benchmarks.0.manifest": {"path": "split.json", "sha256": sha256_file(split)},
+        },
+        metrics={"objects/top1": "max"},
+    )
+    manifest = bench.plan_suite(spec, tmp_path / "output", [])
+    assert bench.run_suite(manifest, False, []) == 0
+    result = summarize(manifest, allow_unverified=True)
+    assert not result["problems"], result
+    assert 0 <= result["rows"][0]["mean"] <= 1

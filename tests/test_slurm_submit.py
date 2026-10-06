@@ -32,6 +32,9 @@ def cluster(tmp_path):
     checkout.mkdir()
     shutil.copytree(ROOT / "scripts/slurm", checkout / "scripts/slurm")
     shutil.copytree(ROOT / "containers", checkout / "containers")
+    resource = Path("src/egolearn/commands/cluster_paths.txt")
+    (checkout / resource).parent.mkdir(parents=True)
+    shutil.copyfile(ROOT / resource, checkout / resource)
     (checkout / "uv.lock").write_text("fixture lock")
     (checkout / "pyproject.toml").write_text("fixture project")
     (checkout / ".python-version").write_text("3.12")
@@ -127,6 +130,34 @@ def test_ignored_credentials_not_snapshotted(cluster):
     (checkout / "env.sh").write_text("synthetic settings")
     _, calls = submit(cluster, "--", "true")
     assert not (Path(calls[-1]["env"]["EGOLEARN_RUN_DIR"]) / "code/env.sh").exists()
+
+
+def test_bench_array_plan_matches_archived_wheel_identity(cluster, monkeypatch, tmp_path):
+    from egolearn import run_record
+    from egolearn.commands import bench
+
+    checkout, env = cluster
+    (checkout / "pyproject.toml").write_text('[project]\nname="egolearn"\n')
+    commit(checkout)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv("APPTAINER_BIND", raising=False)
+    monkeypatch.chdir(checkout)
+    spec = tmp_path / "suite.yaml"
+    spec.write_text(
+        "version: 1\nname: toy\nentry: train\nconfig: toy_streaming\nseeds: [1, 2]\n"
+        "overrides: ['++driver.max_steps=1']\nmetrics: {train/steps: max}\n"
+    )
+    manifest = bench.plan_suite(spec, Path(env["EGOLEARN_ARTIFACTS"]) / "suite", [], submit=True)
+    assert bench.run_suite(manifest, True, ["--time=00:01:00"]) == 0
+    calls = [json.loads(line) for line in Path(env["TEST_SUBMIT_LOG"]).read_text().splitlines()]
+    job = calls[-1]["env"]
+    assert "--array=0-1" in calls[-1]["args"]
+    assert "--no-requeue" in calls[-1]["args"]
+    for name in ("EGOLEARN_RUN_DIR", "EGOLEARN_CODE_COMMIT", "EGOLEARN_IMAGE"):
+        monkeypatch.setenv(name, job[name])
+    monkeypatch.setattr(run_record, "__file__", str(tmp_path / "wheel/lib/egolearn/run_record.py"))
+    assert run_record.source_identity() == json.loads(manifest.read_text())["provenance"]
 
 
 @pytest.mark.parametrize("change", ["lock", "extras", "image", "code"])

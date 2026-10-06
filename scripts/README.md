@@ -18,3 +18,7 @@ Planned (see `docs/roadmap.md` phase 6): hydra+submitit launching and per-run
 code snapshotting.
 
 - `fetch_data.py`: wrapper for `python -m egolearn.hub` (fetch, push, verify, checksum); see [Hub artifacts](../docs/evaluation.md#hub-artifacts-and-access-tiers).
+
+Prefer `egl data prepare NAME`, `egl data fetch NAME`, and `egl submit` for the
+corresponding operations; the scripts remain compatibility entry points.
+See [the CLI guide](../docs/cli.md) and [benchmark suites](../docs/benchmark_suites.md).

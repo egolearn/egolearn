@@ -1,7 +1,8 @@
 # Cluster jobs
 
-Use `scripts/slurm/submit [sbatch options] -- <command>` from a clean checkout.
-The login node needs Bash 4.4+, Git, coreutils, findutils, tar, iconv and `sbatch`;
+Use `egl submit [sbatch options] -- <command>` from a clean checkout.
+The installed `egl` command needs a base Python environment (no training extra).
+The launcher also needs Bash 4.4+, Git, coreutils, findutils, tar, iconv and `sbatch`;
 compute nodes need Bash 4.4+, Apptainer and `flock`. There is no login-node
 environment build or image pull.
 
@@ -14,7 +15,7 @@ site's writable storage root, edit account/partition settings, and run:
 ```bash
 chmod 600 env.sh
 source env.sh
-scripts/slurm/submit --gres=gpu:1 --cpus-per-task=8 --mem=64G --time=24:00:00 -- \
+egl submit --gres=gpu:1 --cpus-per-task=8 --mem=64G --time=24:00:00 -- \
   python -m egolearn.train --config-dir projects/babycl/configs \
   --config-name saycam_default stream.root_dir="$EGOLEARN_DATA/saycam"
 ```
@@ -77,9 +78,11 @@ Every submit archives exactly one clean Git commit. Staged, unstaged and
 untracked changes are refused; ignored data, `env.sh`, environments and outputs
 are excluded. Commit the intended code before submitting. Git submodules and
 tracked symlinks are refused because they could escape the archived tree.
-Submission uses Bash, Git and standard Unix tools to archive code and write
-`run.json`; it does not invoke Python on the login node. Python setup and job
-commands run only in scheduled jobs.
+The underlying `scripts/slurm/submit` uses Bash, Git and standard Unix tools to
+archive code and write `run.json`; it remains available without Python on the
+login node. `egl submit` dispatches to that script from an installed base package.
+`egl bench run --submit` also uses Python to compose configs and verify inputs
+before submitting. Training dependencies and the container are prepared in CPU jobs.
 Command arguments must be UTF-8; submission checks them with `iconv` before
 creating a snapshot so `run.json` remains valid JSON.
 
@@ -123,11 +126,11 @@ queue lookup cannot exclude a job that has already finished.
 ## Arrays and dry runs
 
 ```bash
-scripts/slurm/submit --sweep --max-parallel 4 --gres=gpu:1 --cpus-per-task=8 --mem=64G -- \
+egl submit --sweep --max-parallel 4 --gres=gpu:1 --cpus-per-task=8 --mem=64G -- \
   python -m egolearn.train --config-dir projects/babycl/configs \
   --config-name saycam_default seed=0,1,2 driver.rate.steps_per_admit=1,4
-scripts/slurm/submit --commands /path/to/commands.txt --gres=gpu:1
-scripts/slurm/submit --dry-run -- python -m egolearn.train --help
+egl submit --commands /path/to/commands.txt --gres=gpu:1
+egl submit --dry-run -- python -m egolearn.train --help
 ```
 
 `--sweep` expands top-level Hydra comma lists into a Cartesian product. Lists,

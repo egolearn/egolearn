@@ -4,7 +4,7 @@ See [cluster setup and submission](../../docs/cluster.md). The front door is:
 
 ```bash
 source env.sh
-scripts/slurm/submit [sbatch options] -- python -m egolearn.train [Hydra options]
+egl submit [sbatch options] -- egl train CONFIG [Hydra options]
 ```
 
 `submit` snapshots a clean commit, prepares the pinned container/environment in a

@@ -133,12 +133,12 @@ inside the preparation process.
 
 ```bash
 uv run --no-sync --with matplotlib --with scipy --with colorcet \
-  --with opencv-python-headless python scripts/prepare_spatial_relations.py \
+  --with opencv-python-headless egl data prepare spatial-relations \
   --generator-root "$SPATIAL_GENERATOR_ROOT" \
   --exp3-image-root "$SPATIAL_RENDER_ROOT" \
   --output-dir data/spatial_relations/v1
 
-uv run python scripts/prepare_spatial_relations.py \
+uv run egl data prepare spatial-relations \
   --output-dir data/spatial_relations/v1 --validate-only
 ```
 
@@ -156,11 +156,11 @@ Keep `data/spatial_relations/v1/` for full evaluations and create the smaller
 `data/spatial_relations/monitoring_v1/` for frequent training-time monitoring:
 
 ```bash
-uv run python scripts/prepare_spatial_monitoring.py \
+uv run egl data prepare spatial-monitoring \
   --full-root data/spatial_relations/v1 \
   --output-dir data/spatial_relations/monitoring_v1 --seed 33
 
-uv run python scripts/prepare_spatial_relations.py \
+uv run egl data prepare spatial-relations \
   --output-dir data/spatial_relations/monitoring_v1 --validate-only
 ```
 

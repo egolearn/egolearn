@@ -88,6 +88,8 @@ class LockstepDriver:
         self.rate = {"steps_per_admit": 1, "resample": True, **(rate or {})}
         self.warmup = warmup or {}
         self.hooks = hooks or []
+        self.skipped_steps = 0
+        self.nonfinite_steps = 0
         self.max_steps = max_steps
         self.grad_accumulation = max(1, int(grad_accumulation))
         # Prefetch: compose the NEXT batch (CPU: sampling, decode, augment)
@@ -325,6 +327,11 @@ class LockstepDriver:
                         term = loss_fn.weight * lval
                         total = term if total is None else total + term
             if total is None or not torch.isfinite(total):
+                self.skipped_steps += 1
+                self.nonfinite_steps += int(total is not None)
+                for hook in self.hooks:
+                    if callback := getattr(hook, "on_skip", None):
+                        callback(self, nonfinite=total is not None)
                 print(
                     f"[driver] skipping step {self.ctx.clock.step}: non-finite or empty loss",
                     flush=True,
