@@ -8,6 +8,12 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- PR message guidance and template sections for Summary, optional Decisions,
+  experiment Results, Test plan, and Checklist. The stdlib-only
+  `scripts/check_pr_message.py` checks drafts locally and warns when project or
+  YAML config changes have no Results section. Checklist checks use the template's
+  top-level boxes and ignore nested task examples. Summary checks treat numbered
+  items as bullets and require a separate prose paragraph; it is not a CI gate.
 - Installed `egl train` and `egl eval` commands accept packaged config names or
   YAML paths, with `egolearn` as an equivalent command alias. Hydra handles later
   config-selection flags, including abbreviations, using its normal precedence.
