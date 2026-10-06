@@ -262,9 +262,11 @@ For example, a probe's `manifest` may be
 `hf://agentic-learning-ai-lab/egolearn-shape-bias@v1/stimulus_manifest.json`.
 Checkpoint and initialization inputs use model repos with the same syntax, ending
 in an explicit filename such as `@v1/model.safetensors`; local exported directories
-and legacy checkpoint paths still work. Resume continues to require a full trusted
-snapshot, which stays in the local run directory. Hub checksums establish file
-integrity, not trust in legacy Python pickle contents. Model config files use model repos too.
+and legacy checkpoint paths still work. Keep full snapshots in local run directories.
+Resume also retains support for legacy Hub snapshot references and always uses
+unrestricted pickle, so only resume snapshots you trust. Model Hub publishing now
+accepts only exported weights. Hub checksums establish file integrity, not trust
+in legacy Python pickle contents. Model config files use model repos too.
 
 | Dataset / artifact | Access tier | What may be hosted |
 | --- | --- | --- |

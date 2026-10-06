@@ -7,6 +7,7 @@ import copy
 import json
 import tempfile
 from pathlib import Path
+from pickle import UnpicklingError
 
 
 def export_checkpoint(
@@ -65,7 +66,7 @@ def export_checkpoint(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog="egl export", description=__doc__)
     parser.add_argument("checkpoint")
     parser.add_argument("out_dir")
     parser.add_argument(
@@ -74,7 +75,13 @@ def main(argv: list[str] | None = None) -> int:
         help="allow unrestricted pickle for an owned snapshot",
     )
     args = parser.parse_args(argv)
-    print(export_checkpoint(args.checkpoint, args.out_dir, trusted_snapshot=args.trusted_snapshot))
+    try:
+        output = export_checkpoint(
+            args.checkpoint, args.out_dir, trusted_snapshot=args.trusted_snapshot
+        )
+    except (OSError, ValueError, UnpicklingError, RuntimeError) as error:
+        parser.exit(1, f"egl export: {error}\n")
+    print(output)
     return 0
 
 

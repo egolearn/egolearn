@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path, PurePosixPath
+from pickle import UnpicklingError
 from typing import Any
 
 import torch
@@ -27,6 +28,7 @@ def read_checkpoint(
     if not path.exists():
         raise FileNotFoundError(f"checkpoint not found: {path}")
     if path.is_dir() or path.suffix == ".safetensors":
+        from safetensors import SafetensorError
         from safetensors.torch import load_file
 
         weights = path / WEIGHTS if path.is_dir() else path
@@ -42,8 +44,12 @@ def read_checkpoint(
                 f"hf://{kind}/{hub['repo']}@{hub['commit']}/{sibling}", repo_type=hub["repo_type"]
             )
         document = inspect_export(weights, metadata)
+        try:
+            tensors = load_file(weights, device="cpu")
+        except SafetensorError as error:
+            raise ValueError(f"invalid safetensors weights: {error}") from error
         state = {
-            "model": load_file(weights, device="cpu"),
+            "model": tensors,
             "model_config": document["model_config"],
             "export_contract": document["export_contract"],
             "step": document["provenance"]["step"],
@@ -65,7 +71,16 @@ def read_checkpoint(
     with path.open("rb") as file:
         digest = hashlib.file_digest(file, "sha256").hexdigest()
         file.seek(0)
-        state = torch.load(file, map_location="cpu", weights_only=not trusted_snapshot)
+        try:
+            state = torch.load(file, map_location="cpu", weights_only=not trusted_snapshot)
+        except UnpicklingError as error:
+            if trusted_snapshot:
+                raise
+            raise UnpicklingError(
+                "restricted checkpoint loading failed; only for a snapshot whose producer and "
+                "contents you trust, use trusted_snapshot=True (Hydra: trusted_snapshot=true or "
+                "+init_from.trusted_snapshot=true; egl export: --trusted-snapshot)"
+            ) from error
     if not isinstance(state, dict) or not isinstance(state.get("model"), dict):
         raise ValueError("expected an EgoLearn checkpoint or snapshot containing a 'model' mapping")
     step = state.get("step")

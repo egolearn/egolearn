@@ -12,7 +12,7 @@ import pytest
 import torch
 
 from egolearn.evaluation import Benchmark, evaluate_checkpoint, load_model
-from egolearn.export import export_checkpoint
+from egolearn.export import export_checkpoint, main
 from egolearn.model.build import build_model
 from egolearn.model.init import load_pretrained_weights
 from egolearn.utils.checkpoint import read_checkpoint
@@ -104,6 +104,22 @@ def test_exported_metadata_changes_artifact_identity(checkpoint, tmp_path):
     assert before["weights_sha256"] == after["weights_sha256"]
 
 
+def test_export_keeps_portable_initialization_lineage(checkpoint, tmp_path):
+    source, _ = checkpoint
+    state = torch.load(source, weights_only=True)
+    state["model_config"]["init_from"] = {
+        "checkpoint": str(tmp_path / "private-source" / "previous.pth"),
+        "sha256": "d" * 64,
+        "step": 5,
+    }
+    torch.save(state, source)
+    exported = export_checkpoint(source, tmp_path / "export")
+    serialized = (exported / "model.json").read_text()
+    lineage = json.loads(serialized)["model_config"]["init_from"]
+    assert lineage == {"checkpoint": "previous.pth", "sha256": "d" * 64, "step": 5}
+    assert str(tmp_path) not in serialized
+
+
 def test_export_handles_shared_storage_and_noncontiguous_views(checkpoint, tmp_path):
     source, _ = checkpoint
     state = torch.load(source, weights_only=True)
@@ -184,6 +200,44 @@ def test_corrupt_export_never_falls_back_to_pickle(checkpoint, tmp_path, monkeyp
     monkeypatch.setattr(torch, "load", forbidden)
     with pytest.raises(ValueError, match="SHA-256"):
         read_checkpoint(exported, trusted_snapshot=True)
+
+
+def test_tensor_read_errors_have_checkpoint_context(checkpoint, tmp_path, monkeypatch):
+    from safetensors import SafetensorError
+
+    source, _ = checkpoint
+    exported = export_checkpoint(source, tmp_path / "export")
+
+    def fail(*args, **kwargs):
+        raise SafetensorError("simulated tensor read failure")
+
+    monkeypatch.setattr("safetensors.torch.load_file", fail)
+    with pytest.raises(ValueError, match=r"invalid safetensors weights.*simulated"):
+        read_checkpoint(exported)
+
+
+@pytest.mark.parametrize("error", ["existing", "metadata", "snapshot"])
+def test_export_cli_reports_expected_errors_without_tracebacks(checkpoint, tmp_path, capsys, error):
+    source, _ = checkpoint
+    output = tmp_path / "export"
+    if error == "existing":
+        output.mkdir()
+        match = "already exists"
+    else:
+        state = torch.load(source, weights_only=True)
+        if error == "metadata":
+            state.pop("model_config")
+            match = "construction metadata"
+        else:
+            state["snapshot_only"] = Path("synthetic-state")
+            match = "--trusted-snapshot"
+        torch.save(state, source)
+    with pytest.raises(SystemExit) as caught:
+        main([str(source), str(output)])
+    assert caught.value.code == 1
+    captured = capsys.readouterr()
+    assert match in captured.err and "Traceback" not in captured.err
+    assert not captured.out
 
 
 def test_hub_export_load_pins_metadata_to_weights_commit(checkpoint, tmp_path, monkeypatch):

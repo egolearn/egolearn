@@ -310,13 +310,25 @@ assert 'torch' not in sys.modules
     subprocess.run([sys.executable, "-c", script, str(model_export)], check=True)
 
 
-@pytest.mark.parametrize("corruption", ["extra_pickle", "invalid_weights", "invalid_json"])
+@pytest.mark.parametrize(
+    "corruption", ["extra_pickle", "invalid_weights", "invalid_header", "invalid_json", "nonfinite"]
+)
 def test_model_upload_validates_export_before_creating_repo(remote, model_export, corruption):
     _, state = remote
     if corruption == "extra_pickle":
         (model_export / "snapshot.pth").write_bytes(b"not exported")
-    elif corruption == "invalid_weights":
+    elif corruption in {"invalid_weights", "invalid_header"}:
         (model_export / "model.safetensors").write_bytes(b"not safetensors")
+        if corruption == "invalid_header":
+            path = model_export / "model.json"
+            document = json.loads(path.read_text())
+            document["weights_sha256"] = hub.sha256_file(model_export / "model.safetensors")
+            path.write_text(json.dumps(document))
+    elif corruption == "nonfinite":
+        path = model_export / "model.json"
+        document = json.loads(path.read_text())
+        document["model_config"]["invalid"] = float("nan")
+        path.write_text(json.dumps(document))
     else:
         (model_export / "model.json").write_text("{}")
     with pytest.raises(ValueError):

@@ -12,6 +12,10 @@ WEIGHTS = "model.safetensors"
 METADATA = "model.json"
 
 
+def _invalid_constant(value: str) -> None:
+    raise ValueError(f"model.json must contain standard JSON, not {value}")
+
+
 def file_digest(path: Path) -> str:
     with path.open("rb") as file:
         return hashlib.file_digest(file, "sha256").hexdigest()
@@ -20,7 +24,7 @@ def file_digest(path: Path) -> str:
 def inspect_export(weights: Path, metadata: Path | None = None) -> dict[str, Any]:
     """Validate the JSON schema, weight digest, and safetensors header."""
     metadata = metadata if metadata is not None else weights.with_name(METADATA)
-    document = json.loads(metadata.read_text(encoding="utf-8"))
+    document = json.loads(metadata.read_text(encoding="utf-8"), parse_constant=_invalid_constant)
     if not isinstance(document, dict) or document.get("format_version") != 1:
         raise ValueError("expected a model.json export with format_version: 1")
     config = document.get("model_config")
@@ -47,13 +51,16 @@ def inspect_export(weights: Path, metadata: Path | None = None) -> dict[str, Any
     if document.get("weights_sha256") != file_digest(weights):
         raise ValueError("model.safetensors SHA-256 does not match model.json")
     try:
-        from safetensors import safe_open
+        from safetensors import SafetensorError, safe_open
     except ImportError as error:
         raise ValueError("model exports require safetensors; install the train extra") from error
     # Header validation does not materialize tensors or import a model framework.
-    with safe_open(weights, framework="numpy") as tensors:
-        if not tensors.keys():
-            raise ValueError("model.safetensors contains no tensors")
+    try:
+        with safe_open(weights, framework="numpy") as tensors:
+            if not tensors.keys():
+                raise ValueError("model.safetensors contains no tensors")
+    except SafetensorError as error:
+        raise ValueError(f"invalid safetensors weights: {error}") from error
     return document
 
 
