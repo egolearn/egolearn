@@ -112,6 +112,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- Benchmark entry points compose Hydra defaults in project configs; offline BabyCL
+  retains its 5,000-step checkpoint cadence when inheriting shared settings.
+
 - Determinism (from PR review): the configured seed now also seeds the
   global torch/python RNGs and snapshots carry their state, so the same
   seed gives bit-identical weights and a resumed run matches an

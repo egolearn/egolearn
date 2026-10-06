@@ -33,4 +33,5 @@ driver:
   warmup: null
 
 hooks:
+  checkpoint_every: 5000
   snapshot_milestones: []

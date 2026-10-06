@@ -266,6 +266,8 @@ def test_iid_preset_keeps_babycl_losses_without_streaming_components():
     assert isinstance(cfg, dict)
     assert isinstance(streaming, dict)
     assert cfg["driver"]["mode"] == "offline"
+    assert cfg["hooks"]["checkpoint_every"] == 5000
+    assert streaming["hooks"]["checkpoint_every"] == 500
     for key in ("model", "losses", "solver", "views", "tokenizer"):
         assert cfg[key] == streaming[key], key
     for key in ("memories", "admission", "routes", "recipe", "embedders", "probes"):
