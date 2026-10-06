@@ -6,7 +6,7 @@ committed:
 
 ```bash
 sbatch --account=<account> --gres=gpu:<type>:1 scripts/slurm/train.sbatch \
-    projects/babycl/configs saycam_default \
+    projects/babycl/configs/saycam_default.yaml \
     stream.root_dir=$DATA_ROOT stream.transcript_json=$TRANSCRIPT_JSON \
     tokenizer.vocab_json=$VOCAB_JSON
 ```
@@ -40,7 +40,7 @@ mismatch), run the same commands inside any recent CUDA container:
 
 ```bash
 apptainer exec --nv <cuda-image.sif> \
-    uv run --no-sync python -m egolearn.train --config-dir ... --config-name ...
+    uv run --no-sync egl train projects/babycl/configs/saycam_default.yaml
 ```
 
 Mount data with `--overlay <data.sqf>:ro` or `--bind` as your site requires.
