@@ -52,7 +52,10 @@ owner has uploaded it. IRB images and upstream-licensed datasets have no automat
 Hub fetch. Public split metadata is listed separately from restricted pixels.
 `--repo org/name` selects a published dataset collection for a fetchable entry;
 missing checksums require an explicit `--allow-unverified`. Corrupt checksums fail.
-Existing collection directories are preserved unless `--replace` is explicit.
+Fetch preserves existing collection directories unless `--replace` is explicit.
+Preparation refuses an existing default output, preserving fetched collections;
+choose an explicit preparer output option to opt into its legacy write behavior.
+Help and spatial `--validate-only` remain available for existing outputs.
 
 Fetch and preparation defaults share `$EGOLEARN_DATA` (default `./data`). Put
 `--root DIR` before the data subcommand to override that root. Preparation forwards
@@ -85,7 +88,9 @@ names. CUDA is queried in a bounded child process without allocating a tensor;
 `--skip-cuda` skips that query. Environment variable values are never printed.
 Cluster checks activate with `--cluster` or inside a Slurm job. They share required
 and optional storage-variable names with the launcher and resolve symlinks before
-checking whether paths fall under `$HOME`. Doctor creates no directories, downloads
+checking whether paths fall under `$HOME`. Submission tools are checked on login
+hosts and Apptainer on compute hosts; neither is required inside a job container.
+Doctor creates no directories, downloads
 no packages and changes no settings.
 
 Submit forwards its arguments to the [cluster launcher](cluster.md), including

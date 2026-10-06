@@ -10,11 +10,12 @@ import re
 import shlex
 import subprocess
 import sys
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
 from egolearn.hub import resolve, sha256_file, verify_checksums
-from egolearn.run_record import atomic_json, source_identity
+from egolearn.run_record import atomic_json, source_checkout, source_identity
 
 _RESERVED = {"seed", "record_json", "run_dir", "output_json", "hydra", "resume", "dry_run"}
 
@@ -77,8 +78,12 @@ def verify_inputs(inputs: dict[str, dict]) -> None:
 def load_suite(path: Path, extra_overrides: list[str]) -> dict[str, Any]:
     from omegaconf import OmegaConf
 
-    path = path.expanduser().resolve()
-    suite = _mapping(OmegaConf.to_container(OmegaConf.load(path), resolve=True), "suite")
+    path = Path(os.path.abspath(path.expanduser()))
+    raw = _mapping(OmegaConf.to_container(OmegaConf.load(path), resolve=False), "suite")
+    # Overrides belong to the job configuration, not the suite's interpolation scope.
+    overrides = raw.pop("overrides", [])
+    suite = _mapping(OmegaConf.to_container(OmegaConf.create(raw), resolve=True), "suite")
+    suite["overrides"] = overrides
     _keys(
         suite,
         {"version", "name", "entry", "config", "seeds", "overrides", "inputs", "metrics"},
@@ -97,7 +102,7 @@ def load_suite(path: Path, extra_overrides: list[str]) -> dict[str, Any]:
         not isinstance(config, str)
         or not config
         or config.startswith(("-", "+", "~"))
-        or "=" in config
+        or ("=" in config and Path(config).suffix != ".yaml")
     ):
         raise ValueError("suite config must be a packaged name or a .yaml file")
     if "/" in config or Path(config).suffix:
@@ -139,7 +144,9 @@ def load_suite(path: Path, extra_overrides: list[str]) -> dict[str, Any]:
             file = Path(item["path"]).expanduser()
             if not file.is_absolute():
                 file = path.parent / file
-        inputs[key] = {"path": str(file.resolve()), "sha256": item["sha256"]}
+        # Preserve scratch aliases: the container binds the configured destination,
+        # which may differ from the host's physical path behind a symlink.
+        inputs[key] = {"path": os.path.abspath(file), "sha256": item["sha256"]}
     # Overlapping paths would cause the later assignment to replace an earlier pin.
     for key in inputs:
         if any(other != key and other.startswith(key + ".") for other in inputs):
@@ -164,12 +171,23 @@ def _compose(suite: dict, run_dir: Path, seed: int) -> dict:
 
     overrides = [*suite["overrides"], f"++seed={seed}"]
     overrides += [f"++{key}={hydra_quote(item['path'])}" for key, item in suite["inputs"].items()]
+    config_path = Path(suite["config"])
+    config_args = ["--config-name", suite["config"]]
+    if config_path.is_absolute():
+        config_args = [
+            "--config-path",
+            str(config_path.parent),
+            "--config-name",
+            config_path.stem,
+            "--config-dir",
+            str(files("egolearn.configs")),
+        ]
     command = [
         sys.executable,
         "-m",
         "egolearn.cli",
         suite["entry"],
-        suite["config"],
+        *config_args,
         "--cfg",
         "job",
         *overrides,
@@ -204,6 +222,11 @@ def cluster_identity() -> dict[str, Any]:
     from egolearn.commands.submit import launcher
 
     root = launcher().parent.parent.parent
+    if source_checkout() != root.resolve():
+        raise ValueError(
+            "submitted suites require an editable installation of this checkout; "
+            "run uv sync --extra train here and use uv run egl bench"
+        )
 
     def git(*args: str) -> str:
         return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
@@ -259,9 +282,15 @@ def check_cluster_paths(output: Path, inputs: dict[str, dict]) -> None:
         closest = max(covering, key=lambda root: len(root.parts))
         if name == "output" and not mounts[closest]:
             raise ValueError("suite output is under a read-only container bind")
-    checkout = Path.cwd().resolve()
-    if output.is_relative_to(checkout):
-        ignored = subprocess.run(["git", "check-ignore", "-q", str(output)], check=False)
+    check_output_location(output, Path.cwd().resolve())
+
+
+def check_output_location(output: Path, checkout: Path | None) -> None:
+    if checkout is not None and output.resolve().is_relative_to(checkout):
+        ignored = subprocess.run(
+            ["git", "-C", str(checkout), "check-ignore", "-q", str(output.resolve())],
+            check=False,
+        )
         if ignored.returncode:
             raise ValueError("suite output inside the checkout must be git-ignored")
 
@@ -271,10 +300,12 @@ def plan_suite(spec: Path, output: Path, overrides: list[str], *, submit: bool =
 
     provenance = cluster_identity() if submit else source_identity()
     suite = load_suite(spec, overrides)
-    output = output.expanduser().resolve()
+    output = Path(os.path.abspath(output.expanduser()))
     hydra_quote(str(output))
     if submit:
         check_cluster_paths(output, suite["inputs"])
+    else:
+        check_output_location(output, source_checkout())
     if output.exists():
         raise FileExistsError(f"output already exists; choose a new directory: {output}")
     runs = []
@@ -314,7 +345,7 @@ def plan_suite(spec: Path, output: Path, overrides: list[str], *, submit: bool =
 
 
 def run_one(manifest_path: Path, index: int, expected_hash: str) -> int:
-    manifest_path = manifest_path.resolve()
+    manifest_path = Path(os.path.abspath(manifest_path.expanduser()))
     if sha256_file(manifest_path) != expected_hash:
         raise ValueError("suite manifest changed after planning")
     manifest = json.loads(manifest_path.read_text())
@@ -322,7 +353,7 @@ def run_one(manifest_path: Path, index: int, expected_hash: str) -> int:
         raise ValueError("run index is outside the manifest")
     run = manifest["runs"][index]
     directory = manifest_path.parent / run["directory"]
-    if directory.resolve().parent != manifest_path.parent:
+    if directory.resolve().parent != manifest_path.parent.resolve():
         raise ValueError("run directory must be directly under the manifest directory")
     record_path = directory / "record.json"
     # A queued task may be retried or launched twice; do not overwrite its first result.
@@ -353,7 +384,10 @@ def run_one(manifest_path: Path, index: int, expected_hash: str) -> int:
             "-m",
             "egolearn.cli",
             manifest["entry"],
-            str(config),
+            "--config-path",
+            str(directory),
+            "--config-name",
+            "config",
             f"hydra.run.dir={hydra_quote(str(directory / 'hydra'))}",
             "hydra.job.chdir=false",
         ]

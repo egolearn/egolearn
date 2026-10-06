@@ -14,10 +14,6 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 - Pinned benchmark suites with frozen per-seed configs, local or Slurm-array
   execution, atomic run records, and complete-seed mean/SD tables with baseline
   comparisons. Training and evaluation can also opt into `record_json` directly.
-
-
-### Added
-
 - Add one-command Slurm/Apptainer submission with CPU environment preparation,
   a pinned lab image, scratch caches, arrays and immutable per-run code snapshots.
 

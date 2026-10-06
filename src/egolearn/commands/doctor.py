@@ -132,21 +132,19 @@ def inspect_environment(
                     checks.append(Check("fail", name, "not set; source env.sh"))
         if not os.environ.get("EGOLEARN_DATA"):
             checks.append(storage_check("data-root-location", str(root.absolute()), home))
-        for binary in ("bash", "git", "sbatch"):
+        in_job = bool(os.environ.get("SLURM_JOB_ID"))
+        in_container = bool(
+            os.environ.get("APPTAINER_CONTAINER") or os.environ.get("SINGULARITY_CONTAINER")
+        )
+        # Submission tools belong to the login host; Apptainer belongs to the
+        # compute host. Neither needs to be installed inside the job container.
+        binaries = () if in_container else ("apptainer",) if in_job else ("bash", "git", "sbatch")
+        for binary in binaries:
             checks.append(
                 Check(
                     "ok" if shutil.which(binary) else "fail",
                     binary,
                     "on PATH" if shutil.which(binary) else "not on PATH",
-                )
-            )
-        # Apptainer is required on compute nodes, but need not be on a login node.
-        if os.environ.get("SLURM_JOB_ID"):
-            checks.append(
-                Check(
-                    "ok" if shutil.which("apptainer") else "fail",
-                    "apptainer",
-                    "on PATH" if shutil.which("apptainer") else "not on PATH",
                 )
             )
     return checks

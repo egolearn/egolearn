@@ -143,6 +143,8 @@ def test_bench_array_plan_matches_archived_wheel_identity(cluster, monkeypatch, 
         monkeypatch.setenv(name, value)
     monkeypatch.delenv("APPTAINER_BIND", raising=False)
     monkeypatch.chdir(checkout)
+    # This fixture supplies the archived launcher tree; emulate its editable install.
+    monkeypatch.setattr(bench, "source_checkout", lambda: checkout)
     spec = tmp_path / "suite.yaml"
     spec.write_text(
         "version: 1\nname: toy\nentry: train\nconfig: toy_streaming\nseeds: [1, 2]\n"

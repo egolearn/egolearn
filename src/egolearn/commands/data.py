@@ -122,6 +122,20 @@ def dataset(name: str) -> Dataset:
 def preparation_command(item: Dataset, root: Path, arguments: list[str]) -> list[str]:
     if item.prepare_module is None:
         raise ValueError(f"{item.name} has no preparer; see {item.source}")
+    read_only = (
+        "--help" in arguments
+        or "-h" in arguments
+        or (item.name == "spatial-relations" and "--validate-only" in arguments)
+    )
+    for flag, path in item.prepare_defaults:
+        if flag not in {"--output-dir", "--out_dir", "--output"}:
+            continue
+        explicit = any(arg == flag or arg.startswith(flag + "=") for arg in arguments)
+        if not read_only and not explicit and (root / path).exists():
+            raise FileExistsError(
+                f"preparation destination exists: {root / path}; "
+                f"use {flag} to explicitly choose the preparation destination"
+            )
     defaults = [value for flag, path in item.prepare_defaults for value in (flag, str(root / path))]
     # argparse's last occurrence wins; explicit legacy options override our defaults.
     return [sys.executable, "-m", item.prepare_module, *defaults, *arguments]

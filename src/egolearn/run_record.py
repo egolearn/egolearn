@@ -39,6 +39,16 @@ def read_json(path: Path) -> Any:
     return json.loads(path.read_text(), parse_constant=invalid_constant)
 
 
+def source_checkout() -> Path | None:
+    """Return the running package's editable checkout, if it has one."""
+    root = Path(__file__).resolve().parents[2]
+    if (root / "src/egolearn/run_record.py").resolve() == Path(__file__).resolve() and (
+        root / ".git"
+    ).exists():
+        return root
+    return None
+
+
 def source_identity() -> dict[str, Any]:
     """Describe the running package, never an unrelated Git checkout in cwd."""
     identity: dict[str, Any] = {
@@ -48,9 +58,8 @@ def source_identity() -> dict[str, Any]:
         "image": os.environ.get("EGOLEARN_IMAGE", "unavailable"),
         "package_version": __version__,
     }
-    root = Path(__file__).resolve().parents[2]
     # An editable src-layout checkout can be identified independently of cwd.
-    if (root / "src/egolearn/run_record.py").resolve() == Path(__file__).resolve():
+    if (root := source_checkout()) is not None:
         try:
 
             def git(*arguments: str) -> str:

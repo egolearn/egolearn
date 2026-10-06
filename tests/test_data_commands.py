@@ -120,6 +120,28 @@ def test_fetch_and_prepare_use_the_same_layout(tmp_path):
     )
 
 
+@pytest.mark.parametrize("name", ["shape-bias", "babyview-4afc", "spatial-relations"])
+def test_prepare_preserves_default_fetched_collection(tmp_path, monkeypatch, name):
+    target = tmp_path / name
+    target.mkdir()
+    marker = target / ".egolearn-fetch.json"
+    marker.write_text('{"commit":"synthetic"}')
+    calls = []
+    monkeypatch.setattr(os, "execv", lambda *args: calls.append(args))
+    with pytest.raises(SystemExit):
+        data.main(["--root", str(tmp_path), "prepare", name])
+    assert not calls
+    assert marker.read_text() == '{"commit":"synthetic"}'
+    data.main(["--root", str(tmp_path), "prepare", name, "--help"])
+    assert len(calls) == 1
+    if name == "spatial-relations":
+        data.main(["--root", str(tmp_path), "prepare", name, "--validate-only"])
+        assert len(calls) == 2
+    flag = "--out_dir" if name == "babyview-4afc" else "--output-dir"
+    data.main(["--root", str(tmp_path), "prepare", name, flag, str(tmp_path / "new")])
+    assert calls[-1][1][-1] == str(tmp_path / "new")
+
+
 def test_preparation_explains_missing_extra(monkeypatch, capsys):
     monkeypatch.setattr(data.importlib.util, "find_spec", lambda name: None)
     with pytest.raises(SystemExit):

@@ -99,7 +99,7 @@ def test_real_synthetic_training_suite_records_and_summarizes(tmp_path, monkeypa
     monkeypatch.setenv("OMP_NUM_THREADS", "1")
     monkeypatch.setenv("MKL_NUM_THREADS", "1")
     spec = suite_file(tmp_path)
-    manifest = bench.plan_suite(spec, tmp_path / "output with spaces", [])
+    manifest = bench.plan_suite(spec, tmp_path / "output with spaces lr=5e-4", [])
     # Planning freezes the full composed configuration, not just the primary YAML.
     spec.write_text("not: the planned config\n")
     assert bench.run_suite(manifest, False, []) == 0
@@ -169,12 +169,17 @@ def test_cli_bench_help_needs_no_torch(tmp_path):
 
 
 def test_pins_apply_before_interpolation_and_runtime_env_is_not_frozen(tmp_path, monkeypatch):
-    config = tmp_path / "custom.yaml"
+    config = tmp_path / "custom=1.yaml"
     config.write_text(
         "run_dir: old\nderived: ${run_dir}/child\nnode: ${oc.env:EGOLEARN_TEST_NODE}\n"
     )
     monkeypatch.setenv("EGOLEARN_TEST_NODE", "login")
-    spec = suite_file(tmp_path, config="custom.yaml", overrides=[], seeds=[1, 2])
+    spec = suite_file(
+        tmp_path,
+        config=config.name,
+        overrides=["++from_override=${oc.env:EGOLEARN_TEST_NODE}", "++derived_override=${run_dir}"],
+        seeds=[1, 2],
+    )
     manifest = bench.plan_suite(spec, tmp_path / "résultats with spaces", [])
     monkeypatch.setenv("EGOLEARN_TEST_NODE", "compute")
     for seed in (1, 2):
@@ -183,6 +188,8 @@ def test_pins_apply_before_interpolation_and_runtime_env_is_not_frozen(tmp_path,
         cfg = OmegaConf.load(frozen)
         assert cfg.derived == str(frozen.parent / "artifacts/child")
         assert cfg.node == "compute"
+        assert cfg.from_override == "compute"
+        assert cfg.derived_override == cfg.run_dir
         assert cfg.seed == seed  # the original config did not declare seed
 
 
@@ -229,6 +236,62 @@ def test_cluster_visibility_and_readonly_paths_fail_before_writes(tmp_path, monk
     with pytest.raises(ValueError, match="read-only"):
         bench.check_cluster_paths(out, {})
     assert not out.exists()
+
+
+def test_cluster_planning_rejects_a_different_installed_checkout(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "egolearn.commands.submit.launcher", lambda: tmp_path / "scripts/slurm/submit"
+    )
+    monkeypatch.setattr(bench, "source_checkout", lambda: tmp_path / "other-checkout")
+    with pytest.raises(ValueError, match="editable installation of this checkout"):
+        bench.plan_suite(tmp_path / "missing.yaml", tmp_path / "out", [], submit=True)
+    assert not (tmp_path / "out").exists()
+
+
+def test_unignored_output_fails_before_it_dirties_the_running_source(tmp_path, monkeypatch):
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+    (checkout / ".gitignore").write_text("runs/\n")
+    subprocess.run(["git", "add", ".gitignore"], cwd=checkout, check=True)
+    monkeypatch.setattr(bench, "source_checkout", lambda: checkout)
+    # The caller may be somewhere entirely different from the running source.
+    monkeypatch.chdir(tmp_path)
+    spec = suite_file(tmp_path, seeds=[7])
+    with pytest.raises(ValueError, match="git-ignored"):
+        bench.plan_suite(spec, checkout / "unignored", [])
+    assert not (checkout / "unignored").exists()
+    manifest = bench.plan_suite(spec, checkout / "runs/ignored", [])
+    assert manifest.exists()
+
+
+def test_cluster_paths_preserve_bound_scratch_symlinks(tmp_path, monkeypatch):
+    from egolearn.commands.doctor import cluster_variables
+
+    physical = tmp_path / "physical"
+    physical.mkdir()
+    alias = tmp_path / "scratch"
+    alias.symlink_to(physical, target_is_directory=True)
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    monkeypatch.chdir(checkout)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    for names in cluster_variables().values():
+        for name in names:
+            monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("APPTAINER_BIND", str(alias))
+    payload = alias / "input"
+    payload.write_text("synthetic")
+    spec = suite_file(
+        alias,
+        seeds=[7],
+        inputs={"unused": {"path": "input", "sha256": sha256_file(payload)}},
+    )
+    monkeypatch.setattr(bench, "cluster_identity", bench.source_identity)
+    manifest = bench.plan_suite(spec, alias / "out", [], submit=True)
+    assert manifest.parent == alias / "out"
+    assert json.loads(manifest.read_text())["inputs"]["unused"]["path"] == str(payload)
+    assert bench.run_suite(manifest, False, []) == 0
 
 
 def test_inputs_changed_during_execution_do_not_get_averaged(tmp_path, monkeypatch):

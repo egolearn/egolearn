@@ -63,6 +63,35 @@ def test_cluster_checks_report_all_missing_settings(monkeypatch, tmp_path):
     assert set(doctor.cluster_variables()["required"]) <= missing
 
 
+@pytest.mark.parametrize("location", ["login", "compute", "container"])
+def test_cluster_tools_match_the_execution_location(tmp_path, monkeypatch, location):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    for names in doctor.cluster_variables().values():
+        for name in names:
+            monkeypatch.setenv(name, str(tmp_path / "scratch" / name))
+    for name in ("SLURM_JOB_ID", "APPTAINER_CONTAINER", "SINGULARITY_CONTAINER"):
+        monkeypatch.delenv(name, raising=False)
+    if location != "login":
+        monkeypatch.setenv("SLURM_JOB_ID", "123")
+    if location == "container":
+        monkeypatch.setenv("APPTAINER_CONTAINER", "/image.sif")
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    failures = {
+        check.name
+        for check in doctor.inspect_environment(cluster=True, skip_cuda=True)
+        if check.status == "fail"
+    }
+    assert (
+        failures
+        == {
+            "login": {"bash", "git", "sbatch"},
+            "compute": {"apptainer"},
+            "container": set(),
+        }[location]
+    )
+
+
 def test_submit_from_installed_package_preserves_argv(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "pyproject.toml").write_text('[project]\nname="egolearn"\n')

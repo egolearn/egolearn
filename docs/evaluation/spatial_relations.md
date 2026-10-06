@@ -133,7 +133,7 @@ inside the preparation process.
 
 ```bash
 uv run --no-sync --with matplotlib --with scipy --with colorcet \
-  --with opencv-python-headless egl data prepare spatial-relations \
+  --with opencv-python-headless python -m egolearn.cli data prepare spatial-relations \
   --generator-root "$SPATIAL_GENERATOR_ROOT" \
   --exp3-image-root "$SPATIAL_RENDER_ROOT" \
   --output-dir data/spatial_relations/v1

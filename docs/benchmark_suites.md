@@ -51,8 +51,10 @@ egl bench run benchmarks/toy.yaml --output runs/toy-second \
 egl bench table runs/toy-second/manifest.json --baseline runs/toy-first/manifest.json
 ```
 
-Output must be a new directory. Before creating it, the runner verifies inputs and
-composes a complete composed configuration for every seed. It writes one
+Output must be a new directory outside the running source checkout or ignored by
+Git (for example, `runs/`). This keeps output creation from changing the recorded
+source identity. Before creating it, the runner verifies inputs and
+composes a complete configuration for every seed. It writes one
 `seed-<seed>/config.yaml`, an expected-run `manifest.json`, and eventually a log and
 `record.json` per seed. Configuration defaults are composed at planning time. Interpolations are
 preserved and resolve inside each run, after its seed and output paths are set;
@@ -70,7 +72,10 @@ completed seeds remain on disk when another fails. Full input verification runs
 before and after each task, which adds I/O proportional to the pinned data size. A claimed seed cannot be run
 twice into the same directory. Create a new output directory for retries.
 
-`--submit` delegates to the existing clean-checkout cluster launcher with one array
+`--submit` requires an editable installation of the submitting checkout so the
+configuration defaults come from the code that will execute. From that checkout,
+run `uv sync --extra train` and use `uv run egl bench run ... --submit`.
+It delegates to the existing clean-checkout cluster launcher with one array
 task per seed; repeat `--sbatch=OPTION` for Slurm settings. Commands use the compute
 environment's Python. The archived commit and pinned image identify the queued
 code. Put output on shared scratch outside `$HOME`, accessible to every task. The
