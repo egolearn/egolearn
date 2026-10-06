@@ -121,10 +121,14 @@ def test_corrupt_checkpoint_has_pipeline_context(toy_config, tmp_path, payload, 
     assert isinstance(caught.value.__cause__, error)
 
 
-def test_resumed_checkpoints_keep_initialization_lineage(toy_config, tmp_path, trained):
+@pytest.mark.parametrize("initialized", [False, True])
+def test_resumed_checkpoints_keep_live_config_and_lineage(
+    toy_config, tmp_path, trained, initialized
+):
     _, checkpoint, _ = trained
     cfg = toy_config(tmp_path / "initialized")
-    cfg["init_from"] = {"checkpoint": str(checkpoint)}
+    if initialized:
+        cfg["init_from"] = {"checkpoint": str(checkpoint)}
     pipe = egolearn.build(cfg)
     pipe.driver.fit()
     snapshot = str(tmp_path / "initialized.pth")
@@ -133,13 +137,40 @@ def test_resumed_checkpoints_keep_initialization_lineage(toy_config, tmp_path, t
     cfg["init_from"] = None
     cfg["driver"]["max_steps"] = 3
     cfg["hooks"]["checkpoint_every"] = 1
+    # Explicit defaults keep the weights compatible while changing the live
+    # construction metadata, including the imports needed to rebuild the model.
+    cfg["model"]["heads"]["proj"]["field"] = "pooled"
+    cfg["_imports_"] = ["egolearn.model.heads"]
     resumed = egolearn.build(cfg)
+    expected = copy.deepcopy(resumed.model.construction_config)
+    if initialized:
+        expected["init_from"] = pipe.init_from
     load_snapshot(snapshot, resumed.driver)
+    assert resumed.model.construction_config == expected
     resumed.driver.fit()
     final = torch.load(tmp_path / "resumed/run/final.pth", weights_only=True)
     assert final["step"] == 3
-    assert final["model_config"] == pipe.model.construction_config
-    assert final["model_config"]["init_from"] == pipe.init_from
+    assert final["model_config"] == expected
+    resumed_snapshot = str(tmp_path / "resumed.pth")
+    save_snapshot(resumed_snapshot, resumed.driver)
+    assert torch.load(resumed_snapshot, weights_only=False)["model_config"] == expected
+
+
+@pytest.mark.parametrize("missing_config", [False, True])
+def test_resume_without_saved_model_config_keeps_live_config(
+    toy_config, tmp_path, trained, missing_config
+):
+    _, _, snapshot = trained
+    state = torch.load(snapshot, weights_only=False)
+    if missing_config:
+        del state["model_config"]
+    else:
+        state["model_config"] = None
+    torch.save(state, snapshot)
+    resumed = egolearn.build(toy_config(tmp_path / "resumed"))
+    expected = copy.deepcopy(resumed.model.construction_config)
+    load_snapshot(str(snapshot), resumed.driver)
+    assert resumed.model.construction_config == expected
 
 
 def test_default_copies_everything_and_snapshots_are_accepted(toy_config, tmp_path, trained):

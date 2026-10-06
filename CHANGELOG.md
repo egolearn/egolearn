@@ -124,6 +124,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- Snapshot resume restores only saved `init_from` lineage, preserving the live
+  model's construction metadata in subsequent checkpoints and snapshots.
 - Determinism (from PR review): the configured seed now also seeds the
   global torch/python RNGs and snapshots carry their state, so the same
   seed gives bit-identical weights and a resumed run matches an
