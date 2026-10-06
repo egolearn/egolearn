@@ -349,6 +349,8 @@ def test_imagenet_is_lazy_reuses_split_and_matches_shared_probe(
         "split_sha256": benchmark.split.metadata()["split_sha256"],
     }
     assert first.configs["imagenet"]["view"] == "imagenet_center_crop"
+    assert first.configs["imagenet"]["data_root"] == imagefolder.name
+    assert str(imagefolder.parent) not in json.dumps(first.to_dict())
 
     settings.pop("expected_classes")
     probe = LinearSGDProbe(split=benchmark.split, **settings)
@@ -372,7 +374,10 @@ def test_training_pipeline_rejects_standalone_benchmarks_without_scanning(monkey
         egolearn.build(cfg)
 
 
-def test_existing_probe_configs_work_in_standalone_runner(tmp_path, imagefolder, model_config):
+@pytest.mark.parametrize("probe_type", ["linear", "linear_sgd"])
+def test_existing_probe_configs_work_in_standalone_runner(
+    tmp_path, imagefolder, model_config, probe_type
+):
     split = imagenet.build_split(imagefolder, expected_classes=2)
     manifest = tmp_path / "split.json"
     manifest.write_text(
@@ -388,17 +393,19 @@ def test_existing_probe_configs_work_in_standalone_runner(tmp_path, imagefolder,
         build_model(model_config),
         benchmarks=[
             {
-                "_target_": "probe:linear_sgd",
+                "_target_": f"probe:{probe_type}",
                 "name": "linear",
                 "manifest": str(manifest),
-                "workers": 0,
-                "epochs": 1,
+                **({"workers": 0, "epochs": 1} if probe_type == "linear_sgd" else {"max_iter": 3}),
+                "view": "imagenet_center_crop",
                 "size": 16,
                 "batch_size": 4,
             }
         ],
     )
     assert result.configs["linear"]["view"] == "imagenet_center_crop"
+    assert result.configs["linear"]["manifest"] == manifest.name
+    assert str(tmp_path) not in json.dumps(result.to_dict())
     assert (
         result.metadata["linear"]["manifest_sha256"]
         == hashlib.sha256(manifest.read_bytes()).hexdigest()
@@ -439,6 +446,8 @@ def test_imagenet_cli_runs_from_outside_repository(tmp_path, imagefolder, model_
     result = json.loads(output.read_text())
     assert set(result["results"]["imagenet_linear"]) == {"top1", "train_top1_running"}
     assert result["configs"]["imagenet_linear"]["epochs"] == 1
+    assert result["configs"]["imagenet_linear"]["data_root"] == imagefolder.name
+    assert str(tmp_path) not in json.dumps(result)
     assert result["versions"]["imagenet_linear"] == "1"
     assert result["status"] == "complete"
     assert result["failed_benchmark"] is None
@@ -477,6 +486,31 @@ def test_failed_benchmark_keeps_completed_results_and_checkpoint(
     output = tmp_path / "partial.json"
     result.save_json(output)
     assert json.loads(output.read_text())["results"] == result.results
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("completed_first", [False, True])
+def test_nonfinite_metric_preserves_serializable_partial_results(
+    tmp_path, model_config, monkeypatch, value, completed_first
+):
+    from egolearn.evaluation import EvaluationError
+
+    failed = RandomBenchmark("nonfinite")
+    monkeypatch.setattr(failed, "run", lambda model, ctx: {"valid": 1.0, "invalid": value})
+    with pytest.raises(EvaluationError) as caught:
+        evaluate(
+            build_model(model_config),
+            benchmarks=[*([WeightBenchmark()] if completed_first else []), failed],
+        )
+    assert isinstance(caught.value.__cause__, ValueError)
+    assert "metric 'invalid' must be finite" in str(caught.value.__cause__)
+    result = caught.value.partial_result
+    assert result.status == "partial" and result.failed_benchmark == "nonfinite"
+    for field in (result.results, result.configs, result.versions, result.metadata):
+        assert set(field) == ({"weights"} if completed_first else set())
+    output = tmp_path / "partial.json"
+    result.save_json(output)
+    assert json.loads(output.read_text()) == result.to_dict()
 
 
 @pytest.mark.parametrize("fail", [False, True])

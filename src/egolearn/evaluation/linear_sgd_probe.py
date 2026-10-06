@@ -68,7 +68,7 @@ class LinearSGDProbe(LinearSGDEvaluator, Probe):
     def configuration(self) -> dict:
         return {
             **super().configuration(),
-            "manifest": self.manifest,
+            "manifest": Path(self.manifest).name if self.manifest is not None else None,
             "split": self.split.metadata(),
         }
 

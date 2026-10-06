@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import json
+import math
 import random
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -193,6 +194,9 @@ def evaluate(
                     metrics = {
                         key: float(value) for key, value in benchmark.run(model, ctx).items()
                     }
+                    for key, value in metrics.items():
+                        if not math.isfinite(value):
+                            raise ValueError(f"metric {key!r} must be finite, got {value}")
                     metadata = deepcopy(benchmark.metadata())
                 result.results[benchmark.name] = metrics
                 result.configs[benchmark.name] = config

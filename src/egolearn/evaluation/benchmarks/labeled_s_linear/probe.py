@@ -174,8 +174,8 @@ class LabeledSLinearProbe(LinearProbe):
         config.pop("split")
         return {
             **config,
-            "data_root": self.data_root,
-            "split_file": self.split_file,
+            "data_root": Path(self.data_root).name,
+            "split_file": Path(self.split_file).name if self.split_file is not None else None,
             "check_files": self.check_files,
         }
 

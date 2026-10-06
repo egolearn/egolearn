@@ -111,6 +111,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- Evaluation rejects non-finite metrics before recording a benchmark, preserving
+  serializable partial results. Linear-probe configs record dataset and manifest
+  names without machine-specific directories, alongside existing split hashes.
+
 - Share restricted checkpoint reading between evaluation and initialization;
   full snapshots now require explicit trust, and source provenance stores only
   checkpoint file names and hashes.

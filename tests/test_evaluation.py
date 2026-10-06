@@ -2,6 +2,7 @@
 
 import csv
 import hashlib
+import json
 import random
 
 import pytest
@@ -79,6 +80,8 @@ def test_babyview_prepare_follows_the_frozen_protocol(tmp_path):
 
 
 def test_labeled_s_adapter_follows_the_frozen_protocol(tmp_path, monkeypatch):
+    from egolearn.evaluation.evaluator import _configured_benchmark
+
     rows = []
     expected_classes = tuple(f"class_{label}" for label in range(labeled_s_linear.N_CLASSES))
     for index in range(labeled_s_linear.TOTAL_SIZE):
@@ -91,19 +94,27 @@ def test_labeled_s_adapter_follows_the_frozen_protocol(tmp_path, monkeypatch):
     monkeypatch.setattr(
         labeled_s_linear, "SPLIT_SHA256", hashlib.sha256(split_text.encode()).hexdigest()
     )
-    probe = labeled_s_linear.LabeledSLinearProbe(
-        name="labeled_s_linear",
-        data_root=str(tmp_path / "labeled_s"),
-        split_file=str(split_file),
-        check_files=False,
-        size=32,
+    probe, config = _configured_benchmark(
+        {
+            "_target_": "probe:labeled_s_linear",
+            "name": "labeled_s_linear",
+            "data_root": str(tmp_path / "labeled_s"),
+            "split_file": str(split_file),
+            "check_files": False,
+            "size": 32,
+        }
     )
+    assert isinstance(probe, labeled_s_linear.LabeledSLinearProbe)
 
     metadata = probe.metadata()
     assert metadata["split_sha256"] == hashlib.sha256(split_text.encode()).hexdigest()
     assert metadata["split_source"] == split_file.name
     assert metadata["n_train"] == 2886 and metadata["n_test"] == 2901
-    assert probe.configuration()["size"] == 32
+    assert config["size"] == 32
+    assert config["data_root"] == "labeled_s"
+    assert config["split_file"] == split_file.name
+    assert str(tmp_path) not in json.dumps(config)
+    assert str(tmp_path) not in json.dumps(metadata)
     assert probe.split.classes == expected_classes
     assert len(probe.split.train) == 2886
     assert len(probe.split.test) == 2901

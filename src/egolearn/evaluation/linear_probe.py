@@ -156,7 +156,7 @@ class LinearProbe(Probe):
     def configuration(self) -> dict:
         return {
             "name": self.name,
-            "manifest": self.manifest,
+            "manifest": Path(self.manifest).name if self.manifest is not None else None,
             "encoder": self.encoder,
             "head": self.head,
             "view": self.view,

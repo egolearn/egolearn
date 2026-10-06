@@ -103,7 +103,7 @@ class ImageNetLinearBenchmark(Benchmark):
         return {
             **self.scorer.configuration(),
             "name": self.name,
-            "data_root": self.data_root,
+            "data_root": Path(self.data_root).name,
             "expected_classes": self.expected_classes,
         }
 

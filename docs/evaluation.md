@@ -58,6 +58,8 @@ split sizes and split SHA-256, including when passed as constructed objects.
 Generic split hashes, also recorded by ImageNet, cover ordered relative paths,
 labels and classes, not image bytes. Manifest-backed probes also record the
 manifest's byte hash; Labeled-S records the verified canonical split hash and source.
+Linear-probe path settings retain only the dataset directory or file name, so
+recorded configs do not expose machine-specific parent directories.
 
 If benchmark preparation, execution, metric conversion, or metadata collection
 fails, `EvaluationError.partial_result` retains completed benchmarks and their
@@ -66,6 +68,7 @@ and `__cause__` retains its original error. Serialized results record
 `status: "partial"` and `failed_benchmark`; successful suites record
 `status: "complete"`. The CLI replaces `output_json` with this partial result
 before exiting unsuccessfully, including when no benchmark has completed.
+Non-finite metrics (NaN or infinity) fail the benchmark before it is recorded.
 Setup errors (checkpoint loading, imports, benchmark construction, or suite
 validation) propagate normally and leave any existing output file unchanged.
 Consumers must check the process exit status before using `output_json`; a file
