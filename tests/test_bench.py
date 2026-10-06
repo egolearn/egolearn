@@ -249,7 +249,7 @@ def test_cluster_planning_rejects_a_different_installed_checkout(tmp_path, monke
 
 
 def test_unignored_output_fails_before_it_dirties_the_running_source(tmp_path, monkeypatch):
-    checkout = tmp_path / "checkout"
+    checkout = tmp_path.resolve() / "checkout"
     checkout.mkdir()
     subprocess.run(["git", "init", "-q", str(checkout)], check=True)
     (checkout / ".gitignore").write_text("runs/\n")

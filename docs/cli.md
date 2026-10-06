@@ -87,8 +87,10 @@ extras, CUDA availability, data-root readability and requested environment varia
 names. CUDA is queried in a bounded child process without allocating a tensor;
 `--skip-cuda` skips that query. Environment variable values are never printed.
 Cluster checks activate with `--cluster` or inside a Slurm job. They share required
-and optional storage-variable names with the launcher and resolve symlinks before
-checking whether paths fall under `$HOME`. Submission tools are checked on login
+and optional storage-variable names with the launcher. Host checks resolve symlinks
+before rejecting paths under the host's `$HOME`. Inside an Apptainer container,
+`$HOME` is scratch by design: paths must still be absolute, but may be under that
+container home. Submission tools are checked on login
 hosts and Apptainer on compute hosts; neither is required inside a job container.
 Doctor creates no directories, downloads
 no packages and changes no settings.

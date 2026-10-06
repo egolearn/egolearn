@@ -32,16 +32,17 @@ def cluster_variables() -> dict[str, list[str]]:
     return result
 
 
-def storage_check(name: str, value: str, home: Path) -> Check:
+def storage_check(name: str, value: str, home: Path | None) -> Check:
     path = Path(value).expanduser()
     try:
         if not path.is_absolute():
-            return Check("fail", name, "must be an absolute path outside $HOME")
-        if path.resolve().is_relative_to(home.resolve()):
+            return Check("fail", name, "must be an absolute path")
+        resolved = path.resolve()
+        if home is not None and resolved.is_relative_to(home.resolve()):
             return Check("fail", name, "resolves under $HOME; configure scratch storage")
     except (OSError, RuntimeError):
         return Check("fail", name, "cannot resolve path")
-    return Check("ok", name, "configured outside $HOME")
+    return Check("ok", name, "configured outside $HOME" if home else "configured absolute path")
 
 
 def check_cuda(required: bool) -> Check:
@@ -121,7 +122,13 @@ def inspect_environment(
         )
     if cluster:
         variables = cluster_variables()
-        home = Path.home()
+        in_job = bool(os.environ.get("SLURM_JOB_ID"))
+        in_container = bool(
+            os.environ.get("APPTAINER_CONTAINER") or os.environ.get("SINGULARITY_CONTAINER")
+        )
+        # The launcher already checks the host home. Inside its container HOME
+        # is APPTAINER_HOME on scratch, where job-local storage is valid.
+        home = None if in_container else Path.home()
         checks.append(storage_check("checkout", str(Path.cwd()), home))
         for kind, names in variables.items():
             for name in names:
@@ -132,10 +139,6 @@ def inspect_environment(
                     checks.append(Check("fail", name, "not set; source env.sh"))
         if not os.environ.get("EGOLEARN_DATA"):
             checks.append(storage_check("data-root-location", str(root.absolute()), home))
-        in_job = bool(os.environ.get("SLURM_JOB_ID"))
-        in_container = bool(
-            os.environ.get("APPTAINER_CONTAINER") or os.environ.get("SINGULARITY_CONTAINER")
-        )
         # Submission tools belong to the login host; Apptainer belongs to the
         # compute host. Neither needs to be installed inside the job container.
         binaries = () if in_container else ("apptainer",) if in_job else ("bash", "git", "sbatch")

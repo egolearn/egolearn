@@ -76,6 +76,8 @@ def test_cluster_tools_match_the_execution_location(tmp_path, monkeypatch, locat
         monkeypatch.setenv("SLURM_JOB_ID", "123")
     if location == "container":
         monkeypatch.setenv("APPTAINER_CONTAINER", "/image.sif")
+        monkeypatch.setenv("HOME", os.environ["APPTAINER_HOME"])
+        monkeypatch.setenv("TMPDIR", os.environ["APPTAINER_HOME"] + "/tmp")
     monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
     failures = {
         check.name
