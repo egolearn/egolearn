@@ -5,6 +5,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -44,7 +45,7 @@ def cluster(tmp_path):
     bindir.mkdir()
     sbatch = bindir / "sbatch"
     sbatch.write_text(
-        "#!/usr/bin/env python3\nimport json,os,sys\n"
+        f"#!{sys.executable}\nimport json,os,sys\n"
         "with open(os.environ['TEST_SUBMIT_LOG'],'a') as f:\n"
         " f.write(json.dumps({'args':sys.argv[1:],'env':dict(os.environ)})+'\\n')\n"
         "print('12345')\n"
@@ -176,6 +177,93 @@ def test_dry_run_does_not_submit(cluster):
     result, calls = submit(cluster, "--dry-run", "--", "true")
     assert not calls
     assert "afterok:PREP_JOB_ID" in result.stdout
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("mode", ["command", "sweep", "dry_run", "commands"])
+def test_submission_needs_no_python_and_records_arguments(cluster, cached, mode):
+    checkout, env = cluster
+    if cached:
+        _, calls = submit(cluster, "--", "true")
+        ready(calls[-1])
+    bindir = Path(env["TEST_SUBMIT_LOG"]).parent / "bin"
+    for name in ("python", "python3"):
+        executable = bindir / name
+        executable.write_text("#!/bin/sh\necho 'Python ran on login node' >&2\nexit 99\n")
+        executable.chmod(0o755)
+    command = [
+        "python",
+        "program.py",
+        "",
+        'quotes"\\ café 🐣 $(id) `id`',
+        "controls=" + "".join(chr(value) for value in range(1, 32)),
+    ]
+    if mode == "commands":
+        commands = checkout.parent / "commands.txt"
+        commands.write_text("python program.py 'quoted argument'\n")
+        args = ["--commands", str(commands)]
+    else:
+        options = {"command": [], "sweep": ["--sweep"], "dry_run": ["--dry-run"]}[mode]
+        args = [*options, "--", *command]
+    result, calls = submit(cluster, *args)
+    assert "Python ran on login node" not in result.stderr
+    job = Path(result.stdout.split("Run record: ", 1)[1].strip()).parent
+    record = json.loads((job / "run.json").read_text())
+    array = mode in {"sweep", "commands"}
+    assert record["command"] == ([] if array else command)
+    assert record["commands_file"] == ("commands.sh" if array else None)
+    assert record["dirty"] is False
+    revision = run(["git", "rev-parse", "HEAD"], cwd=checkout, env=env).stdout.strip()
+    assert record["commit"] == revision
+    assert record["submitted"].endswith("Z")
+    assert (job / "work/program.py").read_text() == "print('submitted version')\n"
+    assert len(calls) == (0 if mode == "dry_run" else 1 if cached else 2)
+
+
+def test_snapshot_preserves_unusual_names_and_rejects_links(cluster):
+    checkout, env = cluster
+    filename = "spaces and\nnewline.txt"
+    (checkout / filename).write_text("fixture")
+    commit(checkout)
+    _, calls = submit(cluster, "--", "true")
+    job = Path(calls[-1]["env"]["EGOLEARN_RUN_DIR"])
+    assert (job / "work" / filename).read_text() == "fixture"
+    (checkout / "external").symlink_to(checkout.parent)
+    commit(checkout)
+    result, calls = submit(cluster, "--", "true", ok=False)
+    assert "unsupported archive entry" in result.stderr and not calls
+    assert list(Path(env["EGOLEARN_JOB_ROOT"]).glob("run-*")) == [job]
+
+
+def test_failed_archive_removes_partial_snapshot(cluster):
+    _, env = cluster
+    fake = Path(env["TEST_SUBMIT_LOG"]).parent / "bin/tar"
+    fake.write_text("#!/bin/sh\nexit 1\n")
+    fake.chmod(0o755)
+    _, calls = submit(cluster, "--", "true", ok=False)
+    assert not calls and not list(Path(env["EGOLEARN_JOB_ROOT"]).glob("run-*"))
+
+
+def test_non_utf8_arguments_fail_before_snapshot_creation(cluster):
+    _, env = cluster
+    result, calls = submit(cluster, "--", "true", os.fsdecode(b"invalid-\xff"), ok=False)
+    assert "command arguments must be valid UTF-8" in result.stderr
+    assert not calls and not list(Path(env["EGOLEARN_JOB_ROOT"]).glob("run-*"))
+
+
+def test_submodules_fail_before_snapshot_creation(cluster):
+    checkout, env = cluster
+    revision = run(["git", "rev-parse", "HEAD"], cwd=checkout, env=env).stdout.strip()
+    (checkout / "vendor").mkdir()
+    subprocess.run(
+        ["git", "update-index", "--add", "--cacheinfo", f"160000,{revision},vendor"],
+        cwd=checkout,
+        check=True,
+    )
+    subprocess.run(["git", "commit", "-qm", "add submodule"], cwd=checkout, check=True)
+    result, calls = submit(cluster, "--", "true", ok=False)
+    assert "submodules are not supported" in result.stderr
+    assert not calls and not list(Path(env["EGOLEARN_JOB_ROOT"]).glob("run-*"))
 
 
 @pytest.mark.parametrize("name", ["HF_HOME", "WANDB_DIR", "EGOLEARN_JOB_ROOT", "UV_CACHE_DIR"])

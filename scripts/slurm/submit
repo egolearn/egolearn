@@ -7,6 +7,7 @@ set -euo pipefail
   echo 'submit requires Bash 4.4 or newer' >&2; exit 1;
 }
 source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/snapshot.sh"
 check_env
 [[ -z ${SBATCH_ARRAY_INX:-}${SBATCH_ARRAY:-} ]] || fail 'use --sweep/--commands, not SBATCH_ARRAY_INX'
 dry=0 sweep=0 commands='' max_parallel= array=0
@@ -50,6 +51,9 @@ done
 [[ -z $commands || ( $sweep = 0 && ${#cmd[@]} = 0 ) ]] ||
   fail '--commands cannot be combined with --sweep or a command'
 [[ -n $commands || ${#cmd[@]} -gt 0 ]] || fail 'provide -- <command...> or --commands FILE'
+# run.json stores these arguments as UTF-8; reject invalid bytes before archiving.
+printf '%s\0' "${cmd[@]}" | iconv -f UTF-8 -t UTF-8 >/dev/null ||
+  fail 'command arguments must be valid UTF-8'
 # Resolve stream paths before changing directory. Validate before archiving.
 for name in output error input; do
   path=${!name}
@@ -84,7 +88,7 @@ cleanup() {
       echo "Could not cancel prep $prep_id; retaining $job_dir" >&2
       return "$result"
     fi
-    chmod -R u+w "$job_dir/code"
+    [[ ! -d $job_dir/code ]] || chmod -R u+w "$job_dir/code"
     rm -rf "$job_dir"
   fi
   return "$result"
@@ -117,8 +121,7 @@ if [[ " ${cmd[*]} " = *' resume=auto '* && " ${cmd[*]} " != *' run_dir=/'* ]]; t
   echo 'resume=auto: use an absolute run_dir to find an earlier submission; each job has a new work directory.' >&2
 fi
 export EGOLEARN_RUN_DIR
-EGOLEARN_RUN_DIR=$(python3 scripts/slurm/snapshot.py "$EGOLEARN_JOB_ROOT")
-job_dir=$EGOLEARN_RUN_DIR
+snapshot_code
 opts+=("${account[@]}" "--chdir=$job_dir/work" --export=ALL)
 if [[ -z $output ]]; then
   if ((array)); then output=$job_dir/%x-%A_%a.out; else output=$job_dir/%x-%j.out; fi
@@ -148,15 +151,7 @@ if ((array)); then
   done
 fi
 # Credentials belong in environment variables, never recorded command arguments.
-python3 - "$job_dir/run.json" "${cmd[@]}" <<'RECORD'
-import json, sys
-from pathlib import Path
-path = Path(sys.argv[1])
-record = json.loads(path.read_text())
-record["command"] = sys.argv[2:]
-record["commands_file"] = "commands.sh" if (path.parent / "commands.sh").exists() else None
-path.write_text(json.dumps(record, indent=2) + "\n")
-RECORD
+write_run_record "${cmd[@]}"
 print_submission() { printf 'sbatch'; printf ' %q' "$@"; printf '\n'; }
 if ((stale)); then
   read -r -a prep_opts <<< "${EGOLEARN_PREP_SBATCH_ARGS:-}"

@@ -114,6 +114,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- Slurm submission creates its code snapshot and run record with Bash and standard
+  Unix tools, without invoking Python on the login node. Command arguments must be
+  valid UTF-8.
+
 - Determinism (from PR review): the configured seed now also seeds the
   global torch/python RNGs and snapshots carry their state, so the same
   seed gives bit-identical weights and a resumed run matches an

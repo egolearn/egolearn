@@ -1,8 +1,9 @@
 # Cluster jobs
 
 Use `scripts/slurm/submit [sbatch options] -- <command>` from a clean checkout.
-The login node needs Bash 4.4+, Python 3.12+, Git, coreutils and `sbatch`; compute nodes
-need Bash 4.4+, Apptainer and `flock`. There is no login-node environment build or image pull.
+The login node needs Bash 4.4+, Git, coreutils, findutils, tar, iconv and `sbatch`;
+compute nodes need Bash 4.4+, Apptainer and `flock`. There is no login-node
+environment build or image pull.
 
 ## Setup and submission
 
@@ -74,6 +75,11 @@ Every submit archives exactly one clean Git commit. Staged, unstaged and
 untracked changes are refused; ignored data, `env.sh`, environments and outputs
 are excluded. Commit the intended code before submitting. Git submodules and
 tracked symlinks are refused because they could escape the archived tree.
+Submission uses Bash, Git and standard Unix tools to archive code and write
+`run.json`; it does not invoke Python on the login node. Python setup and job
+commands run only in scheduled jobs.
+Command arguments must be UTF-8; submission checks them with `iconv` before
+creating a snapshot so `run.json` remains valid JSON.
 
 Each `$EGOLEARN_JOB_ROOT/run-*/` contains:
 
