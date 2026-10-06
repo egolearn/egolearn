@@ -70,6 +70,9 @@ The rest of the consolidation (LifelongMemory's QA/memory line, more evals)
 arrives per [docs/roadmap.md](docs/roadmap.md), and **nothing is ported
 without triage** — see the porting policy there.
 
+For staged training with selected checkpoint weights, see the
+[initialization guide](docs/initialization.md).
+
 ## Layout
 
 | Path | Purpose |

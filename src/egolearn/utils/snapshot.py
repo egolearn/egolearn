@@ -78,6 +78,8 @@ def load_snapshot(path: str, driver) -> None:
     # cast onto the parameters' device by torch
     driver.model.to(driver.ctx.device)
     driver.model.load_state_dict(state["model"])
+    if state.get("model_config") is not None:
+        driver.model.construction_config = state["model_config"]
     driver.optimizer.load_state_dict(state["optimizer"])
     if state.get("schedule") is not None and getattr(driver, "schedule", None) is not None:
         driver.schedule.load_state_dict(state["schedule"])
