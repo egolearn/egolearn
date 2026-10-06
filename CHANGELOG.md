@@ -6,10 +6,11 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ## [Unreleased]
 
-- Add torch-free Hub path resolution and checksummed, private-by-default dataset/checkpoint fetch and push commands; document dataset access tiers.
-
 ### Added
 
+- Torch-free Hub path resolution and checksummed, private-by-default dataset/checkpoint
+  fetch and push commands; documented dataset access tiers. `init_from.checkpoint`
+  accepts model Hub references and retains their resolved commit across snapshot resume.
 - PR message guidance and template sections for Summary, optional Decisions,
   experiment Results, Test plan, and Checklist. The stdlib-only
   `scripts/check_pr_message.py` checks drafts locally and warns when project or

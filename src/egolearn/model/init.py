@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
-from pathlib import Path
 
 import torch
 import torch.nn as nn
+
+from egolearn.hub import resolve_with_metadata
 
 
 def _selected(name: str, include: Sequence[str] | None, exclude: Sequence[str]) -> bool:
@@ -32,8 +33,10 @@ def load_pretrained_weights(
 
     Returns a provenance summary: path, sha256, the source run's step, the
     prefixes, and how many tensors were copied (and skipped, when not strict).
+    Hub references also retain the original reference and resolved commit.
     """
-    path = Path(checkpoint).expanduser()
+    path, provenance = resolve_with_metadata(checkpoint, repo_type="model")
+    path = path.expanduser()
     if not path.is_file():
         raise FileNotFoundError(f"init_from.checkpoint not found: {path}")
     include = (
@@ -107,6 +110,7 @@ def load_pretrained_weights(
     assert not result.unexpected_keys, result.unexpected_keys
     step = state.get("step", (state.get("context") or {}).get("clock", {}).get("step"))
     return {
+        **provenance,
         "checkpoint": str(path),
         "sha256": digest,
         "step": step,
