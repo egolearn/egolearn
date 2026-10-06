@@ -216,3 +216,78 @@ the evaluation protocol changes.
 A small evaluation suitable for training hooks can implement `Probe`, which
 extends `Benchmark`, or use a probe wrapper around its shared scorer. A benchmark
 implementation should receive a model; checkpoint loading belongs to the runner.
+
+## Hub artifacts and access tiers
+
+`uv run python -m egolearn.hub fetch shape-bias --revision <tag-or-commit>`
+fetches `agentic-learning-ai-lab/egolearn-shape-bias` into
+`$EGOLEARN_DATA/shape-bias` (default `data/shape-bias`). The download is staged,
+checked against `checksums.sha256`, and installed only after verification.
+`.egolearn-fetch.json` records the requested revision, resolved commit and
+verification status. Missing checksums require `--allow-unverified`; corrupt
+checksums always fail. `--repo` and `--dest` override the defaults.
+
+Data paths in component configs, including benchmark manifests, may use
+`hf://<org>/<repo>@<revision>[/path/in/repo]`. Revisions are tags or commit IDs
+without slashes. `egolearn.hub.resolve` is torch-free, passes local paths through,
+and logs the resolved snapshot commit. Direct Python callers can use it before
+constructing a dataset. Config resolution downloads to the standard HF cache;
+use `fetch` when checksum verification is required. `HF_HOME` controls that cache.
+Dataset references materialize the full snapshot once so manifests can safely
+read sibling files. This can download data during `dry_run=true`; that option
+skips training-stream iteration, not artifact resolution. Model file references
+download only the named file. Materialized copies require additional cache space
+and are not tracked by `hf cache` cleanup tools. Their path is
+`<Hub cache>/datasets--<org>--<repo>/egolearn-materialized/<generation>/<commit>`;
+remove the `egolearn-materialized` directory manually when no job uses its copies.
+Existing complete copies can be reused from a read-only shared cache. First-time
+materialization needs a writable cache; alternatively use `fetch --dest` to put a
+real-file collection on writable storage. If an offline snapshot was partial,
+newly cached files produce a new materialization rather than reusing that subset.
+
+An explicit `hf://models/<org>/<repo>@<revision>/vocab.json` lets a tokenizer or
+benchmark read vocabulary from a model repo; `hf://datasets/` forces a dataset
+repo. Without a prefix, component inputs default to datasets and checkpoint/model
+config inputs default to models. Checkpoint evaluation records the original
+reference, repo, revision and resolved commit alongside the content digest.
+
+For example, a probe's `manifest` may be
+`hf://agentic-learning-ai-lab/egolearn-shape-bias@v1/stimulus_manifest.json`.
+Checkpoint and resume inputs use model repos with the same syntax, ending in an
+explicit filename such as `@v1/final.pth`; local checkpoint paths still work.
+Only load trusted checkpoints: Hub checksums establish file integrity, not trust
+in Python pickle contents. Model config files use model repos too.
+
+| Dataset / artifact | Access tier | What may be hosted |
+| --- | --- | --- |
+| Prepared shape-bias stimuli | public | Licensed rendered stimuli, manifests and checksums |
+| Spatial-relations v1 and monitoring subsets | public | Licensed stimuli, fixed trials and manifests |
+| BabyView 4AFC and linear evaluation manifests | public | Split/trial metadata only, without pixels or restricted captions |
+| Labeled-S split metadata | public | Split identifiers only; source frames stay restricted |
+| ImageNet | upstream-licensed | Manifests only; users obtain images from the licensed upstream source |
+| SAYCam, Labeled-S frames, restricted BabyView and BabyVLM images | IRB | Never on the Hub, including private repos or pixel-embedding manifests |
+
+These are publication candidates, not a claim that collections already exist.
+Pinned upstream downloads remain available. A Hub Collection can group approved
+repos after their owners publish them; this change publishes no data or weights.
+
+To upload a prepared directory (not a training run directory):
+
+```bash
+uv run python -m egolearn.hub push prepared/ --name shape-bias --license CC-BY-4.0
+uv run python -m egolearn.hub push weights/ --name babycl-saycam-seed0 \
+  --repo-type model --license MIT
+uv run python -m egolearn.hub verify prepared/
+uv run python -m egolearn.hub checksum prepared/
+```
+
+`push` uploads a staging copy with checksums and a minimal card, leaves the source
+unchanged, and creates a **private** repo. `--public` is required to create or
+upload to a public repo; it does not change an existing repo's visibility.
+The supported license identifiers are checked before repository creation (an
+unsupported identifier reports the accepted list). Choose a license you have
+authority to grant and inspect the directory before uploading: non-hidden payload files are included. Do not upload IRB data, embedded
+frames, credentials or personal run metadata. Checkpoint names follow
+`egolearn-<method>-<data>-seed<n>`. SAYCam-trained weights stay in **private** model
+repos until publication rights under the Databrary agreement have been confirmed.
+Authentication uses `HF_TOKEN`; no token belongs in configs or command arguments.

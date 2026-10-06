@@ -25,7 +25,7 @@ uv sync --extra train        # creates .venv, installs package + torch + dev too
 uv run pre-commit install    # local gates: ruff, gitleaks, large-file blocker
 uv run pytest                # unit tests (slow/gpu/llm tiers excluded by default)
 
-# validate a full pipeline without reading any data
+# validate wiring without iterating the stream; Hub references may download artifacts
 uv run egl train projects/babycl/configs/saycam_default.yaml dry_run=true
 # train (dataset roots come from the command line / config, never code)
 uv run egl train projects/babycl/configs/saycam_default.yaml stream.root_dir=$DATA_ROOT
