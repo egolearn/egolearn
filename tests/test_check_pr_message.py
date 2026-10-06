@@ -254,6 +254,14 @@ def test_summary_needs_a_paragraph_and_a_bullet() -> None:
     assert errors("t", GOOD.replace("- `a.py`", "+ `a.py`")) == []
 
 
+@pytest.mark.parametrize("marker", ["1.", "1)", "12.", "12)"])
+@pytest.mark.parametrize("indent", ["", "   "])
+def test_numbered_summary_items_are_bullets_not_prose(marker: str, indent: str) -> None:
+    body = GOOD.replace("The problem and the outcome.", f"{indent}{marker} First change.")
+    assert errors("t", body) == ["Summary needs a paragraph and at least one bullet"]
+    assert check("t", GOOD.replace("- `a.py`", f"{indent}{marker} `a.py`")) == ([], [])
+
+
 def padded(bullets: int) -> tuple[str, int]:
     padding = "".join(f"- bullet {i}\n" for i in range(bullets))
     body = GOOD.replace("Part of #1.", padding + "Part of #1.")
