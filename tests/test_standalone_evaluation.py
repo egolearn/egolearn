@@ -138,7 +138,9 @@ def test_checkpoint_round_trip_without_building_training_pipeline(
 
         monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
         checkpoint = "hf://org/model@v1/checkpoint.pth"
-    result = evaluate_checkpoint(checkpoint, benchmarks=[WeightBenchmark()])
+    result = evaluate_checkpoint(
+        checkpoint, benchmarks=[WeightBenchmark()], trusted_snapshot=snapshot
+    )
     assert result.results == expected
     assert result.checkpoint is not None
     if hub_path:

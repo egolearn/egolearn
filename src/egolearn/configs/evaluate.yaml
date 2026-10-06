@@ -1,6 +1,7 @@
 # Evaluation is independent of the training config and dataset.
 checkpoint: ???
 model_config: null  # required for older checkpoints without construction metadata
+trusted_snapshot: false  # only enable for a snapshot whose pickle contents you trust
 device: cpu
 seed: 0
 _imports_: []

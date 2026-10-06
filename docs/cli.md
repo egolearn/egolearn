@@ -6,6 +6,33 @@ relative file paths are resolved from the caller's working directory. `egl eval`
 without a config selects the packaged `evaluate` defaults. `egl --version`
 prints the installed version.
 
+## Exporting weights
+
+Install the `train` extra, then export a checkpoint into a new directory:
+
+```bash
+egl export runs/example/final.pth exports/example
+egl eval imagenet_linear_eval checkpoint=exports/example data_root=/path/to/imagenet
+```
+
+`egl export` takes ordinary arguments, not Hydra overrides. `egl export --help`
+lists its options. It writes `model.safetensors` and `model.json` with construction
+metadata, the export contract, source filename/SHA-256/step, and the export code
+revision. A source checkpoint must already contain construction metadata and an
+export contract. Existing output directories are refused, including empty ones.
+For a full snapshot you created and trust, add `--trusted-snapshot`; see
+[checkpoint trust](../SECURITY.md#model-export-and-checkpoint-trust).
+
+Publish the exported directory with:
+
+```bash
+python -m egolearn.hub push exports/example --name example --repo-type model --license MIT
+```
+
+Model uploads validate the pair and reject additional payloads, including `.pth`
+files. Dataset uploads retain their existing collection format. Snapshots stay
+in the local run directory.
+
 ## Configuration and overrides
 
 ```bash

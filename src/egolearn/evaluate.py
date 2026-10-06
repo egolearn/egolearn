@@ -25,6 +25,7 @@ def main(cfg: DictConfig) -> None:
         device=plain.get("device", "cpu"),
         seed=plain.get("seed", 0),
         imports=plain.get("_imports_", []),
+        trusted_snapshot=plain.get("trusted_snapshot", False),
     )
     if plain.get("output_json"):
         result.save_json(plain["output_json"])

@@ -8,6 +8,11 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- `egl export` writes safetensors model weights and JSON construction metadata,
+  contract, and portable source provenance. Evaluation and initialization share
+  a reader for exported directories and legacy checkpoints; full snapshots need
+  explicit trust. Model Hub uploads accept the exported pair only, and model
+  references without a filename fail before downloading.
 - Torch-free Hub path resolution and checksummed, private-by-default dataset/checkpoint
   fetch and push commands; documented dataset access tiers. `init_from.checkpoint`
   accepts model Hub references and retains their resolved commit across snapshot resume.

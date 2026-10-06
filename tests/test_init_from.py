@@ -167,7 +167,7 @@ def test_resumed_checkpoints_keep_initialization_lineage(
 def test_default_copies_everything_and_snapshots_are_accepted(toy_config, tmp_path, trained):
     state, _, snap = trained
     cfg = toy_config(tmp_path / "dst")
-    cfg["init_from"] = {"checkpoint": str(snap)}
+    cfg["init_from"] = {"checkpoint": str(snap), "trusted_snapshot": True}
     pipe = egolearn.build(cfg)
     assert _equal(pipe.model.state_dict(), state)
     assert pipe.init_from["step"] == 2  # read from the snapshot's clock
