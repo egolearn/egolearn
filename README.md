@@ -35,7 +35,7 @@ Requires [uv](https://docs.astral.sh/uv/); Python 3.12 is provisioned automatica
 
 ## Command line
 
-Use `egl` (also available as `egolearn`) after `uv sync`, or prefix it with `uv run`:
+After `uv sync`, use `uv run egl` (also available as `egolearn`), or `egl` in an activated environment:
 
 ```bash
 egl --help
