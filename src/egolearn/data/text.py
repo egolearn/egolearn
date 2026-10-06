@@ -39,7 +39,9 @@ class VocabTokenizer:
 
     @classmethod
     def from_json(cls, path: str, **kw) -> VocabTokenizer:
-        with open(path) as f:
+        from egolearn.hub import resolve
+
+        with resolve(path).open() as f:
             return cls(json.load(f), **kw)
 
     @property

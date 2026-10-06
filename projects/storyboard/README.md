@@ -27,8 +27,8 @@ takes all — as in the original samplers).
 Run:
 
 ```bash
-python -m egolearn.train --config-dir projects/storyboard/configs --config-name saycam dry_run=true
-python -m egolearn.train --config-dir projects/storyboard/configs --config-name saycam
+egl train projects/storyboard/configs/saycam.yaml dry_run=true
+egl train projects/storyboard/configs/saycam.yaml
 ```
 
 Documented framework adaptations (algorithms untouched): label writes go

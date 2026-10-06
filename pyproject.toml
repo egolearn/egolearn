@@ -14,7 +14,12 @@ authors = [{ name = "Agentic Learning AI Lab, New York University" }]
 dependencies = [
     "hydra-core>=1.3",
     "numpy>=2",
+    "huggingface-hub>=1.0",
 ]
+
+[project.scripts]
+egolearn = "egolearn.cli:main"
+egl = "egolearn.cli:main"
 
 # Optional extras are added together with the code that needs them (see docs/roadmap.md).
 # Still planned:

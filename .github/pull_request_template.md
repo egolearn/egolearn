@@ -1,10 +1,20 @@
+<!-- Follow CONTRIBUTING.md, "The PR message"; remove comments and empty optional sections, then run scripts/check_pr_message.py on the draft. -->
+
 ## Summary
 
-<!-- What does this PR do, and why? -->
+<!-- A short paragraph on the problem and outcome, one bullet per change, then Closes #N or Part of #N when applicable; describe the final diff. -->
+
+## Decisions
+
+<!-- Optional: one bullet per decision a reviewer may weigh differently, with its reason; delete this section otherwise. -->
+
+## Results
+
+<!-- For experiment/config/result changes: config, seeds, hardware, wall time, a table against the baseline, run/artifact links, and a reproduction command; if not run, say what is pending. Delete otherwise. -->
 
 ## Test plan
 
-<!-- How was this verified? e.g. `uv run pytest`, new tests, manual run -->
+<!-- Commands that ran, where, and the outcome (cluster jobs by ID); state pending checks, or say if CI covers everything. -->
 
 ## Checklist
 

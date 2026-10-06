@@ -7,8 +7,9 @@
     ... --config-name saycam_default seed=42 driver.rate.steps_per_admit=4
 
 `dry_run=true` builds and validates the full pipeline (including model and
-optimizer) without reading any stream data, so wiring mistakes show up
-before training starts. hydra writes the fully-resolved config to
+optimizer) without iterating the stream, so wiring mistakes show up
+before training starts. Hub references may download artifacts during resolution.
+hydra writes the fully-resolved config to
 `.hydra/config.yaml` in the run's output dir; that is the file to use when
 reproducing the run.
 """
@@ -30,6 +31,12 @@ def main(cfg: DictConfig) -> None:
     assert isinstance(plain, dict)
     dry_run = bool(plain.pop("dry_run", False))
     resume = plain.pop("resume", None)
+
+    if resume and plain.get("init_from"):
+        raise SystemExit(
+            "init_from and resume are mutually exclusive: use init_from for a fresh run, "
+            "or set init_from=null to resume a snapshot"
+        )
 
     pipe = egolearn.build(plain)
     print(pipe.summary(), flush=True)

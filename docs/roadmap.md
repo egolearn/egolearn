@@ -77,7 +77,8 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
 
 - [x] Site-neutral Slurm/Apptainer submission and Hydra sweep arrays
 - [x] Per-run clean-commit code archives and submission records
-- [ ] Hub-hosted checkpoints and split files; retire Drive links
+- [x] Hub artifact mechanism: revisioned paths, verified fetch and private-by-default push
+- [ ] Publish approved checkpoint/split collections and retire Drive links
 
 ## Performance ledger (from PR review, 2026-08)
 
