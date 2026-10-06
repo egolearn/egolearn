@@ -78,8 +78,9 @@ def read_checkpoint(
         except UnpicklingError as error:
             if trusted_snapshot:
                 raise
-            reason = str(error).split("WeightsUnpickler error:", 1)[-1].strip()
-            reason = reason.splitlines()[0] if reason else "unpickling failed"
+            inner = error.__context__ if isinstance(error.__context__, UnpicklingError) else error
+            reason = str(inner).split("WeightsUnpickler error:", 1)[-1].strip()
+            reason = reason.splitlines()[0].rstrip(".") if reason else "unpickling failed"
             raise UnpicklingError(
                 f"restricted checkpoint loading failed: {reason}. If this is a full snapshot "
                 "whose producer and contents you trust, use trusted_snapshot=True "
