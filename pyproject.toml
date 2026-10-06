@@ -14,6 +14,7 @@ authors = [{ name = "Agentic Learning AI Lab, New York University" }]
 dependencies = [
     "hydra-core>=1.3",
     "numpy>=2",
+    "huggingface-hub>=1.0",
 ]
 
 [project.scripts]

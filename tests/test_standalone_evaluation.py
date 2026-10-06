@@ -104,9 +104,10 @@ def legacy_text_checkpoint(tmp_path, model_config):
     return path, config, model
 
 
+@pytest.mark.parametrize("hub_path", [False, True])
 @pytest.mark.parametrize("snapshot", [False, True])
 def test_checkpoint_round_trip_without_building_training_pipeline(
-    toy_pipeline, tmp_path, monkeypatch, snapshot
+    toy_pipeline, tmp_path, monkeypatch, snapshot, hub_path
 ):
     pipe = toy_pipeline
     pipe.ctx.clock.step = 17
@@ -124,9 +125,26 @@ def test_checkpoint_round_trip_without_building_training_pipeline(
     monkeypatch.setattr(STREAMS.get("toy"), "__init__", forbidden)
     monkeypatch.setattr("egolearn.utils.snapshot.load_snapshot", forbidden)
     monkeypatch.setattr("egolearn.training.solver.build_optimizer", forbidden)
-    result = evaluate_checkpoint(path, benchmarks=[WeightBenchmark()])
+    checkpoint = path
+    if hub_path:
+        import huggingface_hub
+
+        def download(*, repo_id, repo_type, revision, filename):
+            assert (repo_id, repo_type, revision) == ("org/model", "model", "v1")
+            cache = tmp_path / "snapshots" / ("a" * 40)
+            cache.mkdir(parents=True)
+            (cache / filename).symlink_to(path)
+            return str(cache / filename)
+
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+        checkpoint = "hf://org/model@v1/checkpoint.pth"
+    result = evaluate_checkpoint(checkpoint, benchmarks=[WeightBenchmark()])
     assert result.results == expected
     assert result.checkpoint is not None
+    if hub_path:
+        assert result.checkpoint["commit"] == "a" * 40
+        assert result.checkpoint["reference"] == checkpoint
+        assert result.checkpoint["repo"] == "org/model"
     assert result.checkpoint["step"] == 17
     assert result.checkpoint["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
     assert result.model_config == pipe.model.construction_config

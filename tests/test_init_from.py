@@ -121,15 +121,34 @@ def test_corrupt_checkpoint_has_pipeline_context(toy_config, tmp_path, payload, 
     assert isinstance(caught.value.__cause__, error)
 
 
-@pytest.mark.parametrize("initialized", [False, True])
+@pytest.mark.parametrize("initialized,hub_path", [(False, False), (True, False), (True, True)])
 def test_resumed_checkpoints_keep_live_config_and_lineage(
-    toy_config, tmp_path, trained, initialized
+    toy_config, tmp_path, trained, monkeypatch, initialized, hub_path
 ):
     _, checkpoint, _ = trained
+    reference = str(checkpoint)
+    if hub_path:
+        import huggingface_hub
+
+        def download(*, repo_id, repo_type, revision, filename):
+            assert (repo_id, repo_type, revision) == ("org/model", "model", "v1")
+            cache = tmp_path / "snapshots" / ("a" * 40)
+            cache.mkdir(parents=True)
+            (cache / filename).symlink_to(checkpoint)
+            return str(cache / filename)
+
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+        reference = "hf://org/model@v1/final.pth"
     cfg = toy_config(tmp_path / "initialized")
     if initialized:
-        cfg["init_from"] = {"checkpoint": str(checkpoint)}
+        cfg["init_from"] = {"checkpoint": reference}
     pipe = egolearn.build(cfg)
+    if hub_path:
+        assert pipe.init_from["reference"] == reference
+        assert pipe.init_from["repo"] == "org/model"
+        assert pipe.init_from["repo_type"] == "model"
+        assert pipe.init_from["revision"] == "v1"
+        assert pipe.init_from["commit"] == "a" * 40
     pipe.driver.fit()
     snapshot = str(tmp_path / "initialized.pth")
     save_snapshot(snapshot, pipe.driver)
