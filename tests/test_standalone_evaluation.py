@@ -6,6 +6,7 @@ import random
 import subprocess
 import sys
 from copy import deepcopy
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -418,18 +419,20 @@ def test_existing_probe_configs_work_in_standalone_runner(tmp_path, imagefolder,
     assert json.loads(output.read_text())["results"] == result.results
 
 
-def test_imagenet_cli_runs_from_outside_repository(tmp_path, imagefolder, model_config):
+@pytest.mark.parametrize("entrypoint", ["module", "console"])
+def test_imagenet_cli_runs_from_outside_repository(tmp_path, imagefolder, model_config, entrypoint):
     model = build_model(model_config)
     checkpoint = tmp_path / "model.pth"
     torch.save({"model": model.state_dict(), "model_config": model.construction_config}, checkpoint)
     output = tmp_path / "result.json"
+    command = (
+        [sys.executable, "-m", "egolearn.evaluate", "--config-name", "imagenet_linear_eval"]
+        if entrypoint == "module"
+        else [str(Path(sys.executable).parent / "egolearn"), "eval", "imagenet_linear_eval"]
+    )
     subprocess.run(
         [
-            sys.executable,
-            "-m",
-            "egolearn.evaluate",
-            "--config-name",
-            "imagenet_linear_eval",
+            *command,
             f"checkpoint={checkpoint}",
             f"data_root={imagefolder}",
             f"output_json={output}",

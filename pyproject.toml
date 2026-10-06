@@ -17,6 +17,10 @@ dependencies = [
     "huggingface-hub>=1.0",
 ]
 
+[project.scripts]
+egolearn = "egolearn.cli:main"
+egl = "egolearn.cli:main"
+
 # Optional extras are added together with the code that needs them (see docs/roadmap.md).
 # Still planned:
 #   qa    : openai, anthropic, pandas           (LLM-based QA + memory)

@@ -32,6 +32,12 @@ def main(cfg: DictConfig) -> None:
     dry_run = bool(plain.pop("dry_run", False))
     resume = plain.pop("resume", None)
 
+    if resume and plain.get("init_from"):
+        raise SystemExit(
+            "init_from and resume are mutually exclusive: use init_from for a fresh run, "
+            "or set init_from=null to resume a snapshot"
+        )
+
     pipe = egolearn.build(plain)
     print(pipe.summary(), flush=True)
 
