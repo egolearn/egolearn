@@ -37,5 +37,8 @@ uv run pre-commit run --all-files
 - Dependency changes: add to the owning extra / dev group in `pyproject.toml`,
   then regenerate with `uv lock` (the `lock` CI check enforces this).
 - Update `CHANGELOG.md` under `[Unreleased]` for user-visible changes.
+- PR messages follow CONTRIBUTING.md "The PR message": draft the body in a
+  file, run `scripts/check_pr_message.py`, and keep the description aligned with
+  the final diff. Review history, people, and dates stay out of the message.
 - Third-party-derived files keep attribution headers; never vendor GPL or
   CC-BY-NC code (docs/design/streaming.md has the licensing rules).

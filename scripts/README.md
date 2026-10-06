@@ -6,6 +6,7 @@ versioned with the code they launch.
 
 | Script | Purpose |
 | --- | --- |
+| `check_pr_message.py` | Check a draft PR's title and body against CONTRIBUTING.md; stdlib-only local helper, not a CI gate. `--files` enables the experiment Results warning; `--pr N` reads an existing PR with `gh`. |
 | `setup_branch_protection.sh` | Apply/refresh branch protection on `main` (see header for usage). Gate: 1 approving review from a code owner + 5 green checks. `enforce_admins=false` is a setup-phase-only override — re-run with defaults to restore admin enforcement. |
 | `slurm/train.sbatch` | Generic training launcher; account/partition/data paths come from the sbatch command line ([setup](slurm/README.md)) |
 | `slurm/bench.sbatch` | Data-plane benchmark launcher |
@@ -14,3 +15,5 @@ versioned with the code they launch.
 
 Planned (see `docs/roadmap.md` phase 6): hydra+submitit launching and per-run
 code snapshotting.
+
+- `fetch_data.py`: wrapper for `python -m egolearn.hub` (fetch, push, verify, checksum); see [Hub artifacts](../docs/evaluation.md#hub-artifacts-and-access-tiers).

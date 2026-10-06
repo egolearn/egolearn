@@ -14,6 +14,27 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 - BabyCL offline training with complete storyboard/utterance indexing, mixed or
   pairs-only batches, utterance epochs, and deterministic prefetch/resume.
 
+- Torch-free Hub path resolution and checksummed, private-by-default dataset/checkpoint
+  fetch and push commands; documented dataset access tiers. `init_from.checkpoint`
+  accepts model Hub references and retains their resolved commit across snapshot resume.
+- PR message guidance and template sections for Summary, optional Decisions,
+  experiment Results, Test plan, and Checklist. The stdlib-only
+  `scripts/check_pr_message.py` checks drafts locally and warns when project or
+  YAML config changes have no Results section. Checklist checks use the template's
+  top-level boxes and ignore nested task examples. Summary checks treat numbered
+  items as bullets and require a separate prose paragraph; it is not a CI gate.
+- Installed `egl train` and `egl eval` commands accept packaged config names or
+  YAML paths, with `egolearn` as an equivalent command alias. Hydra handles later
+  config-selection flags, including abbreviations, using its normal precedence.
+  Explicit files retain access to packaged defaults and user-supplied search paths.
+- Evaluation data guide with centralized SAYCam access and frame preparation,
+  Labeled-S 4AFC manifest/vocabulary instructions, and BabyVLM task attribution.
+  A tested `labeled_s_4afc.prepare` command converts frozen trials without resampling.
+- `init_from` initializes selected model components from a checkpoint or snapshot
+  before optimizer construction, with strict tensor checks and source provenance.
+  Training rejects simultaneous `init_from` and `resume` before pipeline construction;
+  snapshot resume preserves initialization provenance in subsequent checkpoints.
+
 - Standalone evaluation API (`evaluate`, `evaluate_checkpoint`, `load_model`) and
   `python -m egolearn.evaluate`, with benchmark configs, structured JSON results,
   checkpoint provenance, and isolated evaluation RNGs. Existing probes can also

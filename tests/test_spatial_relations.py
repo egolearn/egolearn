@@ -484,3 +484,33 @@ def test_spatial_sampling_preserves_strata_and_configuration_blocks(tmp_path):
     assert all(row["random_subset_order_agreement"] == 1 for row in result["model_pairs"])
     sampling_variability(args, {"balanced": {}, "perfect": {}}, repetitions=100)
     assert first == (output / "sampling_variability.json").read_bytes()
+
+
+def test_hub_snapshot_symlinks_are_materialized_for_dataset_validation(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    from egolearn.config.instantiate import instantiate
+
+    source = tmp_path / "source"
+    _renders(source)
+    prepared = tmp_path / "prepared"
+    _prepare(source, prepared)
+    cache = tmp_path / "hub/datasets--org--spatial/snapshots" / ("a" * 40)
+    for path in prepared.rglob("*"):
+        if path.is_file():
+            cached = cache / path.relative_to(prepared)
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            cached.symlink_to(path)
+    # Reproduce the actual snapshot-cache incompatibility without weakening
+    # the validator's protection against local symlink escapes.
+    with pytest.raises(ValueError, match="nonlocal"):
+        validate_dataset(cache)
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda **kwargs: str(cache))
+    config = {"manifest": "hf://datasets/org/spatial@v1/manifest.json"}
+    resolved = instantiate(config)
+    from pathlib import Path
+
+    materialized = Path(resolved["manifest"]).parent
+    assert validate_dataset(materialized)["n_trials"] == 32
+    assert not any(p.is_symlink() for p in materialized.rglob("*"))
+    assert instantiate(config) == resolved

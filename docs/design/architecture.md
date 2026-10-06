@@ -365,7 +365,7 @@ changing the worker count preserves sample order and augmented inputs.
 ### Configs: hydra outside, registries inside
 
 The split of labor: **hydra owns how YAML becomes one config dict** —
-defaults lists, `--config-dir`/`--config-name`, CLI overrides
+defaults lists, config selection through `egl train`, CLI overrides
 (`seed=42 driver.rate.steps_per_admit=4`), multirun, and writing every run's
 resolved config to `.hydra/config.yaml` (the reproduction truth). **The
 registries own how that dict becomes objects**: `_target_: "kind:name"`
@@ -405,7 +405,7 @@ hydra:
 See `src/egolearn/configs/offline_iid_saycam.yaml` for an offline example:
 
 ```bash
-uv run python -m egolearn.train --config-name offline_iid_saycam \
+uv run egl train offline_iid_saycam \
     stream.root_dir=$DATA_ROOT
 ```
 

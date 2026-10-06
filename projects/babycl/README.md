@@ -33,8 +33,8 @@ solver/driver) plus `benchmarks/labeled_s_4afc`.
 Run:
 
 ```bash
-python -m egolearn.train --config-dir projects/babycl/configs --config-name saycam_default dry_run=true
-python -m egolearn.train --config-dir projects/babycl/configs --config-name saycam_default
+egl train projects/babycl/configs/saycam_default.yaml dry_run=true
+egl train projects/babycl/configs/saycam_default.yaml
 ```
 
 ## Offline BabyCL variant
