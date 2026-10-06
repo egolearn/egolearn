@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,13 @@ def _invalid_constant(value: str) -> None:
     raise ValueError(f"model.json must contain standard JSON, not {value}")
 
 
+def _finite_float(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"model.json numbers must be finite, not {value}")
+    return number
+
+
 def file_digest(path: Path) -> str:
     with path.open("rb") as file:
         return hashlib.file_digest(file, "sha256").hexdigest()
@@ -24,7 +32,11 @@ def file_digest(path: Path) -> str:
 def inspect_export(weights: Path, metadata: Path | None = None) -> dict[str, Any]:
     """Validate the JSON schema, weight digest, and safetensors header."""
     metadata = metadata if metadata is not None else weights.with_name(METADATA)
-    document = json.loads(metadata.read_text(encoding="utf-8"), parse_constant=_invalid_constant)
+    document = json.loads(
+        metadata.read_text(encoding="utf-8"),
+        parse_constant=_invalid_constant,
+        parse_float=_finite_float,
+    )
     if not isinstance(document, dict) or document.get("format_version") != 1:
         raise ValueError("expected a model.json export with format_version: 1")
     config = document.get("model_config")

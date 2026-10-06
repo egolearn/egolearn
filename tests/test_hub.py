@@ -311,7 +311,16 @@ assert 'torch' not in sys.modules
 
 
 @pytest.mark.parametrize(
-    "corruption", ["extra_pickle", "invalid_weights", "invalid_header", "invalid_json", "nonfinite"]
+    "corruption",
+    [
+        "extra_pickle",
+        "invalid_weights",
+        "invalid_header",
+        "invalid_json",
+        "nonfinite",
+        "overflow",
+        "negative_overflow",
+    ],
 )
 def test_model_upload_validates_export_before_creating_repo(remote, model_export, corruption):
     _, state = remote
@@ -329,6 +338,12 @@ def test_model_upload_validates_export_before_creating_repo(remote, model_export
         document = json.loads(path.read_text())
         document["model_config"]["invalid"] = float("nan")
         path.write_text(json.dumps(document))
+    elif corruption in {"overflow", "negative_overflow"}:
+        path = model_export / "model.json"
+        document = json.loads(path.read_text())
+        document["provenance"]["extra"] = "overflowed-number"
+        number = "1e999" if corruption == "overflow" else "-1e999"
+        path.write_text(json.dumps(document).replace('"overflowed-number"', number))
     else:
         (model_export / "model.json").write_text("{}")
     with pytest.raises(ValueError):

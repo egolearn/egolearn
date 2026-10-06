@@ -216,13 +216,21 @@ def test_tensor_read_errors_have_checkpoint_context(checkpoint, tmp_path, monkey
         read_checkpoint(exported)
 
 
-@pytest.mark.parametrize("error", ["existing", "metadata", "snapshot"])
+@pytest.mark.parametrize(
+    "error", ["existing", "metadata", "snapshot", "empty", "malformed", "malformed_trusted"]
+)
 def test_export_cli_reports_expected_errors_without_tracebacks(checkpoint, tmp_path, capsys, error):
     source, _ = checkpoint
     output = tmp_path / "export"
     if error == "existing":
         output.mkdir()
         match = "already exists"
+    elif error == "empty":
+        source.write_bytes(b"")
+        match = "checkpoint is empty or truncated"
+    elif error in {"malformed", "malformed_trusted"}:
+        source.write_bytes(b"not a checkpoint")
+        match = "invalid load key" if error == "malformed_trusted" else "Unsupported operand"
     else:
         state = torch.load(source, weights_only=True)
         if error == "metadata":
@@ -233,7 +241,8 @@ def test_export_cli_reports_expected_errors_without_tracebacks(checkpoint, tmp_p
             match = "--trusted-snapshot"
         torch.save(state, source)
     with pytest.raises(SystemExit) as caught:
-        main([str(source), str(output)])
+        options = ["--trusted-snapshot"] if error == "malformed_trusted" else []
+        main([str(source), str(output), *options])
     assert caught.value.code == 1
     captured = capsys.readouterr()
     assert match in captured.err and "Traceback" not in captured.err

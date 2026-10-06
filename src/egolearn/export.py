@@ -79,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         output = export_checkpoint(
             args.checkpoint, args.out_dir, trusted_snapshot=args.trusted_snapshot
         )
-    except (OSError, ValueError, UnpicklingError, RuntimeError) as error:
+    except (OSError, ValueError, UnpicklingError, RuntimeError, EOFError) as error:
         parser.exit(1, f"egl export: {error}\n")
     print(output)
     return 0

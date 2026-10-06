@@ -73,12 +73,17 @@ def read_checkpoint(
         file.seek(0)
         try:
             state = torch.load(file, map_location="cpu", weights_only=not trusted_snapshot)
+        except EOFError as error:
+            raise EOFError("checkpoint is empty or truncated") from error
         except UnpicklingError as error:
             if trusted_snapshot:
                 raise
+            reason = str(error).split("WeightsUnpickler error:", 1)[-1].strip()
+            reason = reason.splitlines()[0] if reason else "unpickling failed"
             raise UnpicklingError(
-                "restricted checkpoint loading failed; only for a snapshot whose producer and "
-                "contents you trust, use trusted_snapshot=True (Hydra: trusted_snapshot=true or "
+                f"restricted checkpoint loading failed: {reason}. If this is a full snapshot "
+                "whose producer and contents you trust, use trusted_snapshot=True "
+                "(Hydra: trusted_snapshot=true or "
                 "+init_from.trusted_snapshot=true; egl export: --trusted-snapshot)"
             ) from error
     if not isinstance(state, dict) or not isinstance(state.get("model"), dict):
