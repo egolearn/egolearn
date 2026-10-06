@@ -20,6 +20,10 @@ exclusive; set `init_from=null` when resuming a config that specifies initializa
 The source checkpoint file name and hash, selected prefixes, and tensor count are recorded in the
 pipeline summary and subsequent checkpoints' model metadata.
 
+`init_from.checkpoint` also accepts a model Hub reference such as
+`hf://org/model@v1/final.pth`. Only the named file is downloaded. The source
+reference, repository, requested revision, and resolved commit are retained in
+the initialization metadata, including after snapshot resume.
 
 V-JEPA initializes its EMA target from the context encoder at step 0, replacing any
 loaded target weights. A resumed snapshot preserves its target state.

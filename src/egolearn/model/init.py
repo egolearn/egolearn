@@ -8,11 +8,11 @@ step-0 sync replaces any loaded EMA target with the initialized context encoder.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from pathlib import Path
 
 import torch
 import torch.nn as nn
 
+from egolearn.hub import resolve_with_metadata
 from egolearn.utils.checkpoint import read_checkpoint
 
 
@@ -34,8 +34,10 @@ def load_pretrained_weights(
 
     Returns a provenance summary: file name, sha256, the source run's step, the
     prefixes, and how many tensors were copied (and skipped, when not strict).
+    Hub references also retain the original reference and resolved commit.
     """
-    path = Path(checkpoint).expanduser()
+    path, provenance = resolve_with_metadata(checkpoint, repo_type="model")
+    path = path.expanduser()
     if not path.is_file():
         raise FileNotFoundError(f"init_from.checkpoint not found: {path}")
     include = (
@@ -101,6 +103,7 @@ def load_pretrained_weights(
     result = model.load_state_dict(copied, strict=False)
     assert not result.unexpected_keys, result.unexpected_keys
     return {
+        **provenance,
         "checkpoint": metadata["filename"],
         "sha256": metadata["sha256"],
         "step": metadata["step"],
