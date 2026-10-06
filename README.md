@@ -48,21 +48,10 @@ See the [CLI guide](docs/cli.md) for configuration paths, overrides, and multiru
 
 ## SAYCam dataset access
 
-The SAYCam videos used in the BabyCL and Memory Storyboard projects are hosted on
-[Databrary](https://nyu.databrary.org/volume/564/). Researchers can request access
-with approval from their institution's IRB and must follow the dataset's data-use
-terms.
-
-For the VTWT and Baby Winoground evaluation benchmarks, prepare the data following the
-[BabyVLM preparation notes](https://github.com/ShawnKing98/babylmms-eval#data-preparation):
-
-1. Download `frames.txt` from the
-   [Multimodal SAYCam-S data release](https://nyu.databrary.org/volume/564/session/67447).
-2. Rename the downloaded file to `frames.zip` and extract it into a local image
-   directory. The release is reported to contain 600,285 images (about 14 GB).
-3. Configure that directory as `image_dir` for VTWT and `pos_dir` for Baby
-   Winoground. The [evaluation guide](docs/evaluation.md#babyvlm-benchmark-data)
-   describes the labels, synthetic negative images, and other probe inputs.
+The SAYCam videos used in BabyCL and Memory Storyboard are hosted on
+[Databrary](https://nyu.databrary.org/volume/564/).
+See the [evaluation guide](docs/evaluation.md#saycam-access) for IRB approval,
+access requirements, and benchmark data preparation.
 
 ## What's here
 
@@ -91,6 +80,9 @@ Python usage, CLI configuration, and checkpoint compatibility.
 The rest of the consolidation (LifelongMemory's QA/memory line, more evals)
 arrives per [docs/roadmap.md](docs/roadmap.md), and **nothing is ported
 without triage** — see the porting policy there.
+
+For staged training with selected checkpoint weights, see the
+[initialization guide](docs/initialization.md).
 
 ## Layout
 
