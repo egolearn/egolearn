@@ -403,12 +403,15 @@ def test_redundant_prep_does_not_wait_for_running_jobs(cluster):
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize("script", ["train", "bench"])
-def test_compatibility_wrappers_are_executable_and_request_gpus(cluster, script):
+@pytest.mark.parametrize(
+    ("script", "config"),
+    [("train", "toy_streaming"), ("train", "projects/toy.yaml"), ("bench", "config.yaml")],
+)
+def test_compatibility_wrappers_are_executable_and_request_gpus(cluster, script, config):
     checkout, env = cluster
     wrapper = checkout / f"scripts/slurm/{script}.sbatch"
     assert os.access(wrapper, os.X_OK)
-    args = ["configs", "name"] if script == "train" else ["config.yaml"]
+    args = [config, "seed=19"] if script == "train" else [config]
     result = run([str(wrapper), *args], cwd=checkout, env=env)
     assert result.returncode == 0, result.stderr
     calls = [json.loads(line) for line in Path(env["TEST_SUBMIT_LOG"]).read_text().splitlines()]
@@ -416,6 +419,14 @@ def test_compatibility_wrappers_are_executable_and_request_gpus(cluster, script)
     assert "--cpus-per-task=8" in calls[-1]["args"]
     assert any(arg.startswith("--time=") for arg in calls[-1]["args"])
     assert "uv" not in calls[-1]["args"]
+    if script == "train":
+        job = Path(calls[-1]["env"]["EGOLEARN_RUN_DIR"])
+        assert json.loads((job / "run.json").read_text())["command"] == [
+            "egl",
+            "train",
+            config,
+            "seed=19",
+        ]
 
 
 @pytest.mark.parametrize("style", ["--error", "-e", "--error=", "-ejoined", "env"])
@@ -499,7 +510,7 @@ def test_wrapper_resource_environment_overrides_defaults(cluster, script, per_gp
     env["SBATCH_CPUS_PER_TASK"] = "16"
     if per_gpu:
         env["SBATCH_CPUS_PER_GPU"] = "8"
-    args = ["configs", "name"] if script == "train" else ["config.yaml"]
+    args = ["toy_streaming"] if script == "train" else ["config.yaml"]
     result = run([str(checkout / f"scripts/slurm/{script}.sbatch"), *args], cwd=checkout, env=env)
     assert result.returncode == 0, result.stderr
     calls = [json.loads(line) for line in Path(env["TEST_SUBMIT_LOG"]).read_text().splitlines()]
@@ -527,7 +538,7 @@ def test_wrapper_tres_overrides_only_matching_resources(
 ):
     checkout, env = cluster
     env.update(resource_env)
-    args = ["configs", "name"] if script == "train" else ["config.yaml"]
+    args = ["toy_streaming"] if script == "train" else ["config.yaml"]
     result = run([str(checkout / f"scripts/slurm/{script}.sbatch"), *args], cwd=checkout, env=env)
     assert result.returncode == 0, result.stderr
     calls = [json.loads(line) for line in Path(env["TEST_SUBMIT_LOG"]).read_text().splitlines()]

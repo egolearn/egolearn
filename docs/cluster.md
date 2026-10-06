@@ -24,7 +24,9 @@ Add the transcript and vocabulary overrides required by your config. Set
 `EGOLEARN_PREP_SBATCH_ARGS` for the CPU partition and any prep-specific account.
 No site account, partition, credential, or personal path is built into the repo.
 The compatibility command `scripts/slurm/train.sbatch` also submits through this
-launcher; do not pass it to `sbatch` directly. Use the generic submit command to
+launcher. It accepts one YAML path or packaged config name followed by Hydra
+overrides, for example `scripts/slurm/train.sbatch toy_streaming seed=19`;
+do not pass it to `sbatch` directly. Use the generic submit command to
 select other resources. Both compatibility wrappers retain one GPU, eight CPUs
 and 64 GB memory; training defaults to 48 hours and benchmarking to two hours.
 Site time, memory and GPU `SBATCH_*` settings override these defaults. The wrappers
