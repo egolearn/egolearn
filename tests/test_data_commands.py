@@ -1,5 +1,6 @@
 """Public CLI routing, access rules and on-disk checksum verification."""
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -9,6 +10,15 @@ import pytest
 
 from egolearn.commands import data
 from egolearn.hub import write_checksums
+
+PREPARERS = [item for item in data.DATASETS if item.prepare_module]
+PREPARER_OPTIONS = {
+    "shape-bias": "--force-download",
+    "spatial-relations": "--generator-root",
+    "spatial-monitoring": "--exp1-per-condition",
+    "babyview-4afc": "--vocab_json",
+    "labeled-s-4afc": "--trials_json",
+}
 
 
 def test_catalog_is_unique_and_distinguishes_metadata_from_pixels(capsys):
@@ -144,7 +154,7 @@ def test_prepare_preserves_default_fetched_collection(tmp_path, monkeypatch, nam
     assert calls[-1][1][-1] == str(tmp_path / "new")
 
 
-@pytest.mark.parametrize("item", [item for item in data.DATASETS if item.prepare_module])
+@pytest.mark.parametrize("item", PREPARERS, ids=lambda item: item.name)
 def test_preparation_explains_missing_extra(monkeypatch, capsys, tmp_path, item):
     monkeypatch.setattr(data.importlib.util, "find_spec", lambda name: None)
     with pytest.raises(SystemExit):
@@ -152,20 +162,9 @@ def test_preparation_explains_missing_extra(monkeypatch, capsys, tmp_path, item)
     assert "egolearn[train]" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize(
-    ("name", "option"),
-    [
-        ("shape-bias", "--force-download"),
-        ("spatial-relations", "--generator-root"),
-        ("spatial-monitoring", "--exp1-per-condition"),
-        ("babyview-4afc", "--vocab_json"),
-        ("labeled-s-4afc", "--trials_json"),
-    ],
-)
+@pytest.mark.parametrize("item", PREPARERS, ids=lambda item: item.name)
 @pytest.mark.parametrize("help_args", [["--help"], ["-h"], ["--", "--help"]])
-def test_installed_preparation_help_needs_no_training_dependencies(
-    tmp_path, name, option, help_args
-):
+def test_installed_preparation_help_needs_no_training_dependencies(tmp_path, item, help_args):
     script = """
 import sys
 from importlib.abc import MetaPathFinder
@@ -180,13 +179,32 @@ from egolearn.cli import main
 raise SystemExit(main(['data', 'prepare', *sys.argv[1:]]))
 """
     result = subprocess.run(
-        [sys.executable, "-I", "-c", script, name, *help_args],
+        [sys.executable, "-I", "-c", script, item.name, *help_args],
         cwd=tmp_path,
         text=True,
         capture_output=True,
         timeout=90,
     )
     assert result.returncode == 0, result.stderr
-    assert f"usage: egl data prepare {name}" in result.stdout
-    assert option in result.stdout
+    assert f"usage: egl data prepare {item.name}" in result.stdout
+    assert PREPARER_OPTIONS[item.name] in result.stdout
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("torch") is None or importlib.util.find_spec("PIL") is None,
+    reason="legacy benchmark imports require training dependencies",
+)
+@pytest.mark.parametrize("item", PREPARERS, ids=lambda item: item.name)
+def test_installed_legacy_preparation_help_from_outside_checkout(tmp_path, item):
+    result = subprocess.run(
+        [sys.executable, "-I", "-m", item.prepare_module, "--help"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        timeout=90,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "usage:" in result.stdout
+    assert PREPARER_OPTIONS[item.name] in result.stdout
     assert not list(tmp_path.iterdir())
