@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import argparse
-
+from egolearn.commands.prepare_parsers import preparation_parser
 from egolearn.evaluation.benchmarks.shape_bias.stimuli import (
     DEFAULT_SEED,
     download_shape_bias_assets,
@@ -12,13 +11,10 @@ from egolearn.evaluation.benchmarks.shape_bias.stimuli import (
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Prepare Tartaglini Experiment 3 at 80% size, unaligned."
+    parser = preparation_parser(
+        "shape-bias", description="Prepare Tartaglini Experiment 3 at 80% size, unaligned."
     )
-    parser.add_argument("--asset-dir", default="data/shape_bias/source")
-    parser.add_argument("--output-dir", default="data/shape_bias/80_unaligned")
-    parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
-    parser.add_argument("--force-download", action="store_true")
+    parser.set_defaults(seed=DEFAULT_SEED)
     args = parser.parse_args()
 
     source = download_shape_bias_assets(args.asset_dir, force=args.force_download)

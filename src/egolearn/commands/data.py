@@ -202,12 +202,21 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 )
             else:
-                if importlib.util.find_spec("torch") is None:
-                    raise ValueError("benchmark preparation requires egolearn[train]")
                 arguments = args.arguments
                 if arguments[:1] == ["--"]:
                     arguments = arguments[1:]
                 command = preparation_command(item, root, arguments)
+                if "--help" in arguments or "-h" in arguments:
+                    from egolearn.commands.prepare_parsers import preparation_parser
+
+                    preparation_parser(
+                        item.name,
+                        description=item.description,
+                        prog=f"egl data prepare {item.name}",
+                    ).parse_args(command[3:])
+                    return 0
+                if importlib.util.find_spec("torch") is None:
+                    raise ValueError("benchmark preparation requires egolearn[train]")
                 os.execv(sys.executable, command)
     except (OSError, ValueError, RuntimeError) as error:
         parser.exit(1, f"{error}\n")

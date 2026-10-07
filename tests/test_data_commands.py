@@ -132,41 +132,61 @@ def test_prepare_preserves_default_fetched_collection(tmp_path, monkeypatch, nam
         data.main(["--root", str(tmp_path), "prepare", name])
     assert not calls
     assert marker.read_text() == '{"commit":"synthetic"}'
-    data.main(["--root", str(tmp_path), "prepare", name, "--help"])
-    assert len(calls) == 1
+    with pytest.raises(SystemExit) as help_exit:
+        data.main(["--root", str(tmp_path), "prepare", name, "--help"])
+    assert help_exit.value.code == 0
+    assert not calls
     if name == "spatial-relations":
         data.main(["--root", str(tmp_path), "prepare", name, "--validate-only"])
-        assert len(calls) == 2
+        assert len(calls) == 1
     flag = "--out_dir" if name == "babyview-4afc" else "--output-dir"
     data.main(["--root", str(tmp_path), "prepare", name, flag, str(tmp_path / "new")])
     assert calls[-1][1][-1] == str(tmp_path / "new")
 
 
-def test_preparation_explains_missing_extra(monkeypatch, capsys):
+@pytest.mark.parametrize("item", [item for item in data.DATASETS if item.prepare_module])
+def test_preparation_explains_missing_extra(monkeypatch, capsys, tmp_path, item):
     monkeypatch.setattr(data.importlib.util, "find_spec", lambda name: None)
     with pytest.raises(SystemExit):
-        data.main(["prepare", "shape-bias"])
+        data.main(["--root", str(tmp_path), "prepare", item.name])
     assert "egolearn[train]" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
-    "name",
+    ("name", "option"),
     [
-        "shape-bias",
-        "spatial-relations",
-        "spatial-monitoring",
-        "babyview-4afc",
-        "labeled-s-4afc",
+        ("shape-bias", "--force-download"),
+        ("spatial-relations", "--generator-root"),
+        ("spatial-monitoring", "--exp1-per-condition"),
+        ("babyview-4afc", "--vocab_json"),
+        ("labeled-s-4afc", "--trials_json"),
     ],
 )
-def test_installed_preparation_help_from_outside_checkout(tmp_path, name):
+@pytest.mark.parametrize("help_args", [["--help"], ["-h"], ["--", "--help"]])
+def test_installed_preparation_help_needs_no_training_dependencies(
+    tmp_path, name, option, help_args
+):
+    script = """
+import sys
+from importlib.abc import MetaPathFinder
+class Block(MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] in {'torch', 'torchvision', 'PIL', 'numpy', 'hydra'} or (
+            fullname.startswith('egolearn.evaluation')
+        ):
+            raise AssertionError(f'preparation help imported {fullname}')
+sys.meta_path.insert(0, Block())
+from egolearn.cli import main
+raise SystemExit(main(['data', 'prepare', *sys.argv[1:]]))
+"""
     result = subprocess.run(
-        [sys.executable, "-I", "-m", "egolearn.cli", "data", "prepare", name, "--help"],
+        [sys.executable, "-I", "-c", script, name, *help_args],
         cwd=tmp_path,
         text=True,
         capture_output=True,
         timeout=90,
     )
     assert result.returncode == 0, result.stderr
-    assert "usage:" in result.stdout
+    assert f"usage: egl data prepare {name}" in result.stdout
+    assert option in result.stdout
     assert not list(tmp_path.iterdir())

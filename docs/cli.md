@@ -62,7 +62,8 @@ Fetch and preparation defaults share `$EGOLEARN_DATA` (default `./data`). Put
 the benchmark's existing flags unchanged; explicit source/output options override
 the catalog defaults. Fetch and prepare use the same `ROOT/<name>` collection
 layout; shape-bias source assets live separately under `ROOT/.sources/shape-bias`. Use `egl data prepare NAME --help` for each preparer's
-requirements. Preparation still needs the dependencies and source assets documented
+requirements; this help works in a base installation without training extras.
+Preparation still needs the dependencies and source assets documented
 in the [evaluation guide](evaluation.md). It does not bypass data access requirements.
 
 `data verify DIR` checks the collection's `checksums.sha256` without writing files.
