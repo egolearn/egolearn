@@ -8,6 +8,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Automatic atomic run records for CLI and Python training/evaluation, with input
+  identities, checkpoint lineage, preserved failed attempts, and a pinned-input
+  three-seed BabyCL SAYCam suite for Labeled-S 4AFC and linear decoding.
 - Complete `egl` lifecycle commands: a shared dataset catalog with access tiers,
   Hub fetch and checksum verification, benchmark preparation under one data root,
   read-only environment diagnostics, and dispatch to the cluster launcher.

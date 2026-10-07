@@ -6,4 +6,4 @@ seed: 0
 _imports_: []
 benchmarks: []
 output_json: evaluation.json
-record_json: null  # optional local run record; benchmark suites always set this
+record_json: auto  # unique runs/eval/records/<id>/record.json; or an explicit path / null

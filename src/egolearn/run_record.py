@@ -1,4 +1,4 @@
-"""Optional atomic run records used by the CLI suite runner (no torch imports)."""
+"""Atomic records shared by training, evaluation, and benchmark suites (no torch)."""
 
 from __future__ import annotations
 
@@ -8,16 +8,33 @@ import os
 import subprocess
 import tempfile
 import time
+import uuid
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from contextvars import ContextVar
+from copy import deepcopy
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
 from egolearn import __version__
 from egolearn.hub import sha256_file
+from egolearn.utils.input_provenance import input_identity, prepare_inputs
+
+_ACTIVE: ContextVar[tuple[str, RunRecord | None] | None] = ContextVar("run_record", default=None)
 
 
-def atomic_json(path: Path, value: Any) -> None:
+def _plain(value):
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Mapping):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    return value
+
+
+def atomic_json(path: Path, value: Any, *, replace: bool = True) -> None:
     """Replace a JSON file only after the complete payload has been serialized."""
     text = json.dumps(value, indent=2, allow_nan=False) + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -26,7 +43,11 @@ def atomic_json(path: Path, value: Any) -> None:
         with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as handle:
             temporary = Path(handle.name)
             handle.write(text)
-        os.replace(temporary, path)
+        if replace:
+            os.replace(temporary, path)
+        else:
+            # Atomic exclusive creation: a repeated explicit path must not erase a run.
+            os.link(temporary, path)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -114,15 +135,47 @@ class RunRecord:
     mutates_sampling_state = False
 
     def __init__(self, entry: str, config: dict[str, Any]):
+        self.path: Path | None = None
         self.value: dict[str, Any] = {
             "schema_version": 1,
             "entry": entry,
             "status": "running",
-            "config": config,
+            "config": _plain(deepcopy(config)),
             "seed": config.get("seed", 1337 if entry == "train" else 0),
             "metrics": {},
             "provenance": source_identity(),
+            "input_provenance": {},
         }
+
+    @property
+    def config(self) -> dict:
+        return self.value["config"]
+
+    def capture_output(self, name: str, path: str | Path) -> None:
+        _, identity = input_identity(path, repo_type="model")
+        self.value.setdefault("outputs", {})[name] = identity
+
+    def training_provenance(self) -> dict:
+        return deepcopy(
+            {
+                **self.value["provenance"],
+                "seed": self.value["seed"],
+                "input_provenance": self.value["input_provenance"],
+            }
+        )
+
+    def evaluation(self, result) -> None:
+        """Retain benchmark settings, versions and split metadata as well as scores."""
+        evaluation = _plain(result.to_dict())
+        json.dumps(evaluation, allow_nan=False)
+        self.value["metrics"] = {
+            f"{name}/{metric}": value
+            for name, metrics in result.results.items()
+            for metric, value in metrics.items()
+        }
+        self.value["evaluation"] = evaluation
+        if result.checkpoint is not None:
+            self.value["checkpoint"] = result.checkpoint
 
     def on_step(self, driver, logs: dict[str, float]) -> None:
         self.value["metrics"] = {f"train/last_step/{name}": value for name, value in logs.items()}
@@ -149,19 +202,45 @@ class RunRecord:
                 self.value["metrics"].update(
                     {f"probe/{name}/{key}": value for key, value in metrics.items()}
                 )
+        self.value["model_config"] = deepcopy(
+            getattr(getattr(driver, "model", None), "construction_config", None)
+        )
 
 
 @contextmanager
-def record_run(config: dict[str, Any], entry: str) -> Iterator[RunRecord | None]:
-    destination = config.get("record_json")
-    if not destination:
-        yield None
+def record_run(
+    config: dict[str, Any],
+    entry: str,
+    *,
+    reuse: bool = False,
+    inputs: dict[str, dict] | None = None,
+) -> Iterator[RunRecord | None]:
+    active = _ACTIVE.get()
+    if reuse and active is not None and active[0] == entry:
+        yield active[1]
         return
-    path = Path(destination)
+    destination = config.get("record_json", "auto")
+    if not destination:
+        token = _ACTIVE.set((entry, None))
+        try:
+            yield None
+        finally:
+            _ACTIVE.reset(token)
+        return
     record = RunRecord(entry, config)
+    if destination == "auto":
+        root = Path(config.get("run_dir") or f"runs/{entry}")
+        path = root / "records" / uuid.uuid4().hex / "record.json"
+    else:
+        path = Path(destination)
+    record.path = path
     started = time.monotonic()
-    atomic_json(path, record.value)
+    atomic_json(path, record.value, replace=False)
+    token = _ACTIVE.set((entry, record))
     try:
+        record.value["input_provenance"] = (
+            prepare_inputs(record.config) if inputs is None else deepcopy(inputs)
+        )
         yield record
         if record.value.get("nonfinite_steps", 0):
             raise ValueError("training skipped nonfinite losses")
@@ -183,5 +262,38 @@ def record_run(config: dict[str, Any], entry: str) -> Iterator[RunRecord | None]
         record.value["metrics"] = finite
         raise
     finally:
+        _ACTIVE.reset(token)
         record.value["wall_seconds"] = time.monotonic() - started
         atomic_json(path, record.value)
+
+
+def recorded_fit(fit):
+    """Give pipeline-built drivers the same record lifecycle as the training CLI."""
+
+    @wraps(fit)
+    def wrapped(driver, *args, **kwargs):
+        config = getattr(driver, "run_config", None)
+        if config is None:
+            return fit(driver, *args, **kwargs)
+        with record_run(
+            config, "train", reuse=True, inputs=getattr(driver, "run_inputs", None)
+        ) as record:
+            if record is not None:
+                record.value["seed"] = driver.ctx.seed
+                record.value["start_step"] = driver.ctx.clock.step
+            driver.run_provenance = record.training_provenance() if record is not None else None
+            added = record is not None and record not in driver.hooks
+            if added:
+                driver.hooks.append(record)
+            try:
+                return fit(driver, *args, **kwargs)
+            finally:
+                if added:
+                    driver.hooks.remove(record)
+
+    return wrapped
+
+
+def active_record(entry: str) -> RunRecord | None:
+    active = _ACTIVE.get()
+    return active[1] if active is not None and active[0] == entry else None

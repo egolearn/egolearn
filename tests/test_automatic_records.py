@@ -1,0 +1,310 @@
+"""Ordinary CLI/API runs retain independent, truthful records, including failures."""
+
+import json
+import subprocess
+import sys
+from copy import deepcopy
+from pathlib import Path
+
+import pytest
+import torch
+
+import egolearn
+from egolearn.evaluation import Benchmark, evaluate, evaluate_checkpoint
+from egolearn.hub import sha256_file, write_checksums
+from egolearn.run_record import record_run
+from egolearn.training.hooks import CheckpointHook
+from egolearn.utils.input_provenance import input_identity, prepare_inputs
+from egolearn.utils.snapshot import load_snapshot, save_snapshot
+
+
+def records(root):
+    return [json.loads(path.read_text()) for path in sorted(root.rglob("record.json"))]
+
+
+class Score(Benchmark):
+    name = "score"
+
+    def configuration(self):
+        return {"seed": 17, "normalize": True}
+
+    def metadata(self):
+        return {"split_sha256": "a" * 64}
+
+    def run(self, model, ctx):
+        return {"accuracy": 0.75}
+
+
+class Fails(Score):
+    name = "fails"
+
+    def run(self, model, ctx):
+        raise RuntimeError("synthetic failure")
+
+
+def test_default_records_preserve_each_attempt_and_explicit_path(tmp_path):
+    cfg = {"run_dir": tmp_path}
+    for _ in range(2):
+        with record_run(cfg, "train") as record:
+            assert record is not None
+            record.value["metrics"]["loss"] = 1.0
+    assert len(records(tmp_path)) == 2
+    explicit = tmp_path / "explicit.json"
+    with record_run({"record_json": explicit}, "eval"):
+        pass
+    before = explicit.read_bytes()
+    with pytest.raises(FileExistsError), record_run({"record_json": explicit}, "eval"):
+        pass
+    assert explicit.read_bytes() == before
+    with record_run({"record_json": None, "run_dir": tmp_path}, "train") as disabled:
+        assert disabled is None
+    assert len(records(tmp_path)) == 2
+
+
+def test_inputs_distinguish_files_unversioned_and_verified_collections(tmp_path):
+    source = tmp_path / "labels.json"
+    source.write_text("[]")
+    config = {"stream": {"root_dir": str(tmp_path), "transcript_json": str(source)}}
+    observed = prepare_inputs(config)
+    assert observed["stream.transcript_json"]["sha256"] == sha256_file(source)
+    assert observed["stream.root_dir"]["sha256"] == "unavailable"
+    assert str(tmp_path) not in json.dumps(observed)
+    write_checksums(tmp_path)
+    _, identity = input_identity(tmp_path)
+    assert identity["sha256"] == sha256_file(tmp_path / "checksums.sha256")
+    source.write_text('["changed"]')
+    _, identity = input_identity(tmp_path)
+    assert identity["sha256"] == "unavailable"
+    assert identity["reason"] == "checksum_verification_failed"
+
+
+@pytest.mark.parametrize("mode", ["streaming", "offline"])
+def test_pipeline_records_without_changing_training_or_rng(tmp_path, toy_config, mode):
+    cfg = toy_config(tmp_path)
+    if mode == "offline":
+        for key in ("admission", "memories", "recipe", "routes", "label_stores"):
+            cfg.pop(key)
+        cfg["driver"] = {
+            "mode": "offline",
+            "max_steps": 2,
+            "batch": {"slot": "curr", "n": 4, "views": ["v1", "v2"]},
+        }
+        cfg["losses"] = cfg["losses"][:1]
+    torch.manual_seed(12)
+    plain = egolearn.build({**cfg, "record_json": None})
+    plain.driver.fit()
+    expected_rng = torch.get_rng_state().clone()
+    torch.manual_seed(12)
+    pipe = egolearn.build(cfg)
+    pipe.driver.fit()
+    assert torch.equal(torch.get_rng_state(), expected_rng)
+    for key, tensor in plain.model.state_dict().items():
+        assert torch.equal(pipe.model.state_dict()[key], tensor)
+    [record] = records(tmp_path)
+    assert record["status"] == "completed"
+    assert record["metrics"]["train/steps"] == 2
+    assert record["seed"] == cfg["seed"]
+    assert record["provenance"]["uv_lock_sha256"] != "unavailable"
+    assert not any(type(h).__name__ == "RunRecord" for h in pipe.driver.hooks)
+
+
+def test_evaluation_failure_retains_completed_protocol_and_checkpoint(tmp_path, toy_config):
+    pipe = egolearn.build(toy_config(tmp_path))
+    checkpoint = tmp_path / "checkpoint.pth"
+    CheckpointHook(str(tmp_path))._save(pipe.driver, checkpoint.name)
+    record_path = tmp_path / "record.json"
+    with pytest.raises(RuntimeError, match="synthetic failure"):
+        evaluate_checkpoint(checkpoint, benchmarks=[Score(), Fails()], record_json=record_path)
+    record = json.loads(record_path.read_text())
+    assert record["status"] == "failed"
+    assert record["checkpoint"]["sha256"] == sha256_file(checkpoint)
+    assert record["checkpoint"]["training_provenance"] == "unavailable"
+    assert record["metrics"] == {"score/accuracy": 0.75}
+    assert record["evaluation"]["metadata"]["score"]["split_sha256"] == "a" * 64
+    assert record["evaluation"]["configs"]["score"]["seed"] == 17
+
+
+def test_hub_reference_resolved_once_and_original_config_preserved(
+    tmp_path, toy_config, monkeypatch
+):
+    import egolearn.utils.input_provenance as inputs
+
+    pipe = egolearn.build(toy_config(tmp_path))
+    checkpoint = tmp_path / "checkpoint.pth"
+    CheckpointHook(str(tmp_path))._save(pipe.driver, checkpoint.name)
+    calls = []
+
+    def resolve(source, repo_type):
+        calls.append(source)
+        return checkpoint, {"reference": source, "commit": "b" * 40, "revision": "main"}
+
+    monkeypatch.setattr(inputs, "resolve_with_metadata", resolve)
+    result = evaluate_checkpoint(
+        "hf://models/example/weights@main/model.pth",
+        benchmarks=[Score()],
+        record_json=tmp_path / "record.json",
+    )
+    assert len(calls) == 1
+    assert result.checkpoint is not None
+    assert result.checkpoint["commit"] == "b" * 40
+    record = records(tmp_path)[0]
+    assert record["input_provenance"]["checkpoint"]["commit"] == "b" * 40
+    assert record["checkpoint"]["sha256"] == sha256_file(checkpoint)
+
+
+def test_checkpoints_carry_training_identity_into_later_evaluation(tmp_path, toy_config):
+    cfg = toy_config(tmp_path)
+    cfg["hooks"]["checkpoint_every"] = 2
+    original = deepcopy(cfg)
+    pipe = egolearn.build(cfg)
+    pipe.driver.fit()
+    assert cfg == original
+    checkpoint = tmp_path / "run/final.pth"
+    result = evaluate_checkpoint(
+        checkpoint, benchmarks=[Score()], record_json=tmp_path / "eval/record.json"
+    )
+    assert result.checkpoint is not None
+    training = result.checkpoint["training_provenance"]
+    assert training["seed"] == 7
+    assert len(training["commit"]) == 40
+    [record] = records(tmp_path / "run")
+    assert record["outputs"]["final.pth"]["sha256"] == sha256_file(checkpoint)
+
+
+def test_cli_dry_run_and_build_failure_write_automatic_records(tmp_path):
+    command = [
+        sys.executable,
+        "-m",
+        "egolearn.train",
+        "--config-name",
+        "toy_streaming",
+        "dry_run=true",
+        f"run_dir={tmp_path / 'run'}",
+    ]
+    good = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True)
+    assert good.returncode == 0, good.stderr
+    bad = subprocess.run(
+        [*command, "+driver.mode=invalid"], cwd=tmp_path, capture_output=True, text=True
+    )
+    assert bad.returncode != 0
+    assert {record["status"] for record in records(tmp_path / "run")} == {"dry_run", "failed"}
+
+
+@pytest.mark.parametrize("entry", ["api", "cli_hub"])
+def test_resume_records_restored_seed_parent_and_new_attempt(
+    tmp_path, toy_config, monkeypatch, entry
+):
+    cfg = toy_config(tmp_path)
+    pipe = egolearn.build(cfg)
+    pipe.driver.fit()
+    snapshot = tmp_path / "saved.pth"
+    save_snapshot(str(snapshot), pipe.driver)
+    saved = torch.load(snapshot, weights_only=False)
+    assert saved["run_provenance"]["seed"] == 7
+    cfg["seed"] = 99
+    cfg["driver"]["max_steps"] = 3
+    if entry == "api":
+        resumed = egolearn.build(cfg)
+        load_snapshot(str(snapshot), resumed.driver)
+        resumed.driver.fit()
+    else:
+        import egolearn.utils.input_provenance as inputs
+        from egolearn.train import _train
+
+        reference = "hf://models/example/weights@main/snapshot.pth"
+        calls = []
+
+        def resolve(source, repo_type):
+            calls.append(source)
+            return snapshot, {"reference": source, "commit": "c" * 40, "revision": "main"}
+
+        monkeypatch.setattr(inputs, "resolve_with_metadata", resolve)
+        with record_run({**cfg, "resume": reference}, "train") as record:
+            assert record is not None
+            _train(dict(record.config))
+        assert calls == [reference]
+    results = sorted(records(tmp_path / "run"), key=lambda r: r["start_step"])
+    assert len(results) == 2
+    assert results[1]["start_step"] == 2
+    assert results[1]["seed"] == 7
+    assert results[1]["config"]["seed"] == 99
+    assert results[1]["input_provenance"]["resume"]["sha256"] == sha256_file(snapshot)
+    assert results[1]["metrics"]["train/steps"] == 3
+    if entry == "cli_hub":
+        assert results[1]["input_provenance"]["resume"]["reference"] == reference
+        assert results[1]["input_provenance"]["resume"]["commit"] == "c" * 40
+
+
+def test_in_memory_evaluation_automatically_records_without_checkpoint_claim(
+    tmp_path, toy_config, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    pipe = egolearn.build(toy_config(tmp_path))
+    for _ in range(2):
+        evaluate(pipe.model, benchmarks=[Score()])
+    results = records(tmp_path / "runs/eval")
+    assert len(results) == 2
+    assert all(r["metrics"] == {"score/accuracy": 0.75} for r in results)
+    assert all(r["evaluation"]["checkpoint"] is None for r in results)
+
+
+def test_record_and_suite_imports_do_not_load_torch(tmp_path):
+    subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            "import sys; import egolearn.commands.bench; assert 'torch' not in sys.modules",
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+def test_babycl_suite_composes_default_training_and_protected_inputs(tmp_path, monkeypatch):
+    from hydra import compose, initialize_config_dir
+    from omegaconf import OmegaConf
+
+    from egolearn.commands.bench import _compose, _overrides
+    from egolearn.evaluation.benchmarks.labeled_s_linear.probe import SPLIT_SHA256
+
+    root = Path(__file__).resolve().parents[1]
+    for name in (
+        "SAYCAM_ROOT",
+        "SAYCAM_TRANSCRIPTS",
+        "BABYCL_VOCAB",
+        "LABELED_S_MANIFEST",
+        "LABELED_S_ROOT",
+        "LABELED_S_SPLIT",
+    ):
+        monkeypatch.setenv(name, str(tmp_path / name.lower()))
+    for name in (
+        "SAYCAM_SHA256",
+        "SAYCAM_TRANSCRIPTS_SHA256",
+        "BABYCL_VOCAB_SHA256",
+        "LABELED_S_MANIFEST_SHA256",
+        "LABELED_S_SHA256",
+    ):
+        monkeypatch.setenv(name, "a" * 64)
+    suite = OmegaConf.to_container(
+        OmegaConf.load(root / "benchmarks/babycl_saycam.yaml"), resolve=True
+    )
+    assert isinstance(suite, dict)
+    suite["config"] = str((root / "benchmarks" / suite["config"]).resolve())
+    result = _compose(suite, tmp_path / "run", 1337)
+    with initialize_config_dir(
+        config_dir=str(root / "projects/babycl/configs"), version_base="1.3"
+    ):
+        baseline = OmegaConf.to_container(compose(config_name="saycam_default"), resolve=True)
+    assert isinstance(baseline, dict)
+    for key in ("model", "losses", "solver", "driver", "views", "memories", "admission"):
+        assert result[key] == baseline[key]
+    assert suite["seeds"] == [1337, 1338, 1339]
+    assert suite["inputs"]["probes.1.split_file"]["sha256"] == SPLIT_SHA256
+    assert result["probes"][1]["data_root"] == str(tmp_path / "labeled_s_root")
+    for key in suite["inputs"]:
+        with pytest.raises(ValueError, match="pinned"):
+            _overrides([f"{key}=changed"], set(suite["inputs"]))

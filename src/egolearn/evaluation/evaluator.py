@@ -21,6 +21,7 @@ from egolearn.config.instantiate import instantiate
 from egolearn.core.context import _stable_seed
 from egolearn.evaluation.benchmark import Benchmark
 from egolearn.model.model import ComposedModel
+from egolearn.run_record import RunRecord, finite_metrics, record_run
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,59 @@ def evaluate(
     device: str | torch.device | None = None,
     seed: int = 0,
     imports: Sequence[str] = (),
+    record_json: str | Path | None = "auto",
+) -> EvaluationResult:
+    """Evaluate a model with an automatic run record; ``None`` disables recording.
+
+    Modes, gradient flags and RNGs are preserved. Automatic records use distinct
+    directories under ``runs/eval/records``; an explicit file must not exist yet.
+    """
+    config = {
+        "seed": int(seed),
+        "device": str(device) if device is not None else None,
+        "model_config": deepcopy(model.construction_config),
+        "_imports_": list(imports),
+        "benchmarks": benchmark_configs(benchmarks),
+        "record_json": record_json,
+    }
+    with record_run(config, "eval", reuse=True) as record:
+        specs = prepared_benchmarks(benchmarks, record)
+        return _evaluate(
+            model, benchmarks=specs, device=device, seed=seed, imports=imports, record=record
+        )
+
+
+def benchmark_configs(benchmarks: Sequence[Benchmark | Mapping]) -> list[dict]:
+    return [
+        dict(spec)
+        if isinstance(spec, Mapping)
+        else {
+            "_target_": f"{type(spec).__module__}.{type(spec).__qualname__}",
+            **spec.configuration(),
+        }
+        for spec in benchmarks
+    ]
+
+
+def prepared_benchmarks(
+    benchmarks: Sequence[Benchmark | Mapping], record: RunRecord | None
+) -> Sequence[Benchmark | Mapping]:
+    if record is None:
+        return benchmarks
+    return [
+        record.config["benchmarks"][index] if isinstance(spec, Mapping) else spec
+        for index, spec in enumerate(benchmarks)
+    ]
+
+
+def _evaluate(
+    model: ComposedModel,
+    *,
+    benchmarks: Sequence[Benchmark | Mapping],
+    device: str | torch.device | None = None,
+    seed: int = 0,
+    imports: Sequence[str] = (),
+    record: RunRecord | None = None,
 ) -> EvaluationResult:
     """Evaluate a loaded model, preserving its modes, gradient flags, and RNGs.
 
@@ -167,8 +221,12 @@ def evaluate(
             with _isolated_evaluation_rng(ctx.seed), torch.inference_mode(False), torch.no_grad():
                 benchmark.prepare()
                 metrics = benchmark.run(model, ctx)
-            result.results[benchmark.name] = {key: float(value) for key, value in metrics.items()}
+            result.results[benchmark.name] = finite_metrics(
+                {key: float(value) for key, value in metrics.items()}
+            )
             result.configs[benchmark.name] = config
             result.versions[benchmark.name] = str(benchmark.version)
             result.metadata[benchmark.name] = benchmark.metadata()
+            if record is not None:
+                record.evaluation(result)
     return result

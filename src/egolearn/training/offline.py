@@ -49,6 +49,7 @@ from egolearn.data.batching.recipe import modality_for_unit
 from egolearn.data.loading import Loader
 from egolearn.data.sources.base import DenseFrameChannel, Stream
 from egolearn.model.losses.base import own_forward_slots
+from egolearn.run_record import recorded_fit
 
 from .profiling import StageTimer
 from .solver import ProgressCosine, apply_lr
@@ -77,6 +78,8 @@ class OfflineDriver:
         grad_accumulation: int = 1,
         prefetch: bool = False,
     ):
+        self.run_config: dict | None = None
+        self.run_inputs: dict | None = None
         if unit not in ("frame", "clip"):
             raise ValueError(
                 "offline mode supports unit=frame or unit=clip; unit=pair "
@@ -224,6 +227,7 @@ class OfflineDriver:
         return True
 
     # ------------------------------------------------------------------
+    @recorded_fit
     def fit(self) -> None:
         self.model.to(self.ctx.device)
         self.model.train()

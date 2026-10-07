@@ -52,6 +52,15 @@ Existing small evaluations remain available with their `probe:*` configuration
 targets. Pass those configs in `benchmarks` to evaluate them after training.
 There is one scoring implementation for training probes and standalone use.
 
+CLI evaluations and the two evaluation APIs also write an automatic atomic
+`record.json` under `runs/eval/records/<id>/`. It retains run provenance and
+benchmark settings/metadata, including completed benchmarks if a later one
+fails. Use `record_json=/new/file.json` on the CLI or `record_json="/new/file.json"`
+in Python for an explicit destination; `null` on the CLI or `None` in Python
+disables recording. An explicit destination must not already exist. See
+[run records](benchmark_suites.md#run-records-and-scope) for input identity and
+checkpoint provenance.
+
 ## SAYCam access
 
 SAYCam videos, SAYCam-S frames, and Labeled-S images are hosted on

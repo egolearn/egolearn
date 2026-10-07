@@ -1,0 +1,26 @@
+# @package _global_
+# BabyCL release-gate measurements, selected with +benchmark=labeled_s.
+# The canonical 26-class linear split differs from the paper's 24-class protocol.
+_imports_:
+  - egolearn.methods.babycl
+  - egolearn.evaluation.benchmarks.labeled_s_4afc
+  - egolearn.evaluation.benchmarks.labeled_s_linear
+
+probes:
+  - _target_: probe:four_afc
+    name: labeled_s_4afc
+    manifest: ???
+    vocab_json: ${tokenizer.vocab_json}
+    vision_head: embed512
+    size: 224
+  - _target_: probe:labeled_s_linear
+    name: labeled_s_linear
+    data_root: ???
+    split_file: ???
+    encoder: image
+    head: null
+    view: center_crop
+    size: 224
+    batch_size: 256
+    l2: 0.001
+    max_iter: 500

@@ -1,5 +1,10 @@
 # Command line
 
+Training and evaluation write an atomic run record by default. `record_json=auto`
+keeps each attempt in a separate directory; `record_json=/new/record.json` chooses
+an explicit destination and refuses to overwrite an existing run. See
+[run records](benchmark_suites.md#run-records-and-scope) for paths and Python usage.
+
 Use `uv run egl` after `uv sync`, or `egl` in an activated environment.
 `egolearn` is an equivalent installed alias. Commands are `train`, `eval`, `data`,
 `submit`, `doctor`, and `bench`; each accepts `--help`.

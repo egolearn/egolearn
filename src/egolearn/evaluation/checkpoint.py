@@ -11,10 +11,17 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 from egolearn.evaluation.benchmark import Benchmark
-from egolearn.evaluation.evaluator import EvaluationResult, _isolated_evaluation_rng, evaluate
+from egolearn.evaluation.evaluator import (
+    EvaluationResult,
+    _evaluate,
+    _isolated_evaluation_rng,
+    benchmark_configs,
+    prepared_benchmarks,
+)
 from egolearn.hub import resolve, resolve_with_metadata
 from egolearn.model.build import build_model
 from egolearn.model.model import ComposedModel
+from egolearn.run_record import record_run
 
 
 def _construction_config(source: str | Path | Mapping) -> tuple[dict, list[str], int | None]:
@@ -90,6 +97,7 @@ def _load_model(
         "path": str(path),
         "sha256": digest,
         "step": state.get("step", (state.get("context") or {}).get("clock", {}).get("step")),
+        "training_provenance": state.get("run_provenance") or "unavailable",
     }
     # The caller retains only the model and provenance; optimizer/replay state
     # from legacy checkpoints is released before benchmark preparation begins.
@@ -126,15 +134,40 @@ def evaluate_checkpoint(
     device: str | torch.device = "cpu",
     seed: int = 0,
     imports: Sequence[str] = (),
+    record_json: str | Path | None = "auto",
 ) -> EvaluationResult:
     """Load a trained model and evaluate it independently of its training data."""
-    with _isolated_evaluation_rng(seed):
+    config: dict[str, Any] = {
+        "checkpoint": str(checkpoint),
+        "model_config": model_config,
+        "benchmarks": benchmark_configs(benchmarks),
+        "device": str(device),
+        "seed": int(seed),
+        "_imports_": list(imports),
+        "record_json": record_json,
+    }
+    with record_run(config, "eval", reuse=True) as record, _isolated_evaluation_rng(seed):
+        plain = record.config if record is not None else config
         model, metadata = _load_model(
-            checkpoint,
-            model_config=model_config,
+            plain["checkpoint"],
+            model_config=plain.get("model_config"),
             device=device,
             imports=imports,
         )
-        result = evaluate(model, benchmarks=benchmarks, device=device, seed=seed, imports=imports)
-    result.checkpoint = metadata
-    return result
+        if record is not None:
+            # Hub resolution was frozen to a local path before loading. Keep its origin.
+            origin = record.value["input_provenance"].get("checkpoint", {})
+            metadata = {**origin, **metadata}
+            record.value["checkpoint"] = metadata
+        result = _evaluate(
+            model,
+            benchmarks=prepared_benchmarks(benchmarks, record),
+            device=device,
+            seed=seed,
+            imports=imports,
+            record=record,
+        )
+        result.checkpoint = metadata
+        if record is not None:
+            record.evaluation(result)
+        return result

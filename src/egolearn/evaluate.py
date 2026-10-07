@@ -22,6 +22,7 @@ def main(cfg: DictConfig) -> None:
     plain = cast(dict[str, Any], OmegaConf.to_container(cfg, resolve=True))
     assert isinstance(plain, dict)
     with record_run(plain, "eval") as record:
+        plain = record.config if record is not None else plain
         result = evaluate_checkpoint(
             plain["checkpoint"],
             model_config=plain.get("model_config"),
@@ -31,12 +32,7 @@ def main(cfg: DictConfig) -> None:
             imports=plain.get("_imports_", []),
         )
         if record is not None:
-            record.value["metrics"] = {
-                f"{name}/{metric}": value
-                for name, metrics in result.results.items()
-                for metric, value in metrics.items()
-            }
-            record.value["checkpoint"] = result.checkpoint
+            record.evaluation(result)
         if plain.get("output_json"):
             result.save_json(plain["output_json"])
         print(json.dumps(result.to_dict(), indent=2, allow_nan=False))

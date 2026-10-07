@@ -13,11 +13,14 @@ everything else comes from the core toolbox.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pickle import UnpicklingError
 
 from egolearn.evaluation.probe import Probe
 from egolearn.model.build import build_model
+from egolearn.run_record import active_record
+from egolearn.utils.input_provenance import prepare_inputs
 
 from .config.instantiate import instantiate
 from .core import events as E
@@ -104,6 +107,15 @@ class Pipeline:
 
 # ---------------------------------------------------------------------------
 def build(cfg: dict) -> Pipeline:
+    cfg = deepcopy(cfg)
+    record = active_record("train")
+    inputs = (
+        record.value["input_provenance"]
+        if record is not None
+        else prepare_inputs(cfg)
+        if cfg.get("record_json", "auto")
+        else {}
+    )
     # `_imports_`: modules whose import registers project-owned components
     # (admission components, losses, views, ...). This is how a config reaches
     # code that lives in projects/ -- the config only names a component, and
@@ -217,6 +229,9 @@ def build(cfg: dict) -> Pipeline:
             EOFError,
         ) as e:
             raise PipelineError(f"init_from: {e}") from e
+        # Input capture froze Hub references to local files; preserve their origin
+        # alongside the digest and tensor selection reported by the loader.
+        init_summary = {**inputs.get("init_from.checkpoint", {}), **init_summary}
         model.construction_config = dict(model.construction_config or {})
         model.construction_config["init_from"] = init_summary
 
@@ -359,6 +374,8 @@ def build(cfg: dict) -> Pipeline:
     )
     pipe.warnings.extend(build_warnings)
     validate(pipe)
+    driver.run_config = cfg
+    driver.run_inputs = inputs
     return pipe
 
 
