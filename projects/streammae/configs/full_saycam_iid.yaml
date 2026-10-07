@@ -11,5 +11,8 @@ routes: null
 recipe: null
 driver:
   mode: offline
+  prefetch: true
   batch: {slot: frames, n: 512, views: [reconstruction]}
   subsample: 1
+loader:
+  cache_frames: 0  # shuffled frames have negligible local reuse

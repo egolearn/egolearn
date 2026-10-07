@@ -8,7 +8,12 @@ from egolearn.data.views import IMAGENET_MEAN, IMAGENET_STD
 
 
 @VIEWS.register("mae")
-def mae(size: int = 224, scale_min: float = 0.2, vertical_flip: bool = False) -> T.Compose:
+def mae(
+    size: int = 224,
+    scale_min: float = 0.2,
+    vertical_flip: bool = False,
+    uint8: bool = False,
+) -> T.Compose:
     """Bicubic random resized crop, horizontal flip, and ImageNet normalization."""
     ops: list = []
     if vertical_flip:
@@ -20,7 +25,10 @@ def mae(size: int = 224, scale_min: float = 0.2, vertical_flip: bool = False) ->
                 size, scale=(scale_min, 1.0), interpolation=T.InterpolationMode.BICUBIC
             ),
             T.RandomHorizontalFlip(),
-            T.ToTensor(),
-            T.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+            *(
+                [T.PILToTensor()]
+                if uint8
+                else [T.ToTensor(), T.Normalize(IMAGENET_MEAN, IMAGENET_STD)]
+            ),
         ]
     )

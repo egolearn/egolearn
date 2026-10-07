@@ -50,7 +50,13 @@ def offline(cfg):
 def test_full_pass_pause_resume_matches_uninterrupted(config, tmp_path, iid):
     if iid:
         offline(config)
-    assert prepare(config)[2] == {"frames": 9, "updates": 6, "batch_size": 4}
+    assert prepare(config)[2] == {
+        "frames": 9,
+        "updates": 6,
+        "batch_size": 4,
+        "stride": 1,
+        "updates_per_epoch": 2,
+    }
     assert run(config) == 0
     reference = torch.load(tmp_path / "run" / "final.pth", weights_only=False)
     config["run_dir"] = str(tmp_path / "resumed")
@@ -80,7 +86,7 @@ def test_resume_refuses_changed_recipe(config):
 
 def test_runner_rejects_incompatible_budgets(config):
     config["driver"]["advance"]["n"] = 2
-    with pytest.raises(ValueError, match="one frame"):
+    with pytest.raises(ValueError, match="advance must equal stride"):
         prepare(config)
     config["driver"]["advance"]["n"] = 1
     config["stream"]["transcript_json"] = "unused.json"
@@ -149,10 +155,24 @@ def test_full_project_configs_compose_and_resolve_budget(config, tmp_path, datas
     assert plain["hooks"]["checkpoint_every"] == 0
     assert plain["hooks"]["snapshot_every"] > 0
     assert plain["solver"]["schedule"]["floor"] == 1
+    assert plain["run_control"]["stride"] == 32
+    assert plain["driver"]["advance"]["n"] == 32
+    assert plain["driver"]["warmup"]["admitted"] == 480
+    assert plain["hooks"]["snapshot_each_epoch"] is True
+    assert plain["views"]["reconstruction"]["uint8"] is True
+    assert plain["loader"]["packed"] is True
+    assert plain["loader"]["pin_memory"] is True
+    if mode == "iid":
+        assert plain["driver"]["prefetch"] is True
+        assert plain["loader"]["cache_frames"] == 0
+    else:
+        assert plain["loader"]["cache_frames"] == 1024
     # Exercise pipeline construction with tiny geometry and a real frame directory.
     for key in ("device", "stream", "model", "views", "loader"):
         plain[key] = deepcopy(config[key])
     plain["run_control"]["batch_size"] = 4
+    plain["run_control"]["stride"] = 1
+    plain["driver"]["prefetch"] = False
     if mode == "iid":
         plain["driver"]["batch"]["n"] = 4
     else:
@@ -264,3 +284,61 @@ def test_resume_refuses_changed_runtime(config, monkeypatch):
     monkeypatch.setattr(train_module, "runtime_identity", lambda: {"source_sha256": "candidate2"})
     with pytest.raises(ValueError, match="manifest differs"):
         run(config)
+
+
+@pytest.mark.parametrize("iid", [False, True])
+def test_stride_tail_epoch_checkpoints_and_resume(config, tmp_path, iid):
+    config["run_control"]["stride"] = 2
+    config["driver"]["advance"]["n"] = 2
+    config["driver"]["warmup"]["admitted"] = 2
+    config["hooks"]["snapshot_each_epoch"] = True
+    if iid:
+        offline(config)
+    # N=9, B=4: windows end at 4,6,8,9. No tail frame is discarded.
+    assert prepare(config)[2]["updates"] == 4
+    assert run(config) == 0
+    reference = torch.load(tmp_path / "run" / "final.pth", weights_only=False)
+    for epoch in (1, 2):
+        state = torch.load(tmp_path / "run" / f"snapshot_epoch_{epoch:03d}.pth", weights_only=False)
+        assert state["context"]["clock"]["step"] == epoch * 2
+        if not iid:
+            assert state["context"]["clock"]["admitted"] == (6 if epoch == 1 else 9)
+    config["run_dir"] = str(tmp_path / "resumed_stride")
+    config["run_control"]["stop_after_steps"] = 2
+    assert run(config) == PREFLIGHT_STOP
+    config["run_control"]["stop_after_steps"] = 0
+    assert run(config) == 0
+    result = torch.load(tmp_path / "resumed_stride" / "final.pth", weights_only=False)
+    for name, tensor in reference["model"].items():
+        torch.testing.assert_close(result["model"][name], tensor, rtol=0, atol=0)
+
+
+def test_packed_prefetch_pause_resume_matches_serial(config, tmp_path):
+    offline(config)
+    config["views"]["reconstruction"]["uint8"] = True
+    assert run(config) == 0
+    reference = torch.load(tmp_path / "run" / "final.pth", weights_only=False)
+    config["run_dir"] = str(tmp_path / "prefetched")
+    config["loader"] = {"workers": 2, "packed": True}
+    config["driver"]["prefetch"] = True
+    config["run_control"]["stop_after_steps"] = 1
+    assert run(config) == PREFLIGHT_STOP
+    config["loader"] = {"workers": 0, "packed": False}
+    config["driver"]["prefetch"] = False
+    config["run_control"]["stop_after_steps"] = 0
+    assert run(config) == 0
+    result = torch.load(tmp_path / "prefetched" / "final.pth", weights_only=False)
+    assert len(list((tmp_path / "prefetched" / "attempts").glob("*.json"))) == 2
+    assert result["context"]["clock"] == reference["context"]["clock"]
+    for name, tensor in reference["model"].items():
+        torch.testing.assert_close(result["model"][name], tensor, rtol=0, atol=0)
+
+
+def test_epoch_checkpoint_includes_short_final_epoch(config, tmp_path):
+    config["run_control"]["stride"] = 3
+    config["driver"]["advance"]["n"] = 3
+    config["driver"]["warmup"]["admitted"] = 1
+    config["hooks"]["snapshot_each_epoch"] = True
+    assert run(config) == 0  # 3 updates, 2 updates per IID epoch
+    state = torch.load(tmp_path / "run" / "snapshot_epoch_002.pth", weights_only=False)
+    assert state["context"]["clock"]["step"] == 3

@@ -30,6 +30,7 @@ sequential.
 from __future__ import annotations
 
 import random
+from collections import OrderedDict
 from typing import TYPE_CHECKING
 
 import torch
@@ -53,7 +54,7 @@ WorkItem = tuple
 _WORKER: dict = {}  # per-process state, filled by _pool_init in each worker
 
 
-def _pool_init(stream: Stream, view_specs: dict, imports: list[str]) -> None:
+def _pool_init(stream: Stream, view_specs: dict, imports: list[str], cache_frames: int = 0) -> None:
     import importlib
 
     torch.set_num_threads(1)
@@ -64,6 +65,8 @@ def _pool_init(stream: Stream, view_specs: dict, imports: list[str]) -> None:
         importlib.import_module(mod)
     _WORKER["stream"] = stream
     _WORKER["views"] = ViewBank(view_specs)
+    _WORKER["cache"] = OrderedDict()
+    _WORKER["cache_frames"] = cache_frames
 
 
 def _decode_clip(stream: Stream, ref, start: int, clip_len: int, stride: int) -> torch.Tensor:
@@ -85,8 +88,23 @@ def _pool_task(item: WorkItem) -> torch.Tensor:
     _, ref, index, view_names, seed = item
     torch.manual_seed(seed)
     random.seed(seed)
-    pil = _WORKER["stream"].open_frame(ref, index)
+    cache = _WORKER["cache"]
+    key = (ref.key, index)
+    pil = cache.pop(key, None)
+    if pil is None:
+        pil = _WORKER["stream"].open_frame(ref, index)
+    if _WORKER["cache_frames"]:
+        cache[key] = pil
+        while len(cache) > _WORKER["cache_frames"]:
+            cache.popitem(last=False)
+        # A view may mutate its input. Cache only pristine decoded pixels.
+        pil = pil.copy()
     return _WORKER["views"].apply(pil, view_names)
+
+
+def _pool_chunk(items: list[WorkItem]) -> torch.Tensor:
+    """One shared tensor per chunk instead of a separate IPC handle per image."""
+    return torch.stack([_pool_task(item) for item in items])
 
 
 class Loader:
@@ -96,11 +114,19 @@ class Loader:
         views: ViewBank,
         workers: int = 0,
         imports: list[str] | None = None,
+        pin_memory: bool = False,
+        packed: bool = False,
+        cache_frames: int = 0,
     ):
         self.stream = stream
         self.views = views
         self.workers = int(workers)
         self.imports = list(imports or [])  # modules workers import to register views
+        self.pin_memory = bool(pin_memory) and torch.cuda.is_available()
+        self.packed = bool(packed)
+        self.cache_frames = int(cache_frames)
+        if self.cache_frames < 0 or (self.cache_frames and self.workers <= 0):
+            raise ValueError("loader.cache_frames must be nonnegative and requires workers")
         self._pool: ProcessPoolExecutor | None = None
         # optional StageTimer (egolearn.training.profiling); the driver attaches it
         self.timer: StageTimer | None = None
@@ -117,14 +143,14 @@ class Loader:
                 max_workers=self.workers,
                 mp_context=mp.get_context("spawn"),
                 initializer=_pool_init,
-                initargs=(self.stream, self.views.specs, self.imports),
+                initargs=(self.stream, self.views.specs, self.imports, self.cache_frames),
             )
         return self._pool
 
     def close(self) -> None:
         """Shut the worker pool down (the drivers call this when a run ends)."""
         if self._pool is not None:
-            self._pool.shutdown(wait=False, cancel_futures=True)
+            self._pool.shutdown(wait=True, cancel_futures=True)
             self._pool = None
 
     # ---- frame selection --------------------------------------------------
@@ -166,6 +192,38 @@ class Loader:
         return rng.randrange(n - span + 1) if n > span else 0
 
     # ---- loading ------------------------------------------------------------
+    def tensor_batch(self, items: list[WorkItem]) -> torch.Tensor:
+        """Ordered [B,V,...] views, optionally using packed worker transfers.
+
+        Seeds, selection and view arithmetic are unchanged. The final pinned
+        allocation allows asynchronous host-to-device copies without an extra
+        pageable-to-pinned copy of the assembled batch.
+        """
+        if not items:
+            raise ValueError("cannot collate an empty batch")
+        if self.packed and self.workers > 0:
+            chunk_size = max(1, (len(items) + self.workers * 2 - 1) // (self.workers * 2))
+            chunks = [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
+
+            def load():
+                return list(self._ensure_pool().map(_pool_chunk, chunks))
+
+            if self.timer is None:
+                tensors = load()
+            else:
+                with self.timer.measure("data.load"):
+                    tensors = load()
+            first = tensors[0]
+            out = torch.empty(
+                (len(items), *first.shape[1:]), dtype=first.dtype, pin_memory=self.pin_memory
+            )
+            return torch.cat(tensors, out=out)
+        rows = self.views_batch(items)
+        out = torch.empty(
+            (len(items), *rows[0].shape), dtype=rows[0].dtype, pin_memory=self.pin_memory
+        )
+        return torch.stack(rows, out=out)
+
     def frame_views(self, ref, index: int, view_names: list[str], seed: int | None = None):
         """Decode one frame of `ref` and apply the named views (augmentation
         pipelines), returning a [V,C,H,W] tensor with one row per view.

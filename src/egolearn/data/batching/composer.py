@@ -116,6 +116,10 @@ class Composer:
         # Loader call (one well-packed pool submission), then scatter the
         # tensors back to their slots.
         filled = [self._fill_slot(slot, draws[slot.name], ctx, seq, rng) for slot in recipe.slots]
+        if len(filled) == 1:
+            out, work = filled[0]
+            out[K.SLOT_VIEWS] = self.loader.tensor_batch(work)
+            return {recipe.slots[0].name: out}
         tensors = self.loader.views_batch([w for _, work in filled for w in work])
         batch, pos = {}, 0
         for slot, (out, work) in zip(recipe.slots, filled, strict=True):

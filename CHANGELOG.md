@@ -5,7 +5,6 @@ All notable changes are documented here, following
 Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fixes).
 
 ## [Unreleased]
-
 ### Added
 
 - Standard image MAE (`egolearn.methods.mae`): visible-patch ViT encoder,
@@ -73,6 +72,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   manifest.
 
 ### Changed
+
+- Reduce the full-pass MAE configs to stride 32 (about 16 matched IID epochs),
+  with a checkpoint every epoch; pack and pin loader batches, cache streaming
+  decodes, and transfer byte crops for device normalization with safe IID prefetch.
 
 - Full ImageNet evaluation moves from `probe:imagenet_linear_sgd` to standalone
   `benchmark:imagenet_linear_sgd`. Dataset enumeration is deferred to preparation

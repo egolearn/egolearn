@@ -7,6 +7,7 @@ import torch
 from egolearn.config.registry import LOSSES
 from egolearn.core import keys as K
 from egolearn.core.context import Context
+from egolearn.data.views import IMAGENET_MEAN, IMAGENET_STD
 from egolearn.methods.mae.model import MAEDecoder, MAEEncoder
 from egolearn.model.losses.base import Loss
 from egolearn.model.model import ComposedModel
@@ -118,6 +119,13 @@ class MAE(Loss):
                 views.size(0), encoder.num_patches, self.mask_ratio, generator=generator
             )
             images = views[:, view].contiguous().to(ctx.device, non_blocking=True)
+            if images.dtype == torch.uint8:
+                # Keep the identical PIL crop/flip, but transfer one byte per
+                # channel and perform the usual ToTensor/Normalize on device.
+                images = images.float().div_(255)
+                mean = images.new_tensor(IMAGENET_MEAN).view(1, 3, 1, 1)
+                std = images.new_tensor(IMAGENET_STD).view(1, 3, 1, 1)
+                images.sub_(mean).div_(std)
             visible, hidden = visible.to(ctx.device), hidden.to(ctx.device)
             # Autocast only the forward pass; targets/loss, parameters, and
             # optimizer state remain float32. BF16 needs no gradient scaler.

@@ -169,7 +169,7 @@ class OfflineDriver:
                 ("frame", r, 0, self.views, self.ctx.derive_seed(f"aug:{seq}:{self.slot}:{i}"))
                 for i, r in enumerate(refs)
             ]
-        views = torch.stack(self.loader.views_batch(work), dim=0)
+        views = self.loader.tensor_batch(work)
         slot = {
             K.SLOT_VIEWS: views,
             K.SLOT_MODALITY: modality_for_unit(self.unit),
@@ -248,41 +248,43 @@ class OfflineDriver:
             from concurrent.futures import ThreadPoolExecutor
 
             executor = ThreadPoolExecutor(max_workers=1)
-        while self.ctx.clock.step < planned:
-            # per-epoch DERIVED shuffle: the order for epoch e depends only on
-            # (seed, e), so a resumed run regenerates it exactly and continues
-            # from step % batches_per_epoch
-            epoch = self.ctx.clock.step // batches_per_epoch
-            order = list(range(len(refs)))
-            # fresh_rng, not rng: the cached generator would be restored
-            # already-consumed on resume and shuffle a different order
-            self.ctx.fresh_rng(f"offline.shuffle.epoch{epoch}").shuffle(order)
-            pending = None  # (future, seq): the next batch, composing ahead
-            for b in range(self.ctx.clock.step % batches_per_epoch, batches_per_epoch):
-                if self.ctx.clock.step >= planned:
-                    break
-                if pending is not None:
-                    fut, seq = pending
-                    pending = None
-                    with self.timer.measure("batch.compose"):
-                        batch = fut.result()
-                    # committed only now that the batch is handed to training,
-                    # so a snapshot taken mid-flight stays consistent
-                    self.ctx.clock.compose_seq = seq + 1
-                else:
-                    with self.timer.measure("batch.compose"):
-                        batch = self._compose(self._pick(refs, order, b))
-                if (
-                    executor is not None
-                    and b + 1 < batches_per_epoch
-                    and self.ctx.clock.step + 1 < planned
-                ):
-                    seq = self.ctx.clock.compose_seq
-                    nxt = self._pick(refs, order, b + 1)
-                    pending = (executor.submit(self._compose, nxt, seq), seq)
-                self._train_step(batch)
-        if executor is not None:
-            executor.shutdown(wait=True)
+        try:
+            while self.ctx.clock.step < planned:
+                # per-epoch DERIVED shuffle: the order for epoch e depends only on
+                # (seed, e), so a resumed run regenerates it exactly and continues
+                # from step % batches_per_epoch
+                epoch = self.ctx.clock.step // batches_per_epoch
+                order = list(range(len(refs)))
+                # fresh_rng, not rng: the cached generator would be restored
+                # already-consumed on resume and shuffle a different order
+                self.ctx.fresh_rng(f"offline.shuffle.epoch{epoch}").shuffle(order)
+                pending = None  # (future, seq): the next batch, composing ahead
+                for b in range(self.ctx.clock.step % batches_per_epoch, batches_per_epoch):
+                    if self.ctx.clock.step >= planned:
+                        break
+                    if pending is not None:
+                        fut, seq = pending
+                        pending = None
+                        with self.timer.measure("batch.compose"):
+                            batch = fut.result()
+                        # committed only now that the batch is handed to training,
+                        # so a snapshot taken mid-flight stays consistent
+                        self.ctx.clock.compose_seq = seq + 1
+                    else:
+                        with self.timer.measure("batch.compose"):
+                            batch = self._compose(self._pick(refs, order, b))
+                    if (
+                        executor is not None
+                        and b + 1 < batches_per_epoch
+                        and self.ctx.clock.step + 1 < planned
+                    ):
+                        seq = self.ctx.clock.compose_seq
+                        nxt = self._pick(refs, order, b + 1)
+                        pending = (executor.submit(self._compose, nxt, seq), seq)
+                    self._train_step(batch)
+        finally:
+            if executor is not None:
+                executor.shutdown(wait=True, cancel_futures=True)
         if self.grad_accumulation > 1 and self.ctx.clock.step % self.grad_accumulation != 0:
             # apply the tail of an unfinished accumulation window
             if self.schedule is not None:

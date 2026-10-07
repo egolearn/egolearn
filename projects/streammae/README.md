@@ -101,20 +101,42 @@ uv run python -m egolearn.methods.mae.train \
     stream.root_dir="$BABYVIEW_ROOT"
 ```
 
-For N frames and batch B, each mode performs **N − B + 1 updates**. Streaming
-consumes each source frame once, with one update per frame after the FIFO fills;
-IID repeatedly shuffles the entire dataset until that same update count. IID
-drops each incomplete final batch, as the standard offline driver does.
-Consequently a full pass here is much more compute than one IID epoch.
+The full-pass configs use **stride 32**: fill 480 frames, advance 32, then train
+on the entire 512-frame FIFO window. Subsequent updates each admit 32 new frames;
+the last advance may be shorter so every source frame is consumed. For N frames,
+batch B and stride S, both modes perform **ceil((N − B + S) / S) updates**.
+IID reshuffles each epoch and drops incomplete batches. This is approximately
+B/S = **16 IID epochs**, with exact update matching: for the current inventories,
+114,187 updates on SAYCam and 230,115 on BabyView. The last IID epoch is 5 or 13
+batches short, respectively, due to the initial buffer fill and rounding.
+
+To change stride, set `run_control.stride`, `driver.advance.n`, and
+`driver.warmup.admitted` (B − S) consistently. The runner rejects mismatches.
+The shorter `mae_small`/`mae_base` configs still default to stride 1.
+
+The full-pass loader packs worker results into chunk tensors, writes the final
+batch into pinned memory, and sends uint8 crops to the GPU for the usual float32
+ImageNet normalization. PIL crop/flip interpolation and per-item augmentation
+seeds are unchanged. Streaming workers cache at most 1,024 decoded images each;
+augmented crops are never cached. IID disables that cache and prefetches one
+batch while training. Prefetch does not commit the next batch's sequence until
+it is consumed, and its worker thread is joined before pausing.
 
 Each run records its recipe, budget, installed-source digest, and numerical
 dependency versions in an immutable manifest, plus JSONL loss/LR metrics,
 a status file, one rolling resumable snapshot every 5,000 updates, and archived
-snapshots at 5/25/50/100% of the update budget, matched across modes. `final.pth` is written only on completion.
+snapshots after every IID epoch (including the short final epoch), at the same
+updates in streaming. Files are named `snapshot_epoch_001.pth` through
+`snapshot_epoch_016.pth`. `final.pth` is written only on completion.
 The full-pass runner automatically resumes `snapshot_latest.pth` and refuses
 to reuse a directory with changed scientific settings. CPU tests check exact
 interrupted-versus-uninterrupted model equality in both modes; CUDA kernels
 are not guaranteed bitwise deterministic.
+
+Worker count, packed transfers, pinning, decoded-cache capacity and IID prefetch
+can change between attempts; these throughput settings are recorded separately
+under `attempts/`. The source/runtime fingerprint and scientific recipe still
+must match. Pinning is disabled automatically when CUDA is unavailable.
 
 `run_control.max_seconds` (default 46 hours) or SIGUSR1 requests a pause after
 a completed update. The runner saves a snapshot and exits **75** for scheduler requeue. `run_control.stop_after_steps=N` supports a
@@ -122,7 +144,8 @@ short preflight/resume check without changing the full LR schedule or budget,
 and exits **76** so preflights cannot accidentally enter a requeue loop.
 Set `run_control.expected_frames` from an independent archive inventory to
 reject an incomplete mount. An initial snapshot protects startup failures.
-Prefetch and gradient accumulation are disabled in this runner.
+Streaming prefetch and gradient accumulation are disabled in this runner.
+IID prefetch is supported with process workers.
 
 `scripts/slurm/mae.sbatch` requests one GPU, 16 CPUs, 128 GB and 48 hours,
 and requeues only on exit 75. Supply account/partition/output at submission,

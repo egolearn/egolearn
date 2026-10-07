@@ -40,24 +40,25 @@ class PauseTraining(Exception):
 
 
 def prepare(cfg: dict):
-    """Build the fixed one-frame-stride protocol and resolve its exact budget."""
+    """Build a full streaming pass and match IID to its exact update count."""
     cfg = deepcopy(cfg)
     driver = cfg["driver"]
     control = cfg["run_control"]
     batch = int(control["batch_size"])
+    stride = int(control.get("stride", 1))
+    if not 1 <= stride <= batch:
+        raise ValueError("stride must be between 1 and batch_size")
     if batch < 2 or int(driver.get("grad_accumulation", 1)) != 1:
         raise ValueError("full-pass MAE requires batch_size >= 2 and grad_accumulation=1")
-    if driver.get("prefetch"):
-        raise ValueError(
-            "full-pass runner currently requires prefetch=false for safe pause cleanup"
-        )
+    offline = driver.get("mode", "streaming") == "offline"
+    if driver.get("prefetch") and not offline:
+        raise ValueError("full-pass streaming requires prefetch=false (one update per advance)")
     if driver.get("max_steps") is not None or driver.get("epochs") is not None:
         raise ValueError("full-pass budget is derived from the dataset; omit max_steps and epochs")
     if cfg["stream"]["_target_"] not in ("stream:saycam", "stream:babyview"):
         raise ValueError("full-pass runner supports the SAYCam and BabyView frame sources")
     if cfg["stream"].get("transcript_json"):
         raise ValueError("full-pass MAE counts frames only; omit transcript_json")
-    offline = driver.get("mode", "streaming") == "offline"
     if offline:
         if driver.get("subsample", 1) != 1 or driver["batch"] != {
             "slot": "frames",
@@ -70,12 +71,14 @@ def prepare(cfg: dict):
         driver["max_steps"] = 1
     else:
         expected = {
-            "advance": {"kind": "events", "schema": "RawFrame", "n": 1},
+            "advance": {"kind": "events", "schema": "RawFrame", "n": stride},
             "rate": {"steps_per_admit": 1, "resample": True},
-            "warmup": {"admitted": batch - 1},
+            "warmup": {"admitted": batch - stride},
         }
         if any(driver.get(k) != v for k, v in expected.items()):
-            raise ValueError("streaming must advance one frame per update after filling the window")
+            raise ValueError(
+                "streaming advance must equal stride; warmup must equal batch - stride"
+            )
         if cfg["admission"] != [{"_target_": "admission:frame_emitter", "subsample": 1}]:
             raise ValueError("full-pass streaming requires a frame emitter without subsampling")
         if cfg["memories"]["frames"]["tiers"]["window"] != {"capacity": batch, "update": "fifo"}:
@@ -106,19 +109,38 @@ def prepare(cfg: dict):
         raise ValueError("full-pass MAE needs a finite dataset with at least one batch")
     if control.get("expected_frames") is not None and frames != int(control["expected_frames"]):
         raise ValueError(f"expected {control['expected_frames']} frames, found {frames}")
-    updates = frames - batch + 1
+    # The first update sees exactly B frames. The final partial advance still
+    # trains a full FIFO window, so every source frame participates.
+    updates = math.ceil((frames - batch + stride) / stride)
     driver["max_steps"] = updates
     pipe.driver.max_steps = updates
-    return pipe, cfg, {"frames": frames, "updates": updates, "batch_size": batch}
+    return (
+        pipe,
+        cfg,
+        {
+            "frames": frames,
+            "updates": updates,
+            "batch_size": batch,
+            "stride": stride,
+            "updates_per_epoch": frames // batch,
+        },
+    )
 
 
 class UpdateSnapshots(Hook):
     """Milestones at the same optimizer update in both training modes."""
 
-    def __init__(self, run_dir: Path, updates: int, options: dict):
+    def __init__(self, run_dir: Path, updates: int, options: dict, epoch_updates: int = 0):
         self.run_dir = run_dir
         self.every = int(options.get("snapshot_every", 0))
         self.pending = []
+        if options.get("snapshot_each_epoch"):
+            if epoch_updates < 1:
+                raise ValueError("epoch checkpointing needs a positive epoch update count")
+            for epoch in range(1, math.ceil(updates / epoch_updates) + 1):
+                path = run_dir / f"snapshot_epoch_{epoch:03d}.pth"
+                if not path.exists():
+                    self.pending.append((min(epoch * epoch_updates, updates), path))
         for fraction in options.get("snapshot_milestones", []):
             if not 0 < fraction <= 1:
                 raise ValueError("snapshot milestones must be in (0, 1]")
@@ -228,6 +250,10 @@ def run(cfg: dict) -> int:
         recipe = deepcopy(resolved)
         for key in ("resume", "dry_run", "run_control"):
             recipe.pop(key, None)
+        # These affect throughput only; seeded batch selection and transforms
+        # remain identical. Record them per attempt without blocking resume.
+        recipe.pop("loader", None)
+        recipe["driver"].pop("prefetch", None)
         manifest = {"config": recipe, "budget": budget, "runtime": runtime_identity()}
         manifest_path = run_dir / "manifest.json"
         if manifest_path.exists():
@@ -235,6 +261,16 @@ def run(cfg: dict) -> int:
                 raise ValueError("run manifest differs; use a new run_dir for a different recipe")
         else:
             _write_json(manifest_path, manifest)
+        attempts = run_dir / "attempts"
+        attempts.mkdir(exist_ok=True)
+        _write_json(
+            attempts / f"{time.time_ns()}.json",
+            {
+                "job_id": os.environ.get("SLURM_JOB_ID"),
+                "loader": resolved.get("loader", {}),
+                "prefetch": resolved["driver"].get("prefetch", False),
+            },
+        )
         snapshot = run_dir / "snapshot_latest.pth"
         if snapshot.exists():
             load_snapshot(str(snapshot), pipe.driver)
@@ -251,7 +287,12 @@ def run(cfg: dict) -> int:
         )
         pipe.driver.hooks = [h for h in pipe.driver.hooks if not isinstance(h, SnapshotHook)]
         pipe.driver.hooks.extend(
-            [UpdateSnapshots(run_dir, budget["updates"], cfg["hooks"]), control]
+            [
+                UpdateSnapshots(
+                    run_dir, budget["updates"], cfg["hooks"], budget["updates_per_epoch"]
+                ),
+                control,
+            ]
         )
         old_handler = signal.signal(signal.SIGUSR1, control.request_pause)
         control.status(pipe.driver, "running")
@@ -273,6 +314,7 @@ def run(cfg: dict) -> int:
         finally:
             signal.signal(signal.SIGUSR1, old_handler)
             pipe.loader.close()
+            print(pipe.driver.timer.summary(), flush=True)
 
 
 @hydra.main(version_base="1.3", config_path="pkg://egolearn.configs", config_name=None)
