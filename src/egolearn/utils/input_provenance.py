@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from egolearn.hub import resolve_with_metadata, sha256_file, verify_checksums
+from egolearn.hub import read_checksums, resolve_with_metadata, sha256_file, verify_checksums
 
 # These are input arguments used by the shipped streams, tokenizers and probes.
 # Do not guess from arbitrary strings or inspect output/config/cache directories.
@@ -31,11 +31,14 @@ _PATH_KEYS = {
 _INPUT_SECTIONS = {"stream", "tokenizer", "probes", "benchmarks", "init_from"}
 
 
-def input_identity(source: str | Path, *, repo_type: str = "dataset") -> tuple[str, dict]:
-    """Return a usable path and observed identity; directories need a verified inventory.
+def input_identity(
+    source: str | Path, *, repo_type: str = "dataset", verify_directory: bool = False
+) -> tuple[str, dict]:
+    """Observe a file or inventory; full collection verification is opt-in.
 
     Hub paths are resolved once and the returned local path is used by the run.
     A file hash identifies that file only, never all the images named inside it.
+    An unverified inventory hash never claims to identify the directory contents.
     """
     source = str(source)
     identity: dict[str, Any] = {"sha256": "unavailable", "revision": "unavailable"}
@@ -52,12 +55,15 @@ def input_identity(source: str | Path, *, repo_type: str = "dataset") -> tuple[s
             identity["kind"] = "directory"
             inventory = path / "checksums.sha256"
             if inventory.is_file():
-                problems = verify_checksums(path)
-                if problems:
+                read_checksums(path)
+                identity["inventory_sha256"] = sha256_file(inventory)
+                if not verify_directory:
+                    identity["reason"] = "inventory_not_verified"
+                elif verify_checksums(path):
                     identity["reason"] = "checksum_verification_failed"
                 else:
                     identity.update(
-                        sha256=sha256_file(inventory), checksum_scope="checksums.sha256"
+                        sha256=identity["inventory_sha256"], checksum_scope="checksums.sha256"
                     )
             else:
                 identity["reason"] = "no_checksum_inventory"
@@ -65,10 +71,14 @@ def input_identity(source: str | Path, *, repo_type: str = "dataset") -> tuple[s
             identity["reason"] = "missing"
     except OSError as error:
         identity["reason"] = type(error).__name__
+    except (ValueError, RuntimeError):
+        identity["reason"] = "invalid_checksum_inventory"
     return str(path), identity
 
 
-def prepare_inputs(config: dict) -> dict[str, dict]:
+def prepare_inputs(
+    config: dict, *, descriptive_sections: frozenset[str] = frozenset()
+) -> dict[str, dict]:
     """Capture known inputs and freeze Hub resolution in this run's config copy.
 
     Local paths retain their spelling; only Hub references are replaced. Unknown
@@ -80,6 +90,15 @@ def prepare_inputs(config: dict) -> dict[str, dict]:
     def capture(parent, key, name: str, *, model: bool = False) -> None:
         source = parent[key]
         if not isinstance(source, (str, Path)) or not source or source == "auto":
+            return
+        if config.get("dry_run") or any(
+            name.startswith(prefix + ".") for prefix in descriptive_sections
+        ):
+            inputs[name] = {
+                "sha256": "unavailable",
+                "revision": "unavailable",
+                "reason": "dry_run" if config.get("dry_run") else "preconstructed_benchmark",
+            }
             return
         kind = "model" if model else "dataset"
         cache_key = (str(source), kind)

@@ -113,6 +113,7 @@ def load_pretrained_weights(
         **provenance,
         "checkpoint": str(path),
         "sha256": digest,
+        "training_provenance": state.get("run_provenance") or "unavailable",
         "step": step,
         "include": include,
         "exclude": exclude,

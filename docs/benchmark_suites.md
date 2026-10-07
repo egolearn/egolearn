@@ -4,9 +4,10 @@
 records. A suite is a versioned YAML file; [the toy suite](../benchmarks/toy.yaml)
 is a runnable CPU example. It reports the last training step's loss and step count,
 not an evaluation score or an average over training. Records retain skipped-step
-counts; a nonfinite training loss stops a recorded run immediately and marks it nonfinite.
-Explicitly disabling records retains the previous skip behavior. Final configured
-probe results are recorded separately.
+counts. Ordinary training retains its nonfinite-step skip behavior and marks the
+final record `nonfinite`; these runs cannot enter a normal table. Suites set the
+managed `record_fail_on_nonfinite=true` option to stop immediately on divergence.
+Final configured probe results are recorded separately.
 
 ```yaml
 version: 1
@@ -112,6 +113,10 @@ now default to `record_json=auto`. Each attempt gets its own
 the earlier attempt. An explicit `record_json=/path/to/record.json` must name a new
 file; `record_json=null` disables recording. Defaults apply to configs without a
 `record_json` key as well.
+Automatic destinations must be writable; recording errors are reported rather
+than silently dropping a run. Choose an explicit writable path or disable records
+when evaluating in a read-only working directory. With no `run_dir`, training uses
+`runs/default`, matching the checkpoint directory.
 
 The same behavior applies to `egolearn.build(config).driver.fit()` and to
 `evaluate()` / `evaluate_checkpoint()`. The evaluation APIs accept the keyword
@@ -128,29 +133,40 @@ from an unrelated checkout in the caller's working directory.
 
 `input_provenance` captures known input arguments in streams, tokenizers, probes,
 benchmarks, initialization and resume. Local files carry their SHA-256; this
-identifies the file, not every image referenced by a manifest. A local directory
-gets a digest only when its `checksums.sha256` inventory verifies. Without an
-inventory, the directory's checksum is `unavailable`. Directory verification
-reads the collection, so its cost scales with data size. Custom component inputs
-with unknown argument names remain in the resolved config without inferred hashes.
+identifies the file, not every image referenced by a manifest. Ordinary records
+hash a directory's inventory only: `inventory_sha256` identifies `checksums.sha256`,
+while the collection's `sha256` remains `unavailable` with reason
+`inventory_not_verified`. Invalid inventories also remain unavailable and do not
+abort ordinary runs. Automatic capture does not enumerate or hash the collection.
+Suites still fully verify their pinned collections before and after each task and
+retain those verified pins in `inputs`; this costs reads proportional to data size.
+Dry-run provenance capture skips input hashing and Hub resolution. Custom component
+inputs with unknown argument names remain in the config without inferred hashes.
 
 Hub inputs retain the requested reference and resolved immutable commit. The run
-uses that resolved local artifact, so a moving tag cannot select different bytes
-between provenance capture and loading. Evaluation records also retain benchmark
+uses that resolved local artifact for config-driven inputs, so a moving tag cannot
+select different bytes between capture and loading. Preconstructed benchmark
+instances may already have cached data; their configuration is descriptive, and
+automatic input identities remain unavailable instead of resolving their inputs
+again. Benchmarks can report actual consumed-data provenance in `metadata()`.
+Evaluation records also retain benchmark
 settings, versions and metadata. A later benchmark failure keeps earlier scores
 in a record marked `failed`, which cannot enter a normal suite table.
 
 Training checkpoints and snapshots include their producing run's code/environment
-identity, seed and input provenance. Evaluation of those checkpoints preserves
+identity, record ID, seed and input provenance. Resume and initialization retain
+the parent checkpoint's embedded training provenance, including across code revisions.
+Evaluation of those checkpoints preserves
 that training identity separately from the evaluation run's identity. Older
 checkpoints report unavailable training provenance. In-memory model evaluations
 do not claim a checkpoint digest.
 
 Records are written before execution and finalized atomically on success or a
 Python exception. A forcibly killed process leaves a `running` record, never a
-completed result. Checkpoint/snapshot output hashes are recorded separately from
-input identities. Records contain local resolved configuration; generated tables
-contain metrics and diagnostics suitable for a README after review.
+completed result. Checkpoint/snapshot output hashes are persisted immediately,
+separately from input identities, so interrupted attempts can be linked to saved
+weights by digest and record ID. Records contain local resolved configuration;
+generated tables contain metrics and diagnostics suitable for a README after review.
 
 ## BabyCL SAYCam suite
 

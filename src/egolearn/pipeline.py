@@ -232,6 +232,10 @@ def build(cfg: dict) -> Pipeline:
         # Input capture froze Hub references to local files; preserve their origin
         # alongside the digest and tensor selection reported by the loader.
         init_summary = {**inputs.get("init_from.checkpoint", {}), **init_summary}
+        if "init_from.checkpoint" in inputs:
+            inputs["init_from.checkpoint"]["training_provenance"] = init_summary[
+                "training_provenance"
+            ]
         model.construction_config = dict(model.construction_config or {})
         model.construction_config["init_from"] = init_summary
 

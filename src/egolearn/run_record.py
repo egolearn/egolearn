@@ -136,8 +136,10 @@ class RunRecord:
 
     def __init__(self, entry: str, config: dict[str, Any]):
         self.path: Path | None = None
+        self.started = time.monotonic()
         self.value: dict[str, Any] = {
             "schema_version": 1,
+            "record_id": uuid.uuid4().hex,
             "entry": entry,
             "status": "running",
             "config": _plain(deepcopy(config)),
@@ -154,11 +156,15 @@ class RunRecord:
     def capture_output(self, name: str, path: str | Path) -> None:
         _, identity = input_identity(path, repo_type="model")
         self.value.setdefault("outputs", {})[name] = identity
+        if self.path is not None:
+            self.value["wall_seconds"] = time.monotonic() - self.started
+            atomic_json(self.path, self.value)
 
     def training_provenance(self) -> dict:
         return deepcopy(
             {
                 **self.value["provenance"],
+                "record_id": self.value["record_id"],
                 "seed": self.value["seed"],
                 "input_provenance": self.value["input_provenance"],
             }
@@ -188,8 +194,8 @@ class RunRecord:
         self.value["metrics"]["train/steps"] = driver.ctx.clock.step
         self.value["metrics"]["train/skipped_steps"] = driver.skipped_steps
         self.value["nonfinite_steps"] = driver.nonfinite_steps
-        if nonfinite:
-            # A recorded run must not retry a diverged loss forever or report an
+        if nonfinite and self.config.get("record_fail_on_nonfinite", False):
+            # A suite must not retry a diverged loss forever or report an
             # earlier finite minibatch as its final successful result.
             raise ValueError("training skipped nonfinite losses")
 
@@ -214,6 +220,7 @@ def record_run(
     *,
     reuse: bool = False,
     inputs: dict[str, dict] | None = None,
+    descriptive_sections: frozenset[str] = frozenset(),
 ) -> Iterator[RunRecord | None]:
     active = _ACTIVE.get()
     if reuse and active is not None and active[0] == entry:
@@ -229,23 +236,29 @@ def record_run(
         return
     record = RunRecord(entry, config)
     if destination == "auto":
-        root = Path(config.get("run_dir") or f"runs/{entry}")
-        path = root / "records" / uuid.uuid4().hex / "record.json"
+        default_root = "runs/default" if entry == "train" else "runs/eval"
+        root = Path(config.get("run_dir") or default_root)
+        path = root / "records" / record.value["record_id"] / "record.json"
     else:
         path = Path(destination)
     record.path = path
-    started = time.monotonic()
     atomic_json(path, record.value, replace=False)
     token = _ACTIVE.set((entry, record))
     try:
         record.value["input_provenance"] = (
-            prepare_inputs(record.config) if inputs is None else deepcopy(inputs)
+            prepare_inputs(record.config, descriptive_sections=descriptive_sections)
+            if inputs is None
+            else deepcopy(inputs)
         )
         yield record
-        if record.value.get("nonfinite_steps", 0):
-            raise ValueError("training skipped nonfinite losses")
         record.value["metrics"] = finite_metrics(record.value["metrics"])
-        record.value["status"] = "dry_run" if config.get("dry_run") else "completed"
+        record.value["status"] = (
+            "nonfinite"
+            if record.value.get("nonfinite_steps", 0)
+            else "dry_run"
+            if config.get("dry_run")
+            else "completed"
+        )
     except BaseException as error:
         invalid = []
         finite = {}
@@ -263,7 +276,7 @@ def record_run(
         raise
     finally:
         _ACTIVE.reset(token)
-        record.value["wall_seconds"] = time.monotonic() - started
+        record.value["wall_seconds"] = time.monotonic() - record.started
         atomic_json(path, record.value)
 
 

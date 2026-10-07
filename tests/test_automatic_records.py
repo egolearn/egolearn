@@ -70,12 +70,73 @@ def test_inputs_distinguish_files_unversioned_and_verified_collections(tmp_path)
     assert observed["stream.root_dir"]["sha256"] == "unavailable"
     assert str(tmp_path) not in json.dumps(observed)
     write_checksums(tmp_path)
-    _, identity = input_identity(tmp_path)
+    _, identity = input_identity(tmp_path, verify_directory=True)
     assert identity["sha256"] == sha256_file(tmp_path / "checksums.sha256")
     source.write_text('["changed"]')
-    _, identity = input_identity(tmp_path)
+    _, identity = input_identity(tmp_path, verify_directory=True)
     assert identity["sha256"] == "unavailable"
     assert identity["reason"] == "checksum_verification_failed"
+
+
+@pytest.mark.parametrize("verify", [False, True])
+def test_invalid_inventory_does_not_abort_ordinary_records(tmp_path, verify):
+    (tmp_path / "checksums.sha256").write_text(f"{'a' * 64}  ./image.png\n")
+    _, identity = input_identity(tmp_path, verify_directory=verify)
+    assert identity["sha256"] == "unavailable"
+    assert identity["reason"] == "invalid_checksum_inventory"
+    with record_run({"stream": {"root_dir": str(tmp_path)}, "run_dir": tmp_path}, "train") as run:
+        assert run is not None
+        assert run.value["input_provenance"]["stream.root_dir"] == identity
+
+
+def test_automatic_directory_identity_does_not_read_dataset_bytes(tmp_path, monkeypatch):
+    import egolearn.utils.input_provenance as inputs
+
+    source = tmp_path / "data.txt"
+    source.write_text("synthetic")
+    write_checksums(tmp_path)
+    real_hash = inputs.sha256_file
+
+    def inventory_only(path):
+        assert Path(path).name == "checksums.sha256"
+        return real_hash(path)
+
+    def must_not_verify(*args):
+        pytest.fail("automatic capture must not re-read the dataset")
+
+    monkeypatch.setattr(inputs, "sha256_file", inventory_only)
+    monkeypatch.setattr(inputs, "verify_checksums", must_not_verify)
+    identity = prepare_inputs({"stream": {"root_dir": str(tmp_path)}})["stream.root_dir"]
+    assert identity["sha256"] == "unavailable"
+    assert identity["inventory_sha256"] == real_hash(tmp_path / "checksums.sha256")
+    assert identity["reason"] == "inventory_not_verified"
+
+
+def test_dry_run_does_not_hash_or_resolve_inputs(tmp_path, monkeypatch):
+    import egolearn.utils.input_provenance as inputs
+
+    def must_not_read(*args, **kwargs):
+        pytest.fail("dry-run provenance must not read local or remote inputs")
+
+    monkeypatch.setattr(inputs, "input_identity", must_not_read)
+    cfg = {
+        "run_dir": tmp_path,
+        "dry_run": True,
+        "stream": {"root_dir": "hf://org/data@main"},
+        "init_from": {"checkpoint": str(tmp_path / "model.pth")},
+    }
+    with record_run(cfg, "train") as run:
+        assert run is not None
+        assert run.config["stream"]["root_dir"] == cfg["stream"]["root_dir"]
+        assert {item["reason"] for item in run.value["input_provenance"].values()} == {"dry_run"}
+    assert records(tmp_path)[0]["status"] == "dry_run"
+
+
+def test_automatic_train_records_use_default_checkpoint_directory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with record_run({}, "train") as run:
+        assert run is not None
+        assert run.path == Path("runs/default/records") / run.value["record_id"] / "record.json"
 
 
 @pytest.mark.parametrize("mode", ["streaming", "offline"])
@@ -169,6 +230,14 @@ def test_checkpoints_carry_training_identity_into_later_evaluation(tmp_path, toy
     assert len(training["commit"]) == 40
     [record] = records(tmp_path / "run")
     assert record["outputs"]["final.pth"]["sha256"] == sha256_file(checkpoint)
+    child_config = toy_config(tmp_path / "child")
+    child_config["init_from"] = {"checkpoint": str(checkpoint)}
+    child = egolearn.build(child_config)
+    child.driver.fit()
+    [child_record] = records(tmp_path / "child")
+    parent = child_record["input_provenance"]["init_from.checkpoint"]["training_provenance"]
+    assert parent["record_id"] == record["record_id"]
+    assert parent["record_id"] != child_record["record_id"]
 
 
 def test_cli_dry_run_and_build_failure_write_automatic_records(tmp_path):
@@ -201,6 +270,12 @@ def test_resume_records_restored_seed_parent_and_new_attempt(
     save_snapshot(str(snapshot), pipe.driver)
     saved = torch.load(snapshot, weights_only=False)
     assert saved["run_provenance"]["seed"] == 7
+    import egolearn.run_record as run_records
+
+    current_identity = run_records.source_identity()
+    monkeypatch.setattr(
+        run_records, "source_identity", lambda: {**current_identity, "commit": "d" * 40}
+    )
     cfg["seed"] = 99
     cfg["driver"]["max_steps"] = 3
     if entry == "api":
@@ -229,6 +304,11 @@ def test_resume_records_restored_seed_parent_and_new_attempt(
     assert results[1]["seed"] == 7
     assert results[1]["config"]["seed"] == 99
     assert results[1]["input_provenance"]["resume"]["sha256"] == sha256_file(snapshot)
+    parent = results[1]["input_provenance"]["resume"]["training_provenance"]
+    assert parent["record_id"] == results[0]["record_id"]
+    assert parent["commit"] == results[0]["provenance"]["commit"]
+    assert results[1]["provenance"]["commit"] == "d" * 40
+    assert parent["commit"] != results[1]["provenance"]["commit"]
     assert results[1]["metrics"]["train/steps"] == 3
     if entry == "cli_hub":
         assert results[1]["input_provenance"]["resume"]["reference"] == reference
@@ -246,6 +326,80 @@ def test_in_memory_evaluation_automatically_records_without_checkpoint_claim(
     assert len(results) == 2
     assert all(r["metrics"] == {"score/accuracy": 0.75} for r in results)
     assert all(r["evaluation"]["checkpoint"] is None for r in results)
+
+
+def test_preconstructed_benchmark_inputs_remain_descriptive(tmp_path, toy_config, monkeypatch):
+    import egolearn.utils.input_provenance as inputs
+
+    class CachedScore(Score):
+        def configuration(self):
+            return {"manifest": "hf://org/data@main/manifest.json"}
+
+    def must_not_resolve(*args, **kwargs):
+        pytest.fail("resolving the config cannot identify an instance's cached data")
+
+    monkeypatch.setattr(inputs, "resolve_with_metadata", must_not_resolve)
+    pipe = egolearn.build(toy_config(tmp_path))
+    evaluate(pipe.model, benchmarks=[CachedScore()], record_json=tmp_path / "record.json")
+    [record] = records(tmp_path)
+    observed = record["input_provenance"]["benchmarks.0.manifest"]
+    assert observed["sha256"] == "unavailable"
+    assert observed["revision"] == "unavailable"
+    assert observed["reason"] == "preconstructed_benchmark"
+
+
+@pytest.mark.parametrize("mode", ["streaming", "offline"])
+def test_ordinary_recording_preserves_nonfinite_skip_and_final_checkpoint(
+    tmp_path, toy_config, monkeypatch, mode
+):
+    cfg = toy_config(tmp_path)
+    cfg["hooks"]["checkpoint_every"] = 2
+    if mode == "offline":
+        for key in ("admission", "memories", "recipe", "routes", "label_stores"):
+            cfg.pop(key)
+        cfg["driver"] = {
+            "mode": "offline",
+            "max_steps": 2,
+            "batch": {"slot": "curr", "n": 4, "views": ["v1", "v2"]},
+        }
+        cfg["losses"] = cfg["losses"][:1]
+    pipe = egolearn.build(cfg)
+
+    def skip_once(compute):
+        first = True
+
+        def compute_with_skip(*args):
+            nonlocal first
+            if first:
+                first = False
+                return {"loss": torch.tensor(float("nan"))}
+            return compute(*args)
+
+        return compute_with_skip
+
+    for loss in pipe.losses:
+        monkeypatch.setattr(loss, "compute", skip_once(loss.compute))
+    pipe.driver.fit()
+    [record] = records(tmp_path)
+    assert record["status"] == "nonfinite"
+    assert record["nonfinite_steps"] == 1
+    assert record["metrics"]["train/steps"] == 2
+    assert record["outputs"]["final.pth"]["sha256"] == sha256_file(tmp_path / "run/final.pth")
+
+
+def test_snapshot_persists_link_to_still_running_parent_record(tmp_path, toy_config):
+    cfg = toy_config(tmp_path)
+    with record_run(cfg, "train") as record:
+        assert record is not None
+        pipe = egolearn.build(record.config)
+        snapshot = tmp_path / "snapshot.pth"
+        save_snapshot(str(snapshot), pipe.driver)
+        assert record.path is not None
+        persisted = json.loads(record.path.read_text())
+        saved = torch.load(snapshot, weights_only=False)
+        assert persisted["status"] == "running"
+        assert persisted["outputs"][snapshot.name]["sha256"] == sha256_file(snapshot)
+        assert saved["run_provenance"]["record_id"] == persisted["record_id"]
 
 
 def test_record_and_suite_imports_do_not_load_torch(tmp_path):
@@ -303,6 +457,7 @@ def test_babycl_suite_composes_default_training_and_protected_inputs(tmp_path, m
     for key in ("model", "losses", "solver", "driver", "views", "memories", "admission"):
         assert result[key] == baseline[key]
     assert suite["seeds"] == [1337, 1338, 1339]
+    assert result["record_fail_on_nonfinite"] is True
     assert suite["inputs"]["probes.1.split_file"]["sha256"] == SPLIT_SHA256
     assert result["probes"][1]["data_root"] == str(tmp_path / "labeled_s_root")
     for key in suite["inputs"]:

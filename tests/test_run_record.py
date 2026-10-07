@@ -63,6 +63,7 @@ def test_driver_skipped_nonfinite_updates_make_run_unpublishable(
     cfg["stream"].update(n_sessions=1, blocks_per_session=1, block_len=8)
     cfg["driver"]["warmup"] = {}
     cfg["record_json"] = str(tmp_path / "record.json")
+    cfg["record_fail_on_nonfinite"] = True
     if mode == "offline":
         for key in ("admission", "memories", "recipe", "routes", "label_stores"):
             cfg.pop(key, None)

@@ -135,7 +135,9 @@ def evaluate(
         "benchmarks": benchmark_configs(benchmarks),
         "record_json": record_json,
     }
-    with record_run(config, "eval", reuse=True) as record:
+    with record_run(
+        config, "eval", reuse=True, descriptive_sections=descriptive_benchmarks(benchmarks)
+    ) as record:
         specs = prepared_benchmarks(benchmarks, record)
         return _evaluate(
             model, benchmarks=specs, device=device, seed=seed, imports=imports, record=record
@@ -152,6 +154,16 @@ def benchmark_configs(benchmarks: Sequence[Benchmark | Mapping]) -> list[dict]:
         }
         for spec in benchmarks
     ]
+
+
+def descriptive_benchmarks(benchmarks: Sequence[Benchmark | Mapping]) -> frozenset[str]:
+    # An instance may already have cached data. Its configuration cannot prove
+    # which bytes it consumed, and resolving a moving Hub tag again is misleading.
+    return frozenset(
+        f"benchmarks.{index}"
+        for index, spec in enumerate(benchmarks)
+        if isinstance(spec, Benchmark)
+    )
 
 
 def prepared_benchmarks(

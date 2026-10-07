@@ -16,6 +16,7 @@ from egolearn.evaluation.evaluator import (
     _evaluate,
     _isolated_evaluation_rng,
     benchmark_configs,
+    descriptive_benchmarks,
     prepared_benchmarks,
 )
 from egolearn.hub import resolve, resolve_with_metadata
@@ -146,7 +147,12 @@ def evaluate_checkpoint(
         "_imports_": list(imports),
         "record_json": record_json,
     }
-    with record_run(config, "eval", reuse=True) as record, _isolated_evaluation_rng(seed):
+    with (
+        record_run(
+            config, "eval", reuse=True, descriptive_sections=descriptive_benchmarks(benchmarks)
+        ) as record,
+        _isolated_evaluation_rng(seed),
+    ):
         plain = record.config if record is not None else config
         model, metadata = _load_model(
             plain["checkpoint"],
