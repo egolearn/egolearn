@@ -16,7 +16,7 @@ theme:
   custom_dir: overrides
   font: false
   logo: assets/icon-light.svg
-  favicon: assets/icon-light.svg
+  favicon: assets/favicon.svg
   features:
     - navigation.sections
     - navigation.top
