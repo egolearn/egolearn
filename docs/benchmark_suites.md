@@ -159,7 +159,7 @@ identity, record ID, seed and input provenance. Resume and initialization retain
 the parent checkpoint's embedded training provenance, including across code revisions.
 Snapshots preserve skipped/nonfinite-step counters so resume retains the run's
 nonfinite status. A later unrelated exception is recorded as `failed` with its
-error type and the earlier skip counts.
+error type.
 Evaluation of those checkpoints preserves
 that training identity separately from the evaluation run's identity. Older
 checkpoints report unavailable training provenance. In-memory model evaluations
