@@ -51,6 +51,22 @@ def test_collector_distinguishes_last_step_and_final_probes():
     }
 
 
+@pytest.mark.parametrize("error", [RuntimeError, KeyboardInterrupt])
+def test_later_failure_is_not_hidden_by_a_previous_nonfinite_skip(tmp_path, error):
+    path = tmp_path / "record.json"
+    driver = SimpleNamespace(
+        ctx=SimpleNamespace(clock=SimpleNamespace(step=1)), skipped_steps=1, nonfinite_steps=1
+    )
+    with pytest.raises(error), record_run({"record_json": path}, "train") as record:
+        assert record is not None
+        record.on_skip(driver, nonfinite=True)
+        raise error("later failure")
+    result = json.loads(path.read_text())
+    assert result["status"] == "failed"
+    assert result["error_type"] == error.__name__
+    assert result["nonfinite_steps"] == 1
+
+
 @pytest.mark.parametrize("mode", ["streaming", "offline"])
 def test_driver_skipped_nonfinite_updates_make_run_unpublishable(
     tmp_path, toy_config, monkeypatch, mode

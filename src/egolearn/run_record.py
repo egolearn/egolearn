@@ -24,6 +24,10 @@ from egolearn.utils.input_provenance import input_identity, prepare_inputs
 _ACTIVE: ContextVar[tuple[str, RunRecord | None] | None] = ContextVar("run_record", default=None)
 
 
+class NonfiniteLoss(ValueError):
+    """A run explicitly requested immediate failure on a nonfinite training loss."""
+
+
 def _plain(value):
     if isinstance(value, Path):
         return str(value)
@@ -197,7 +201,7 @@ class RunRecord:
         if nonfinite and self.config.get("record_fail_on_nonfinite", False):
             # A suite must not retry a diverged loss forever or report an
             # earlier finite minibatch as its final successful result.
-            raise ValueError("training skipped nonfinite losses")
+            raise NonfiniteLoss("training skipped nonfinite losses")
 
     def on_end(self, driver) -> None:
         self.value["metrics"]["train/steps"] = driver.ctx.clock.step
@@ -268,7 +272,7 @@ def record_run(
             except ValueError:
                 invalid.append(name)
         record.value["status"] = (
-            "nonfinite" if invalid or record.value.get("nonfinite_steps") else "failed"
+            "nonfinite" if invalid or isinstance(error, NonfiniteLoss) else "failed"
         )
         record.value["error_type"] = type(error).__name__
         record.value["nonfinite_metrics"] = invalid

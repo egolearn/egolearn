@@ -232,12 +232,23 @@ def test_checkpoints_carry_training_identity_into_later_evaluation(tmp_path, toy
     assert record["outputs"]["final.pth"]["sha256"] == sha256_file(checkpoint)
     child_config = toy_config(tmp_path / "child")
     child_config["init_from"] = {"checkpoint": str(checkpoint)}
+    child_config["hooks"]["checkpoint_every"] = 2
     child = egolearn.build(child_config)
     child.driver.fit()
     [child_record] = records(tmp_path / "child")
     parent = child_record["input_provenance"]["init_from.checkpoint"]["training_provenance"]
     assert parent["record_id"] == record["record_id"]
     assert parent["record_id"] != child_record["record_id"]
+    child_result = evaluate_checkpoint(
+        tmp_path / "child/run/final.pth",
+        benchmarks=[Score()],
+        record_json=tmp_path / "child-eval/record.json",
+    )
+    assert child_result.checkpoint is not None
+    lineage = child_result.checkpoint["training_provenance"]["input_provenance"]
+    assert (
+        lineage["init_from.checkpoint"]["training_provenance"]["record_id"] == record["record_id"]
+    )
 
 
 def test_cli_dry_run_and_build_failure_write_automatic_records(tmp_path):
@@ -385,6 +396,18 @@ def test_ordinary_recording_preserves_nonfinite_skip_and_final_checkpoint(
     assert record["nonfinite_steps"] == 1
     assert record["metrics"]["train/steps"] == 2
     assert record["outputs"]["final.pth"]["sha256"] == sha256_file(tmp_path / "run/final.pth")
+    snapshot = tmp_path / "after-skip.pth"
+    save_snapshot(str(snapshot), pipe.driver)
+    cfg["driver"]["max_steps"] = 3
+    resumed = egolearn.build(cfg)
+    load_snapshot(str(snapshot), resumed.driver)
+    assert resumed.driver.skipped_steps == 1
+    assert resumed.driver.nonfinite_steps == 1
+    resumed.driver.fit()
+    [resumed_record] = [item for item in records(tmp_path) if item["start_step"] == 2]
+    assert resumed_record["status"] == "nonfinite"
+    assert resumed_record["nonfinite_steps"] == 1
+    assert resumed_record["metrics"]["train/steps"] == 3
 
 
 def test_snapshot_persists_link_to_still_running_parent_record(tmp_path, toy_config):

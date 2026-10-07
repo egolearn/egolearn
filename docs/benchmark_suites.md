@@ -138,7 +138,8 @@ hash a directory's inventory only: `inventory_sha256` identifies `checksums.sha2
 while the collection's `sha256` remains `unavailable` with reason
 `inventory_not_verified`. Invalid inventories also remain unavailable and do not
 abort ordinary runs. Automatic capture does not enumerate or hash the collection.
-Suites still fully verify their pinned collections before and after each task and
+Suites fully verify their pinned collections once during planning, then before
+and after each task, and
 retain those verified pins in `inputs`; this costs reads proportional to data size.
 Dry-run provenance capture skips input hashing and Hub resolution. Custom component
 inputs with unknown argument names remain in the config without inferred hashes.
@@ -156,6 +157,9 @@ in a record marked `failed`, which cannot enter a normal suite table.
 Training checkpoints and snapshots include their producing run's code/environment
 identity, record ID, seed and input provenance. Resume and initialization retain
 the parent checkpoint's embedded training provenance, including across code revisions.
+Snapshots preserve skipped/nonfinite-step counters so resume retains the run's
+nonfinite status. A later unrelated exception is recorded as `failed` with its
+error type and the earlier skip counts.
 Evaluation of those checkpoints preserves
 that training identity separately from the evaluation run's identity. Older
 checkpoints report unavailable training provenance. In-memory model evaluations

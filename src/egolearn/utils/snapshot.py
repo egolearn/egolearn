@@ -62,7 +62,11 @@ def save_snapshot(path: str, driver) -> str:
             for n, p in driver.model.named_parameters()
             if p.grad is not None
         },
-        "driver": {"exhausted": bool(getattr(driver, "_exhausted", False))},
+        "driver": {
+            "exhausted": bool(getattr(driver, "_exhausted", False)),
+            "skipped_steps": getattr(driver, "skipped_steps", 0),
+            "nonfinite_steps": getattr(driver, "nonfinite_steps", 0),
+        },
         "context": driver.ctx.state_dict(),
         "memories": {
             name: mem.state_dict() for name, mem in getattr(driver, "memories", {}).items()
@@ -147,6 +151,8 @@ def load_snapshot(path: str, driver) -> None:
     stores = getattr(composer, "label_stores", None) or {}
     for name, st in state.get("label_stores", {}).items():
         stores[name].load_state_dict(st)
+    driver.skipped_steps = state.get("driver", {}).get("skipped_steps", 0)
+    driver.nonfinite_steps = state.get("driver", {}).get("nonfinite_steps", 0)
     print(
         f"[snapshot] resumed from {path} (step={driver.ctx.clock.step} "
         f"admitted={driver.ctx.clock.admitted})",
