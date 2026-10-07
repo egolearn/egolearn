@@ -1,0 +1,19 @@
+# Standard MAE ViT-B/16; inherits the same SAYCam FIFO-window recipe.
+defaults:
+  - mae_shared
+  - _self_
+
+hydra:
+  searchpath: [pkg://egolearn.configs]
+
+run_dir: runs/mae_base_saycam
+model:
+  encoders:
+    vision: {dim: 768, heads: 12}
+  predictors:
+    reconstruction: {encoder_dim: 768}
+solver:
+  groups:
+    # Explicit LR: base 4e-5 * effective batch 512 / 256.
+    - {match: ".*", lr: 8.0e-5, weight_decay: 0.05, split_no_decay: true,
+       no_decay_pattern: '(bias$|norm)'}

@@ -35,6 +35,9 @@ uv run python -m egolearn.train --config-dir projects/babycl/configs \
 
 Requires [uv](https://docs.astral.sh/uv/); Python 3.12 is provisioned automatically.
 
+For image masked autoencoding, see the [MAE baseline](projects/streammae/README.md).
+`uv run python -m egolearn.train --config-name toy_mae` runs a synthetic CPU example.
+
 ## What's here
 
 The streaming learning framework. In plain terms: dataset adapters read

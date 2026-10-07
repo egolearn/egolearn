@@ -8,6 +8,15 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Standard image MAE (`egolearn.methods.mae`): visible-patch ViT encoder,
+  reconstruction decoder, seeded random masking, masked pixel MSE, and a
+  single-crop view. Includes a synthetic CPU example and SAYCam ViT-S/16 and
+  ViT-B/16 starting configs under `projects/streammae/`. Adam/AdamW betas are
+  configurable through `solver.betas`, preserving existing defaults. Includes
+  BF16 training, full-pass SAYCam/BabyView streaming and matched-update IID
+  configs, atomic pause/resume, bounded checkpoint retention, and Slurm requeue.
+  BabyView supports nested child/recording directories with natural ordering.
+
 - Standalone evaluation API (`evaluate`, `evaluate_checkpoint`, `load_model`) and
   `python -m egolearn.evaluate`, with benchmark configs, structured JSON results,
   checkpoint provenance, and isolated evaluation RNGs. Existing probes can also

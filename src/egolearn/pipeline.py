@@ -206,6 +206,7 @@ def build(cfg: dict) -> Pipeline:
         opt=scfg.get("opt", "adamw"),
         momentum=scfg.get("momentum", 0.9),
         warnings=build_warnings,
+        betas=scfg.get("betas", (0.9, 0.999)),
     )
     schedule = ProgressCosine(**schedule_cfg) if schedule_cfg else None
 

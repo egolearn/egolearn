@@ -1,0 +1,12 @@
+# Used by egolearn.methods.mae.train; computes max_steps from the source.
+losses:
+  - {_target_: "loss:mae", slot: frames, encoder: vision,
+     predictor: reconstruction, mask_ratio: 0.75, norm_pix_loss: true,
+     precision: bfloat16}
+run_control:
+  batch_size: 512
+  expected_frames: null  # set from an independent archive inventory at submission
+  max_seconds: 165600  # pause after 46 hours, leaving margin for a 48-hour allocation
+  stop_after_steps: 0 # optional preflight pause; does not shorten the scientific budget
+hooks:
+  log_every: 100
