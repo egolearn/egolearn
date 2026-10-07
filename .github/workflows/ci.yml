@@ -58,6 +58,18 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv lock --check
 
+  # Docs site (mkdocs.yml). Not a required check; --strict fails on broken
+  # internal links and anchors.
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked --only-group docs
+      - run: .venv/bin/mkdocs build --strict
+
   gitleaks:
     runs-on: ubuntu-latest
     steps:

@@ -82,6 +82,25 @@ Without `--files`, the Results warning is skipped. The path heuristic includes
 `.yaml` and `.yml`; reported numbers elsewhere are the author's responsibility.
 Fenced examples count as content, never headings, checklist boxes, or comments.
 
+## Docs site
+
+The site is built from `docs/` with MkDocs (`mkdocs.yml`). Pages outside `docs/`
+(the root README, CHANGELOG, CONTRIBUTING, SECURITY, and the project READMEs) are
+added at build time by `scripts/docs/hooks.py`, which also points links to files
+outside the site at GitHub. Preview locally:
+
+```bash
+uv sync --only-group docs
+.venv/bin/mkdocs serve
+```
+
+Cloudflare Pages builds it with:
+
+- Build command: `pip install uv && uv sync --locked --only-group docs && .venv/bin/mkdocs build --strict`
+- Output directory: `site`
+- Environment: `PYTHON_VERSION=3.12`; `EGOLEARN_SITE_STAGING=false` only for the public
+  production build (staging adds `noindex` and a `robots.txt` that blocks crawlers)
+
 ## Porting policy
 
 Code from the source repos (memory-storyboard, lifelong-memory, poodle,
