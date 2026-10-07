@@ -6,7 +6,7 @@ repo_url: https://github.com/agentic-learning-ai-lab/egolearn
 repo_name: egolearn
 edit_uri: edit/main/docs/
 
-copyright: Agentic Learning AI Lab, New York University
+copyright: egolearn
 
 hooks:
   - scripts/docs/hooks.py
