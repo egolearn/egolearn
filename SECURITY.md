@@ -21,6 +21,22 @@ only defense — hence gitleaks in pre-commit and CI, and the 500 KB file blocke
   (docs/roadmap.md). The pre-commit hook blocks these.
 - Broad-permission share links (e.g. anyone-with-link Drive folders).
 
+## Checkpoint trust
+
+Model evaluation and initialization read ordinary checkpoints with PyTorch's
+restricted `weights_only=True` loader and never retry with unrestricted pickle.
+Full training snapshots contain Python objects and require unrestricted pickle:
+only resume snapshots you created or whose producer and contents you trust.
+For evaluation or `init_from` of such a snapshot, explicitly set
+`trusted_snapshot=True` (Hydra: `trusted_snapshot=true` or
+`+init_from.trusted_snapshot=true`). This opt-in permits arbitrary code execution;
+a file name, hash, or download from the Hub does not establish trust.
+The opt-in must be a boolean; strings such as `"false"` are rejected.
+Model configuration and registration imports also execute code, including those
+embedded in checkpoints. Inspect external configs and embedded construction
+metadata before evaluating a checkpoint. Restricted unpickling does not sandbox
+model code.
+
 ## If a secret lands in a commit
 
 1. **Rotate it immediately** — assume it is compromised the moment it is pushed.

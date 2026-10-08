@@ -1,19 +1,19 @@
 """Initialize parameters and buffers selected by include/exclude name prefixes.
 
 Strict loading requires complete, shape-compatible selections. Loading consumes
-no RNG; only load trusted checkpoint/snapshot files. On a fresh V-JEPA run, the
+no RNG; snapshot loading requires explicit trust (see SECURITY.md). On a fresh V-JEPA run, the
 step-0 sync replaces any loaded EMA target with the initialized context encoder.
 """
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
 
 from egolearn.hub import resolve_with_metadata
+from egolearn.utils.checkpoint import read_checkpoint
 
 
 def _selected(name: str, include: Sequence[str] | None, exclude: Sequence[str]) -> bool:
@@ -28,10 +28,11 @@ def load_pretrained_weights(
     include: Sequence[str] | None = None,
     exclude: Sequence[str] | None = None,
     strict: bool = True,
+    trusted_snapshot: bool = False,
 ) -> dict:
     """Copy `checkpoint`'s model tensors under `include` prefixes into `model`.
 
-    Returns a provenance summary: path, sha256, the source run's step, the
+    Returns a provenance summary: file name, sha256, the source run's step, the
     prefixes, and how many tensors were copied (and skipped, when not strict).
     Hub references also retain the original reference and resolved commit.
     """
@@ -46,14 +47,7 @@ def load_pretrained_weights(
     if include is not None and not include:
         raise ValueError("init_from.include is empty; omit it to copy every tensor")
 
-    with path.open("rb") as file:
-        digest = hashlib.file_digest(file, "sha256").hexdigest()
-        file.seek(0)
-        # snapshots carry refs and RNG states next to the tensors; like
-        # utils.snapshot and evaluation.checkpoint, only load trusted files
-        state = torch.load(file, map_location="cpu", weights_only=False)
-    if not isinstance(state, dict) or "model" not in state:
-        raise ValueError(f"{path} is not an EgoLearn checkpoint/snapshot (no 'model' key)")
+    state, metadata = read_checkpoint(path, trusted_snapshot=trusted_snapshot)
     source: dict[str, torch.Tensor] = state["model"]
     target = model.state_dict()
 
@@ -108,16 +102,9 @@ def load_pretrained_weights(
 
     result = model.load_state_dict(copied, strict=False)
     assert not result.unexpected_keys, result.unexpected_keys
-    step = state.get("step", (state.get("context") or {}).get("clock", {}).get("step"))
     return {
         **provenance,
-        "checkpoint": str(path),
-        "sha256": digest,
+        "checkpoint": metadata["filename"],
+        "sha256": metadata["sha256"],
+        "step": metadata["step"],
         "training_provenance": state.get("run_provenance") or "unavailable",
-        "step": step,
-        "include": include,
-        "exclude": exclude,
-        "strict": bool(strict),
-        "tensors": len(copied),
-        "skipped": skipped,
-    }

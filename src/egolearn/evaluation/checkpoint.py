@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -12,17 +11,28 @@ from omegaconf import DictConfig, OmegaConf
 
 from egolearn.evaluation.benchmark import Benchmark
 from egolearn.evaluation.evaluator import (
+<<<<<<< HEAD
     EvaluationResult,
     _evaluate,
     _isolated_evaluation_rng,
     benchmark_configs,
     descriptive_benchmarks,
     prepared_benchmarks,
+=======
+    EvaluationError,
+    EvaluationResult,
+    _isolated_evaluation_rng,
+    evaluate,
+>>>>>>> origin/fix/evaluation-provenance
 )
 from egolearn.hub import resolve, resolve_with_metadata
 from egolearn.model.build import build_model
 from egolearn.model.model import ComposedModel
+<<<<<<< HEAD
 from egolearn.run_record import record_run
+=======
+from egolearn.utils.checkpoint import read_checkpoint
+>>>>>>> origin/fix/evaluation-provenance
 
 
 def _construction_config(source: str | Path | Mapping) -> tuple[dict, list[str], int | None]:
@@ -42,7 +52,9 @@ def _construction_config(source: str | Path | Mapping) -> tuple[dict, list[str],
         raise ValueError("model_config must contain a model mapping")
     imports = list(cfg.get("_imports_", []))
     vocab_size = None
-    if any(spec.get("vocab_size") == "auto" for spec in model_config.get("encoders", {}).values()):
+    if any(
+        spec.get("vocab_size") == "auto" for spec in (model_config.get("encoders") or {}).values()
+    ):
         from egolearn.data.text import VocabTokenizer
 
         if cfg.get("tokenizer") is None:
@@ -62,17 +74,11 @@ def _load_model(
     model_config: str | Path | Mapping | None,
     device: str | torch.device,
     imports: Sequence[str],
+    trusted_snapshot: bool,
 ) -> tuple[ComposedModel, dict[str, Any]]:
     local_path, provenance = resolve_with_metadata(checkpoint, repo_type="model")
-    path = local_path.resolve()
-    with path.open("rb") as file:
-        digest = hashlib.file_digest(file, "sha256").hexdigest()
-        file.seek(0)
-        # Training snapshots contain RNGs and event references as well as tensors.
-        # As with load_snapshot, load only checkpoints from trusted sources.
-        state = torch.load(file, map_location="cpu", weights_only=False)
-    if not isinstance(state, dict) or "model" not in state:
-        raise ValueError("expected an EgoLearn checkpoint or snapshot containing 'model'")
+    state, metadata = read_checkpoint(local_path, trusted_snapshot=trusted_snapshot)
+    metadata = {**provenance, **metadata}
     source = model_config if model_config is not None else state.get("model_config")
     if source is None:
         raise ValueError(
@@ -93,6 +99,7 @@ def _load_model(
         raise ValueError("model_config does not match the checkpoint's export contract")
     model.load_state_dict(state["model"], strict=True)
     model.to(device).eval()
+<<<<<<< HEAD
     metadata = {
         **provenance,
         "path": str(path),
@@ -100,6 +107,8 @@ def _load_model(
         "step": state.get("step", (state.get("context") or {}).get("clock", {}).get("step")),
         "training_provenance": state.get("run_provenance") or "unavailable",
     }
+=======
+>>>>>>> origin/fix/evaluation-provenance
     # The caller retains only the model and provenance; optimizer/replay state
     # from legacy checkpoints is released before benchmark preparation begins.
     return model, metadata
@@ -111,11 +120,13 @@ def load_model(
     model_config: str | Path | Mapping | None = None,
     device: str | torch.device = "cpu",
     imports: Sequence[str] = (),
+    trusted_snapshot: bool = False,
 ) -> ComposedModel:
-    """Reconstruct a trusted EgoLearn checkpoint/snapshot's model in eval mode.
+    """Reconstruct an EgoLearn checkpoint's model in eval mode.
 
     Existing files need an explicit model config. New pipeline-built checkpoints
     carry their resolved construction config. Training state is never restored.
+    Snapshots require trusted_snapshot=True; see SECURITY.md.
     """
     with _isolated_evaluation_rng(0):
         model, _ = _load_model(
@@ -123,6 +134,7 @@ def load_model(
             model_config=model_config,
             device=device,
             imports=imports,
+            trusted_snapshot=trusted_snapshot,
         )
     return model
 
@@ -135,7 +147,11 @@ def evaluate_checkpoint(
     device: str | torch.device = "cpu",
     seed: int = 0,
     imports: Sequence[str] = (),
+<<<<<<< HEAD
     record_json: str | Path | None = "auto",
+=======
+    trusted_snapshot: bool = False,
+>>>>>>> origin/fix/evaluation-provenance
 ) -> EvaluationResult:
     """Load a trained model and evaluate it independently of its training data."""
     config: dict[str, Any] = {
@@ -159,7 +175,9 @@ def evaluate_checkpoint(
             model_config=plain.get("model_config"),
             device=device,
             imports=imports,
+            trusted_snapshot=trusted_snapshot,
         )
+<<<<<<< HEAD
         if record is not None:
             # Hub resolution was frozen to a local path before loading. Keep its origin.
             origin = record.value["input_provenance"].get("checkpoint", {})
@@ -177,3 +195,14 @@ def evaluate_checkpoint(
         if record is not None:
             record.evaluation(result)
         return result
+=======
+        try:
+            result = evaluate(
+                model, benchmarks=benchmarks, device=device, seed=seed, imports=imports
+            )
+        except EvaluationError as exc:
+            exc.partial_result.checkpoint = metadata
+            raise
+    result.checkpoint = metadata
+    return result
+>>>>>>> origin/fix/evaluation-provenance

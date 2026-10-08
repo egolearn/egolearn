@@ -1,5 +1,6 @@
 # Evaluation is independent of the training config and dataset.
 checkpoint: ???
+trusted_snapshot: false  # opt in only for trusted snapshots; see SECURITY.md
 model_config: null  # required for older checkpoints without construction metadata
 device: cpu
 seed: 0
