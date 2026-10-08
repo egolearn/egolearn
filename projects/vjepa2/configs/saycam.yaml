@@ -1,0 +1,11 @@
+defaults: [shared, _self_]
+hydra:
+  searchpath: [pkg://egolearn.configs]
+dataset: saycam_s
+run_dir: runs/vjepa2_saycam
+stream:
+  _target_: "stream:saycam"
+  root_dir: ${oc.env:SAYCAM_ROOT}
+  include: S_*
+  fps: 5.0
+  strict_filenames: true

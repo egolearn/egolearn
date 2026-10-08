@@ -201,5 +201,8 @@ def test_intphys2_scores_a_vjepa_model(tmp_path, monkeypatch):
         evaluate(model, benchmarks=[{**spec, "distance": "cosine"}], imports=imports)
 
     # the context/target split must fall on a tubelet boundary
-    with pytest.raises(ValueError, match="tubelet"):
+    from egolearn.evaluation import EvaluationError
+
+    with pytest.raises(EvaluationError) as failure:
         evaluate(model, benchmarks=[{**spec, "context_frames": [2, 3]}], imports=imports)
+    assert "tubelet" in str(failure.value.__cause__)

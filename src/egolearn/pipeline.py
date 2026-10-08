@@ -37,7 +37,15 @@ from .memory.labels import LabelStore
 from .memory.table import TieredMemory
 from .model.model import ComposedModel
 from .training.driver import LockstepDriver
-from .training.hooks import CheckpointHook, Hook, LogHook, ProbeHook, SnapshotHook, WandbHook
+from .training.hooks import (
+    CheckpointHook,
+    Hook,
+    LogHook,
+    MetricsHook,
+    ProbeHook,
+    SnapshotHook,
+    WandbHook,
+)
 from .training.offline import OfflineDriver
 from .training.solver import ProgressCosine, build_optimizer
 
@@ -284,6 +292,8 @@ def build(cfg: dict) -> Pipeline:
                 every_steps=hcfg.get("snapshot_every", 0),
             )
         )
+    if hcfg.get("metrics"):
+        hooks.insert(0, MetricsHook(run_dir, every=hcfg.get("log_every", 50)))
     wcfg = cfg.get("wandb") or {}
     if wcfg.get("mode", "disabled") != "disabled":
         hooks.append(
@@ -378,6 +388,16 @@ def build(cfg: dict) -> Pipeline:
     )
     pipe.warnings.extend(build_warnings)
     validate(pipe)
+    for loss in losses:
+        if getattr(loss, "requires_offline", False) and mode != "offline":
+            raise PipelineError(f"loss {loss.name}: requires offline clip training")
+        if not getattr(loss, "supports_grad_accumulation", True) and driver.grad_accumulation != 1:
+            raise PipelineError(f"loss {loss.name}: requires grad_accumulation=1")
+        if hasattr(loss, "validate_model"):
+            try:
+                loss.validate_model(model)
+            except (ValueError, KeyError) as exc:
+                raise PipelineError(str(exc)) from exc
     driver.run_config = cfg
     driver.run_inputs = inputs
     return pipe

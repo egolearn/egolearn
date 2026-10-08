@@ -24,6 +24,7 @@ disk.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -39,16 +40,23 @@ from . import base as S
 _FRAME_EXTS = (".jpg", ".jpeg", ".png")
 
 
-def _time_from_name(fn: str, naming: str, fps: float) -> float:
+def _time_from_name(fn: str, naming: str, fps: float, strict: bool = False) -> float:
     stem = os.path.splitext(os.path.basename(fn))[0]
     if naming == "frame_index":
         m = re.search(r"frame_(\d+)$", stem, flags=re.IGNORECASE)
+        if strict and (m is None or int(m.group(1)) < 1):
+            raise ValueError(f"invalid frame-index filename: {fn}")
         idx = int(m.group(1)) if m else 1
         return (max(1, idx) - 1) / float(fps)
     # timestamp naming: last underscore-separated field is seconds
     try:
-        return float(stem.split("_")[-1])
+        value = float(stem.split("_")[-1])
+        if strict and (not math.isfinite(value) or value < 0):
+            raise ValueError(f"invalid timestamp filename: {fn}")
+        return value
     except ValueError:
+        if strict:
+            raise ValueError(f"invalid timestamp filename: {fn}") from None
         return 0.0
 
 
@@ -62,6 +70,9 @@ class SaycamStream(S.Stream):
         naming: str = "timestamp",
         sessions: list[str] | None = None,
         include: str | None = None,
+        session_glob: str = "*",
+        natural_order: bool = False,
+        strict_filenames: bool = False,
     ):
         """`include` is an fnmatch pattern on session directory names (for
         example "S_*" selects the SAYCam S child when root_dir holds all
@@ -69,9 +80,17 @@ class SaycamStream(S.Stream):
         over both `include` and the default sorted directory scan."""
         self.root = Path(root_dir)
         self.fps = float(fps)
+        if not math.isfinite(self.fps) or self.fps <= 0:
+            raise ValueError("fps must be positive and finite")
+        self.strict_filenames = bool(strict_filenames)
         self.naming = naming
+        self.fps_source = (
+            "declared_frame_index_fps" if naming == "frame_index" else "filename_timestamps"
+        )
         self._session_ids = sessions  # explicit ordering wins; else sorted scan
         self._include = include
+        self._session_glob = session_glob
+        self._natural_order = natural_order
         self._frames_cache: dict[str, list[str]] = {}
         self._utts_by_stem: dict[str, list[dict]] = {}
         self._total: int | None = None
@@ -103,19 +122,42 @@ class SaycamStream(S.Stream):
         if self._session_ids is None:
             import fnmatch
 
-            self._session_ids = sorted(
-                d
-                for d in os.listdir(self.root)
-                if (self.root / d).is_dir()
-                and (self._include is None or fnmatch.fnmatch(d, self._include))
-            )
+            if not self.root.exists():
+                raise FileNotFoundError(self.root)
+            if not self.root.is_dir():
+                raise NotADirectoryError(self.root)
+            names = [
+                str(d.relative_to(self.root))
+                for d in self.root.glob(self._session_glob)
+                if d.is_dir()
+            ]
+            names = [n for n in names if self._include is None or fnmatch.fnmatch(n, self._include)]
+            if self._natural_order:
+                # Child/date/part order (part 2 before part 10), with the
+                # remaining recording identifier as a deterministic tie-break.
+                self._session_ids = sorted(
+                    names,
+                    key=lambda n: (
+                        [(1, int(p)) if p.isdigit() else (0, p) for p in re.split(r"(\d+)", n)],
+                        n,
+                    ),
+                )
+            else:
+                self._session_ids = sorted(names)
         return self._session_ids
+
+    def __getstate__(self):
+        # Spawned decode workers discover filenames lazily. Copying the
+        # parent's full multi-million-frame cache into each worker is costly.
+        return {**self.__dict__, "_frames_cache": {}}
 
     def _frames(self, video_dir: str) -> list[str]:
         if video_dir not in self._frames_cache:
             p = self.root / video_dir
             files = [f for f in os.listdir(p) if f.lower().endswith(_FRAME_EXTS)]
-            files.sort(key=lambda fn: _time_from_name(fn, self.naming, self.fps))
+            files.sort(
+                key=lambda fn: _time_from_name(fn, self.naming, self.fps, self.strict_filenames)
+            )
             self._frames_cache[video_dir] = files
         return self._frames_cache[video_dir]
 
@@ -124,7 +166,9 @@ class SaycamStream(S.Stream):
             files = self._frames(sid)
             if not files:
                 continue
-            times = [_time_from_name(fn, self.naming, self.fps) for fn in files]
+            times = [
+                _time_from_name(fn, self.naming, self.fps, self.strict_filenames) for fn in files
+            ]
             video = S.DenseFrameChannel("video", sid, times, [(sid, i) for i in range(len(files))])
             channels: dict[str, S.Channel] = {"video": video}
             stem = os.path.splitext(sid)[0]
@@ -181,6 +225,9 @@ class BabyViewStream(SaycamStream):
         fps: float = 5.0,
         sessions: list[str] | None = None,
         include: str | None = None,
+        session_glob: str = "*",
+        natural_order: bool = False,
+        strict_filenames: bool = False,
     ):
         super().__init__(
             root_dir,
@@ -189,4 +236,7 @@ class BabyViewStream(SaycamStream):
             naming="frame_index",
             sessions=sessions,
             include=include,
+            session_glob=session_glob,
+            natural_order=natural_order,
+            strict_filenames=strict_filenames,
         )

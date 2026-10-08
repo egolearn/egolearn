@@ -39,12 +39,16 @@ regenerated epoch order.
 
 from __future__ import annotations
 
+import math
+import statistics
+from itertools import pairwise
 from typing import cast
 
 import torch
 
 from egolearn.core import keys as K
 from egolearn.core.context import Context
+from egolearn.core.refs import ItemRef
 from egolearn.data.batching.recipe import modality_for_unit
 from egolearn.data.loading import Loader
 from egolearn.data.sources.base import DenseFrameChannel, Stream
@@ -75,6 +79,8 @@ class OfflineDriver:
         max_steps: int | None = None,
         subsample: int = 1,
         hooks: list | None = None,
+        max_frame_gap: float | None = None,
+        expected_fps: float | None = None,
         grad_accumulation: int = 1,
         prefetch: bool = False,
     ):
@@ -92,6 +98,12 @@ class OfflineDriver:
             raise ValueError("offline driver: `batch.views` must name at least one view")
         if epochs is None and max_steps is None:
             raise ValueError("offline driver: set `epochs` and/or `max_steps`")
+        for name, value in (("max_frame_gap", max_frame_gap), ("expected_fps", expected_fps)):
+            if value is not None and (not math.isfinite(value) or value <= 0):
+                raise ValueError(f"{name} must be positive and finite")
+        self.max_frame_gap = max_frame_gap
+        self.expected_fps = expected_fps
+        self.index_stats: dict[str, float | int | str] = {}
         self.stream = stream
         self.loader = loader
         self.model = model
@@ -125,20 +137,61 @@ class OfflineDriver:
         the conventional 'dataset as a list' that IID training expects:
         unit=frame lists dense-channel frames, unit=clip lists non-overlapping
         clip windows."""
-        refs = []
+        refs: list[ItemRef] = []
+        median_intervals = []
+        stats = {
+            "sessions": 0,
+            "frames": 0,
+            "gaps": 0,
+            "continuous_runs": 0,
+            "clips": 0,
+            "discarded_frames": 0,
+        }
         span = (self.clip_len - 1) * self.clip_stride + 1
         for session in self.stream.sessions():
             for ch in session.channels.values():
                 if getattr(ch, "kind", None) != "dense":
                     continue
                 dense = cast(DenseFrameChannel, ch)
-                if self.unit == "clip":
-                    for j, i0 in enumerate(range(0, len(dense) - span + 1, span)):
+                stats["sessions"] += 1
+                stats["frames"] += len(dense)
+                if self.unit != "clip":
+                    refs.extend(dense.ref_at(i) for i in range(0, len(dense), self.subsample))
+                    continue
+                deltas = [b - a for a, b in pairwise(dense.times)]
+                if deltas:
+                    median_intervals.append(statistics.median(deltas))
+                if self.expected_fps is not None and deltas:
+                    median = median_intervals[-1]
+                    if not math.isfinite(median) or abs(median * self.expected_fps - 1) > 0.1:
+                        raise ValueError(
+                            f"session {session.sid}: median frame interval {median} "
+                            f"does not match expected_fps={self.expected_fps}"
+                        )
+                breaks = [0]
+                if self.max_frame_gap is not None:
+                    breaks.extend(
+                        i + 1
+                        for i, dt in enumerate(deltas)
+                        if not math.isfinite(dt) or dt <= 0 or dt > self.max_frame_gap
+                    )
+                breaks.append(len(dense))
+                stats["gaps"] += len(breaks) - 2
+                stats["continuous_runs"] += len(breaks) - 1
+                selected = 0
+                for begin, end in pairwise(breaks):
+                    for j, i0 in enumerate(range(begin, end - span + 1, span)):
                         if j % self.subsample == 0:
                             refs.append(dense.interval_ref(i0, i0 + span))
-                else:
-                    for i in range(0, len(dense), self.subsample):
-                        refs.append(dense.ref_at(i))
+                            selected += 1
+                stats["clips"] += selected
+                stats["discarded_frames"] += len(dense) - selected * span
+        self.index_stats = dict(stats)
+        self.index_stats["fps_source"] = getattr(self.stream, "fps_source", "stream_timestamps")
+        if median_intervals:
+            self.index_stats["median_interval_s"] = statistics.median(median_intervals)
+        if self.unit == "clip":
+            print(f"[clip index] {self.index_stats}", flush=True)
         return refs
 
     # ------------------------------------------------------------------

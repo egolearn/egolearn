@@ -10,7 +10,7 @@ import pytest
 import torch
 
 import egolearn
-from egolearn.evaluation import Benchmark, evaluate, evaluate_checkpoint
+from egolearn.evaluation import Benchmark, EvaluationError, evaluate, evaluate_checkpoint
 from egolearn.hub import sha256_file, write_checksums
 from egolearn.run_record import record_run
 from egolearn.training.hooks import CheckpointHook
@@ -174,8 +174,9 @@ def test_evaluation_failure_retains_completed_protocol_and_checkpoint(tmp_path, 
     checkpoint = tmp_path / "checkpoint.pth"
     CheckpointHook(str(tmp_path))._save(pipe.driver, checkpoint.name)
     record_path = tmp_path / "record.json"
-    with pytest.raises(RuntimeError, match="synthetic failure"):
+    with pytest.raises(EvaluationError, match="fails") as failure:
         evaluate_checkpoint(checkpoint, benchmarks=[Score(), Fails()], record_json=record_path)
+    assert str(failure.value.__cause__) == "synthetic failure"
     record = json.loads(record_path.read_text())
     assert record["status"] == "failed"
     assert record["checkpoint"]["sha256"] == sha256_file(checkpoint)

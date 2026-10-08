@@ -8,6 +8,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Explicit V-JEPA 2 pretraining components, SAYCam/BabyView clip recipes,
+  initial-model baselines, collapse diagnostics, throughput logs, and IntPhys evaluation config.
+- Opt-in strict frame names, nested recording discovery, and gap-aware offline clip indexing.
+
 - IntPhys 2 violation-of-expectation scoring with pinned metadata and per-context accuracy.
 
 - Automatic atomic run records for CLI and Python training/evaluation, with input
