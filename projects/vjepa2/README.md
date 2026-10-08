@@ -209,9 +209,12 @@ GPU transfer. Multiple heterogeneous slots retain the ordinary list path.
 For streaming replay, `loader.cache_frames=128 loader.affinity=true` caches up to
 128 decoded PIL frames **per worker**, before augmentation. Retained clips stay
 on the same worker; new clips go to workers with the fewest live clip keys.
+For the full FIFO recipe, allow at least `ceil(batch_size/workers) * clip_len`
+frames per worker; a smaller cyclic cache may have almost no hits.
 Ownership metadata retains only the current batch. The cache never stores
 augmented views or future frames, and it is intentionally absent from snapshots.
-A cold cache after resume changes throughput only. Frame count bounds cache
+A cold cache after resume changes throughput only. Caching and affinity require
+positive worker counts; disable both for an in-process CPU smoke run. Frame count bounds cache
 memory; choose the limit with source resolution and worker count in mind.
 
 Allocate CPUs for the workers plus the training process, and benchmark with the
@@ -219,17 +222,21 @@ same model, data and batch recipe. For example, start with 16 workers, four pare
 threads (`OMP_NUM_THREADS=4 MKL_NUM_THREADS=4`), packed/pinned batches, and enable
 cache/affinity for streaming. IID usually benefits from additional workers and
 has little short-term cache reuse. Measure sustained GPU utilization after worker
-startup, alongside update time and loader timing; stage timings can overlap.
+startup, alongside update time and loader timing; stage timings can overlap. Packed
+`data.load` includes final collation, while the list path times collation in
+`batch.compose`. Compare full update time when evaluating these options.
 
 Operational loader settings can change when resuming the same runtime. A source
 change requires a new output directory. After reviewing the source diff for
 semantic equivalence, `egolearn.methods.vjepa2.migrate.fork_run(config, source,
-source_sha256=old_digest, reason=reviewed_reason)` performs an explicit migration.
+source_sha256=old_digest, target_sha256=reviewed_digest, reason=reviewed_reason)` performs an explicit migration.
 Pass an unresolved full-run config with a fresh `run_dir`, the source manifest's
-package digest, and a reason describing the reviewed change. It verifies the
+package digest, the reviewed destination's package digest, and a reason describing the change. It verifies the
 scientific config, complete inventory, dependency versions, deterministic random
 baseline and resumable state, and selects the snapshot with the greatest saved
-step (an epoch snapshot can be newer than the rolling snapshot). It copies the
+eligible step (an epoch snapshot can be newer than the rolling snapshot).
+Epochs above the rolling step that predate the latest attempt are excluded;
+earlier milestones are retained. Completed sources are rejected. It copies the
 baseline, snapshot, previous epoch checkpoints and metrics; `migration.json`
 records both manifests and checksums. The original run remains intact. This is
 an explicit assertion of reviewed code equivalence, not a general compatibility
@@ -239,3 +246,33 @@ On continuation, metrics beyond the restored step are archived before the
 canonical history is rewritten. Previous W&B attempts remain historical: use
 attempt start steps to exclude their abandoned tails. A smaller operational
 `hooks.snapshot_every` interval reduces work lost on abrupt termination.
+
+
+### Independent runs in one allocation
+
+For clusters that support GPU MPS, independent full runs can share a GPU while
+keeping separate models, optimizers, RNG streams and checkpoints. Benchmark the
+combined throughput and memory use, including the period after shorter runs finish.
+GPU utilization is device-wide in this arrangement. Enable MPS through the cluster's
+supported submission option and confirm that its server and pipe are visible inside
+the container; the supervisor does not start an MPS daemon.
+
+`python -m egolearn.commands.train_group specs.json --record group-attempt.json`
+reads a JSON list. Each entry contains `config_dir`, `config_name`, `overrides`
+(a list of Hydra overrides), `run_dir`, `log`, and an explicit parent `threads`
+count. Paths and logs must be distinct; run directories may not be nested.
+The supervisor builds each `run_dir` override, sets both OMP and MKL thread counts,
+and appends a header and output to each child log. Operational preflight caps and
+dry-run overrides are rejected. Use a fresh group record path for each allocation.
+
+Migrate and verify checkpoints in a separate short job before launching a group.
+The child bootstrap ignores USR1 during import and interpreter teardown; the full
+runner temporarily installs its checkpoint handler. The supervisor detects each
+new attempt file before forwarding a checkpoint request to that trainer's PID.
+It never sends USR1 to a loader process group. One paused run or a supervisor USR1
+pauses its live peers and returns 75. Any child failure pauses peers and fails the
+group without requeue. Completed runs use the full runner's verified completion
+guard when a group is resubmitted. A single bounded shutdown deadline covers both
+startup readiness and checkpoint completion (default 480 seconds, shorter than the
+Slurm launcher's 600-second warning). Timeout kills remaining child process groups
+and returns failure. Abrupt scheduler termination still relies on atomic snapshots.

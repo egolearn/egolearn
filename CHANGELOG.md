@@ -11,6 +11,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 - Optional packed/pinned batches and bounded decoded-frame caching, with stable
   worker assignment for replayed clips. V-JEPA 2 runs can explicitly migrate a
   verified checkpoint to a new runtime while preserving their original directory.
+- A lightweight group supervisor coordinates checkpoint pauses and failures for
+  independent full V-JEPA 2 runs sharing a cluster allocation.
 
 - Causal V-JEPA 2 clip streaming and full IID recipes with matched update budgets,
   resumable runs, and opt-in Slurm continuation. Full-run preflight accepts

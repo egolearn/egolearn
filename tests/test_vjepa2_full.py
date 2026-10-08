@@ -465,7 +465,11 @@ def test_loading_migration_preserves_exact_continuation(tmp_path, frames, mode, 
     migrated = config(tmp_path / "migrated", frames, mode)
     migrated["loader"] = {"workers": 2, "packed": True, "affinity": True, "cache_frames": 16}
     record = fork_run(
-        migrated, str(old), source_sha256="reviewed-old-loader", reason="loader parity"
+        migrated,
+        str(old),
+        source_sha256="reviewed-old-loader",
+        target_sha256=real_identity()["source_sha256"],
+        reason="loader parity",
     )
     assert record["step"] == 2 and record["selected_snapshot"] == "snapshot_epoch_001.pth"
     assert run(migrated) == 0
@@ -512,5 +516,104 @@ def test_loading_migration_rejects_unverified_inputs(tmp_path, frames, change, m
     else:
         Path(destination["run_dir"]).mkdir()
     with pytest.raises(ValueError):
-        fork_run(destination, cfg["run_dir"], source_sha256=digest, reason="test validation")
+        fork_run(
+            destination,
+            cfg["run_dir"],
+            source_sha256=digest,
+            target_sha256=full_train.runtime_identity()["source_sha256"],
+            reason="test validation",
+        )
     assert not (Path(destination["run_dir"]) / "manifest.json").exists()
+
+
+@pytest.mark.parametrize(
+    "invalid", ["target", "active", "nested", "complete", "budget", "skipped", "schedule", "copy"]
+)
+def test_migration_additional_safeguards(tmp_path, frames, invalid, monkeypatch):
+    import fcntl
+
+    from egolearn.methods.vjepa2 import full_train, migrate
+
+    cfg = config(tmp_path / "source", frames, "iid")
+    cfg["run_control"]["stop_after_steps"] = 1
+    assert run(cfg) == PREFLIGHT_STOP
+    root = Path(cfg["run_dir"])
+    new = config(tmp_path / "new", frames, "iid")
+    digest = full_train.runtime_identity()["source_sha256"]
+    target = digest
+    if invalid == "target":
+        target = "unreviewed"
+    elif invalid == "nested":
+        new["run_dir"] = str(root / "nested")
+    elif invalid == "complete":
+        (root / "final.pth").touch()
+    elif invalid == "budget":
+        p = root / "manifest.json"
+        value = json.loads(p.read_text())
+        value["budget"]["inventory_sha256"] = "changed"
+        p.write_text(json.dumps(value))
+    elif invalid in ("skipped", "schedule"):
+        p = root / "snapshot_latest.pth"
+        state = torch.load(p, weights_only=False)
+        if invalid == "skipped":
+            state["driver"]["skipped_steps"] = 1
+        else:
+            state["schedule"]["updates"] += 1
+        torch.save(state, p)
+    elif invalid == "copy":
+
+        def fail_copy(*args):
+            raise OSError("simulated copy failure")
+
+        monkeypatch.setattr(migrate.shutil, "copy2", fail_copy)
+    with (root / ".lock").open("a") as lock:
+        if invalid == "active":
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises((ValueError, OSError)):
+            migrate.fork_run(
+                new, str(root), source_sha256=digest, target_sha256=target, reason="test"
+            )
+    assert not Path(new["run_dir"]).exists()
+    assert (root / "snapshot_latest.pth").exists()
+
+
+def test_migration_ignores_epoch_from_abandoned_attempt(tmp_path, frames):
+    import time
+
+    from egolearn.methods.vjepa2 import full_train
+    from egolearn.methods.vjepa2.migrate import fork_run
+
+    cfg = config(tmp_path / "source", frames, "iid")
+    cfg["run_control"]["stop_after_steps"] = 1
+    assert run(cfg) == PREFLIGHT_STOP
+    root = Path(cfg["run_dir"])
+    first = (root / "snapshot_latest.pth").read_bytes()
+    cfg["run_control"]["stop_after_steps"] = 2
+    assert run(cfg) == PREFLIGHT_STOP
+    (root / "snapshot_epoch_001.pth").write_bytes((root / "snapshot_latest.pth").read_bytes())
+    (root / "snapshot_latest.pth").write_bytes(first)
+    # A third attempt has started after the step-two epoch was written.
+    (root / "attempts" / f"{time.time_ns()}.json").write_text("{}")
+    target = config(tmp_path / "new", frames, "iid")
+    digest = full_train.runtime_identity()["source_sha256"]
+    record = fork_run(target, str(root), source_sha256=digest, target_sha256=digest, reason="test")
+    assert record["step"] == 1 and record["selected_snapshot"] == "snapshot_latest.pth"
+    assert not (Path(target["run_dir"]) / "snapshot_epoch_001.pth").exists()
+
+
+def test_migration_keeps_earlier_epoch_checkpoints(tmp_path, frames):
+    from egolearn.methods.vjepa2 import full_train
+    from egolearn.methods.vjepa2.migrate import fork_run
+
+    cfg = config(tmp_path / "source", frames, "iid")
+    cfg["run_control"]["stop_after_steps"] = 2
+    assert run(cfg) == PREFLIGHT_STOP
+    root = Path(cfg["run_dir"])
+    earlier = (root / "snapshot_epoch_001.pth").read_bytes()
+    cfg["run_control"]["stop_after_steps"] = 3
+    assert run(cfg) == PREFLIGHT_STOP
+    target = config(tmp_path / "new", frames, "iid")
+    digest = full_train.runtime_identity()["source_sha256"]
+    record = fork_run(target, str(root), source_sha256=digest, target_sha256=digest, reason="test")
+    assert record["step"] == 3
+    assert (Path(target["run_dir"]) / "snapshot_epoch_001.pth").read_bytes() == earlier

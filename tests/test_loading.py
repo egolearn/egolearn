@@ -52,7 +52,8 @@ def count_decodes(path):
 
 
 def test_decode_cache_is_bounded_and_keeps_pristine_pixels(tmp_path):
-    stream, cache = CountingStream(tmp_path), OrderedDict()
+    stream = CountingStream(tmp_path)
+    cache: OrderedDict = OrderedDict()
     ref = items()[0][1]
     expected = _decode_clip(stream, ref, 0, 6, 1)
     actual = _decode_clip(stream, ref, 0, 6, 1, cache, 4)
@@ -95,6 +96,8 @@ def test_parallel_loading_matches_serial_and_reuses_live_clips(tmp_path, packed,
             pooled.views_batch(mixed), serial.views_batch(mixed), strict=True
         ):
             assert torch.equal(actual, expected)
+        frames = [("frame", work[1], 0, ["frame"], 21 + i) for i, work in enumerate(items())]
+        assert torch.equal(pooled.tensor_batch(frames), serial.tensor_batch(frames))
         # Cold caches and ownership after resume must produce the same next batch.
         pooled.close()
         assert torch.equal(
@@ -108,7 +111,9 @@ def test_parallel_loading_matches_serial_and_reuses_live_clips(tmp_path, packed,
 def test_frame_view_mutation_cannot_poison_worker_cache(tmp_path, monkeypatch):
     from egolearn.data import loading
 
-    loading._WORKER.update(stream=CountingStream(tmp_path), cache=OrderedDict(), cache_frames=4)
+    monkeypatch.setitem(loading._WORKER, "stream", CountingStream(tmp_path))
+    monkeypatch.setitem(loading._WORKER, "cache", OrderedDict())
+    monkeypatch.setitem(loading._WORKER, "cache_frames", 4)
 
     class MutatingViews:
         def apply(self, image, names):
@@ -145,3 +150,37 @@ def test_clip_conversion_exactly_matches_original_to_tensor_stack(tmp_path, dtyp
         assert actual.dtype == expected.dtype and torch.equal(actual, expected)
     finally:
         torch.set_default_dtype(previous)
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("affinity", [False, True])
+def test_packed_batch_is_pinned_and_matches_serial(tmp_path, affinity):
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA pinned allocation")
+    stream = CountingStream(tmp_path)
+    serial = Loader(stream, bank())
+    pooled = Loader(
+        stream, bank(), workers=2, packed=True, pin_memory=True, affinity=affinity, cache_frames=16
+    )
+    try:
+        actual = pooled.tensor_batch(items())
+        assert actual.is_pinned()
+        expected = serial.tensor_batch(items())
+        assert torch.equal(actual, expected)
+        assert torch.equal(actual.to("cuda", non_blocking=True).cpu(), expected)
+    finally:
+        pooled.close()
+
+
+def test_affinity_balances_new_clips_and_prunes_old_owners(tmp_path):
+    loader = Loader(CountingStream(tmp_path), bank(), workers=2, affinity=True)
+    assert loader._affinity_groups(items()) == [[0, 2], [1, 3]]
+    original = dict(loader._owners)
+    assert loader._affinity_groups(items()[::-1]) == [[1, 3], [0, 2]]
+    loader._affinity_groups(items(start=2))
+    assert len(loader._owners) == 4
+    for key in original.keys() & loader._owners.keys():
+        assert loader._owners[key] == original[key]
+    assert sorted(loader._owners.values()) == [0, 0, 1, 1]
+    loader.close()
+    assert not loader._owners
