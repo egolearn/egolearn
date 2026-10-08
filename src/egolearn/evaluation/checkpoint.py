@@ -11,28 +11,19 @@ from omegaconf import DictConfig, OmegaConf
 
 from egolearn.evaluation.benchmark import Benchmark
 from egolearn.evaluation.evaluator import (
-<<<<<<< HEAD
+    EvaluationError,
     EvaluationResult,
     _evaluate,
     _isolated_evaluation_rng,
     benchmark_configs,
     descriptive_benchmarks,
     prepared_benchmarks,
-=======
-    EvaluationError,
-    EvaluationResult,
-    _isolated_evaluation_rng,
-    evaluate,
->>>>>>> origin/fix/evaluation-provenance
 )
 from egolearn.hub import resolve, resolve_with_metadata
 from egolearn.model.build import build_model
 from egolearn.model.model import ComposedModel
-<<<<<<< HEAD
 from egolearn.run_record import record_run
-=======
 from egolearn.utils.checkpoint import read_checkpoint
->>>>>>> origin/fix/evaluation-provenance
 
 
 def _construction_config(source: str | Path | Mapping) -> tuple[dict, list[str], int | None]:
@@ -78,7 +69,11 @@ def _load_model(
 ) -> tuple[ComposedModel, dict[str, Any]]:
     local_path, provenance = resolve_with_metadata(checkpoint, repo_type="model")
     state, metadata = read_checkpoint(local_path, trusted_snapshot=trusted_snapshot)
-    metadata = {**provenance, **metadata}
+    metadata = {
+        **provenance,
+        **metadata,
+        "training_provenance": state.get("run_provenance") or "unavailable",
+    }
     source = model_config if model_config is not None else state.get("model_config")
     if source is None:
         raise ValueError(
@@ -99,16 +94,6 @@ def _load_model(
         raise ValueError("model_config does not match the checkpoint's export contract")
     model.load_state_dict(state["model"], strict=True)
     model.to(device).eval()
-<<<<<<< HEAD
-    metadata = {
-        **provenance,
-        "path": str(path),
-        "sha256": digest,
-        "step": state.get("step", (state.get("context") or {}).get("clock", {}).get("step")),
-        "training_provenance": state.get("run_provenance") or "unavailable",
-    }
-=======
->>>>>>> origin/fix/evaluation-provenance
     # The caller retains only the model and provenance; optimizer/replay state
     # from legacy checkpoints is released before benchmark preparation begins.
     return model, metadata
@@ -147,11 +132,8 @@ def evaluate_checkpoint(
     device: str | torch.device = "cpu",
     seed: int = 0,
     imports: Sequence[str] = (),
-<<<<<<< HEAD
-    record_json: str | Path | None = "auto",
-=======
     trusted_snapshot: bool = False,
->>>>>>> origin/fix/evaluation-provenance
+    record_json: str | Path | None = "auto",
 ) -> EvaluationResult:
     """Load a trained model and evaluate it independently of its training data."""
     config: dict[str, Any] = {
@@ -162,6 +144,7 @@ def evaluate_checkpoint(
         "seed": int(seed),
         "_imports_": list(imports),
         "record_json": record_json,
+        "trusted_snapshot": trusted_snapshot,
     }
     with (
         record_run(
@@ -177,32 +160,25 @@ def evaluate_checkpoint(
             imports=imports,
             trusted_snapshot=trusted_snapshot,
         )
-<<<<<<< HEAD
         if record is not None:
-            # Hub resolution was frozen to a local path before loading. Keep its origin.
             origin = record.value["input_provenance"].get("checkpoint", {})
             metadata = {**origin, **metadata}
             record.value["checkpoint"] = metadata
-        result = _evaluate(
-            model,
-            benchmarks=prepared_benchmarks(benchmarks, record),
-            device=device,
-            seed=seed,
-            imports=imports,
-            record=record,
-        )
+        try:
+            result = _evaluate(
+                model,
+                benchmarks=prepared_benchmarks(benchmarks, record),
+                device=device,
+                seed=seed,
+                imports=imports,
+                record=record,
+            )
+        except EvaluationError as exc:
+            exc.partial_result.checkpoint = metadata
+            if record is not None:
+                record.evaluation(exc.partial_result)
+            raise
         result.checkpoint = metadata
         if record is not None:
             record.evaluation(result)
         return result
-=======
-        try:
-            result = evaluate(
-                model, benchmarks=benchmarks, device=device, seed=seed, imports=imports
-            )
-        except EvaluationError as exc:
-            exc.partial_result.checkpoint = metadata
-            raise
-    result.checkpoint = metadata
-    return result
->>>>>>> origin/fix/evaluation-provenance

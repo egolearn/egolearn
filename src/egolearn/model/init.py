@@ -108,3 +108,9 @@ def load_pretrained_weights(
         "sha256": metadata["sha256"],
         "step": metadata["step"],
         "training_provenance": state.get("run_provenance") or "unavailable",
+        "include": include,
+        "exclude": exclude,
+        "strict": bool(strict),
+        "tensors": len(copied),
+        "skipped": skipped,
+    }
