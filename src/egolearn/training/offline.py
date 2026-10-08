@@ -180,7 +180,7 @@ class OfflineDriver:
                 ("frame", r, 0, self.views, self.ctx.derive_seed(f"aug:{seq}:{self.slot}:{i}"))
                 for i, r in enumerate(refs)
             ]
-        views = torch.stack(self.loader.views_batch(work), dim=0)
+        views = self.loader.tensor_batch(work)
         slot = {
             K.SLOT_VIEWS: views,
             K.SLOT_MODALITY: modality_for_unit(self.unit),

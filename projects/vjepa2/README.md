@@ -197,3 +197,45 @@ arrives near the allocation deadline. Use `--open-mode=append` to retain logs
 across requeues. Do not restart inside an expiring allocation. Schedule IntPhys evaluation as an
 `afterok` dependent job, using the same random/final protocol documented above.
 See [the full-run design](../../docs/design/vjepa2-full.md).
+
+
+### Loader throughput and recovery
+
+The shared loader reuses the packed/pinned batch interface from the pending MAE
+work (`1c8c4a2`). `loader.packed=true` batches worker outputs into shared tensors;
+`loader.pin_memory=true` collates a homogeneous slot into pinned CPU storage for
+GPU transfer. Multiple heterogeneous slots retain the ordinary list path.
+
+For streaming replay, `loader.cache_frames=128 loader.affinity=true` caches up to
+128 decoded PIL frames **per worker**, before augmentation. Retained clips stay
+on the same worker; new clips go to workers with the fewest live clip keys.
+Ownership metadata retains only the current batch. The cache never stores
+augmented views or future frames, and it is intentionally absent from snapshots.
+A cold cache after resume changes throughput only. Frame count bounds cache
+memory; choose the limit with source resolution and worker count in mind.
+
+Allocate CPUs for the workers plus the training process, and benchmark with the
+same model, data and batch recipe. For example, start with 16 workers, four parent
+threads (`OMP_NUM_THREADS=4 MKL_NUM_THREADS=4`), packed/pinned batches, and enable
+cache/affinity for streaming. IID usually benefits from additional workers and
+has little short-term cache reuse. Measure sustained GPU utilization after worker
+startup, alongside update time and loader timing; stage timings can overlap.
+
+Operational loader settings can change when resuming the same runtime. A source
+change requires a new output directory. After reviewing the source diff for
+semantic equivalence, `egolearn.methods.vjepa2.migrate.fork_run(config, source,
+source_sha256=old_digest, reason=reviewed_reason)` performs an explicit migration.
+Pass an unresolved full-run config with a fresh `run_dir`, the source manifest's
+package digest, and a reason describing the reviewed change. It verifies the
+scientific config, complete inventory, dependency versions, deterministic random
+baseline and resumable state, and selects the snapshot with the greatest saved
+step (an epoch snapshot can be newer than the rolling snapshot). It copies the
+baseline, snapshot, previous epoch checkpoints and metrics; `migration.json`
+records both manifests and checksums. The original run remains intact. This is
+an explicit assertion of reviewed code equivalence, not a general compatibility
+converter. The normal runner's runtime guard remains strict.
+
+On continuation, metrics beyond the restored step are archived before the
+canonical history is rewritten. Previous W&B attempts remain historical: use
+attempt start steps to exclude their abandoned tails. A smaller operational
+`hooks.snapshot_every` interval reduces work lost on abrupt termination.

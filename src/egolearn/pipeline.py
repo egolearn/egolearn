@@ -149,7 +149,17 @@ def build(cfg: dict) -> Pipeline:
     if workers < 0:
         raise PipelineError(f"loader.workers must be >= 0, got {workers}")
     # workers re-run `_imports_` so project-registered views exist there too
-    loader = Loader(stream, views, workers=workers, imports=list(cfg.get("_imports_", [])))
+    loading = cfg.get("loader") or {}
+    loader = Loader(
+        stream,
+        views,
+        workers=workers,
+        imports=list(cfg.get("_imports_", [])),
+        pin_memory=loading.get("pin_memory", False),
+        packed=loading.get("packed", False),
+        cache_frames=loading.get("cache_frames", 0),
+        affinity=loading.get("affinity", False),
+    )
 
     tokenizer = None
     if cfg.get("tokenizer"):

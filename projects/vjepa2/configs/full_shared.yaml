@@ -6,7 +6,8 @@ run_control:
   expected_clips: null
   max_seconds: 165600  # 46 hours including startup; requeue into a NEW allocation
   stop_after_steps: 0  # operational preflight cap; never shortens the schedule
-loader: {workers: 8}
+# Throughput controls; tune to the CPU allocation without changing the recipe.
+loader: {workers: 8, pin_memory: false, packed: false, cache_frames: 0, affinity: false}
 wandb:
   run_name: vjepa2-full-${dataset}-${driver.mode}-seed${seed}
 solver:

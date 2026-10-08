@@ -425,3 +425,92 @@ def test_cluster_paths_schedule_and_missing_batches_fail_early(tmp_path, frames,
     with pytest.raises(ValueError, match="full_train"):
         pilot_run(cfg)
     assert not (Path(cfg["run_dir"]) / "random.pth").exists()
+
+
+@pytest.mark.parametrize("mode", ["iid", "streaming"])
+def test_loading_migration_preserves_exact_continuation(tmp_path, frames, mode, monkeypatch):
+    from egolearn.methods.vjepa2 import full_train
+    from egolearn.methods.vjepa2.migrate import fork_run
+
+    reference = config(tmp_path / "reference", frames, mode)
+    source = config(tmp_path / "source", frames, mode)
+    import torchvision.transforms.functional as TF
+
+    from egolearn.data import loading
+
+    optimized_decode = loading._decode_clip
+
+    def legacy_decode(stream, ref, start, clip_len, stride, *args):
+        indices = [min(start + j * stride, stream.num_frames(ref) - 1) for j in range(clip_len)]
+        return torch.stack([TF.to_tensor(stream.open_frame(ref, i)) for i in indices])
+
+    monkeypatch.setattr(loading, "_decode_clip", legacy_decode)
+    real_identity = full_train.runtime_identity
+    old_runtime = {**real_identity(), "source_sha256": "reviewed-old-loader"}
+    monkeypatch.setattr(full_train, "runtime_identity", lambda: old_runtime)
+    assert run(reference) == 0
+    source["run_control"]["stop_after_steps"] = 2
+    assert run(source) == PREFLIGHT_STOP
+    old = Path(source["run_dir"])
+    # Mimic an abandoned log tail and a newer epoch snapshot than rolling latest.
+    (old / "snapshot_epoch_001.pth").write_bytes((old / "snapshot_latest.pth").read_bytes())
+    older = torch.load(old / "snapshot_latest.pth", weights_only=False)
+    older["context"]["clock"]["step"] = older["context"]["clock"]["compose_seq"] = 1
+    torch.save(older, old / "snapshot_latest.pth")
+    with (old / "metrics.jsonl").open("a") as handle:
+        handle.write(json.dumps({"step": 3, "loss": 999}) + "\n")
+    old_files = {p.name: p.read_bytes() for p in old.glob("*.pth")}
+    monkeypatch.setattr(full_train, "runtime_identity", real_identity)
+    monkeypatch.setattr(loading, "_decode_clip", optimized_decode)
+    migrated = config(tmp_path / "migrated", frames, mode)
+    migrated["loader"] = {"workers": 2, "packed": True, "affinity": True, "cache_frames": 16}
+    record = fork_run(
+        migrated, str(old), source_sha256="reviewed-old-loader", reason="loader parity"
+    )
+    assert record["step"] == 2 and record["selected_snapshot"] == "snapshot_epoch_001.pth"
+    assert run(migrated) == 0
+    expected = torch.load(Path(reference["run_dir"]) / "final.pth", weights_only=True)
+    actual = torch.load(Path(migrated["run_dir"]) / "final.pth", weights_only=True)
+    for name in expected["model"]:
+        assert torch.equal(actual["model"][name], expected["model"][name])
+    for key, state in expected["optimizer"]["state"].items():
+        for name, tensor in state.items():
+            torch.testing.assert_close(
+                actual["optimizer"]["state"][key][name], tensor, rtol=0, atol=0
+            )
+    rows = [
+        json.loads(line)
+        for line in (Path(migrated["run_dir"]) / "metrics.jsonl").read_text().splitlines()
+    ]
+    assert [row["step"] for row in rows] == [1, 2, 3, 4]
+    assert all(row["loss"] != 999 for row in rows)
+    assert old_files == {p.name: p.read_bytes() for p in old.glob("*.pth")}
+
+
+@pytest.mark.parametrize("change", ["digest", "science", "baseline", "versions", "destination"])
+def test_loading_migration_rejects_unverified_inputs(tmp_path, frames, change, monkeypatch):
+    from egolearn.methods.vjepa2 import full_train
+    from egolearn.methods.vjepa2.migrate import fork_run
+
+    cfg = config(tmp_path / "source", frames, "iid")
+    cfg["run_control"]["stop_after_steps"] = 1
+    assert run(cfg) == PREFLIGHT_STOP
+    destination = config(tmp_path / "new", frames, "iid")
+    digest = full_train.runtime_identity()["source_sha256"]
+    if change == "digest":
+        digest = "unreviewed"
+    elif change == "science":
+        destination["solver"]["groups"][0]["lr"] *= 2
+    elif change == "baseline":
+        path = Path(cfg["run_dir"]) / "random.pth"
+        baseline = torch.load(path, weights_only=True)
+        next(iter(baseline["model"].values())).add_(1)
+        torch.save(baseline, path)
+    elif change == "versions":
+        identity = {**full_train.runtime_identity(), "torch": "different"}
+        monkeypatch.setattr(full_train, "runtime_identity", lambda: identity)
+    else:
+        Path(destination["run_dir"]).mkdir()
+    with pytest.raises(ValueError):
+        fork_run(destination, cfg["run_dir"], source_sha256=digest, reason="test validation")
+    assert not (Path(destination["run_dir"]) / "manifest.json").exists()
