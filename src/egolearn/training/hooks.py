@@ -262,8 +262,12 @@ class MetricsHook(Hook):
         # This hook is optional and supports the shared offline frame/clip driver.
         n = getattr(driver, "n", 0)
         frames = getattr(driver, "clip_len", 1) if getattr(driver, "unit", "frame") == "clip" else 1
-        self.clips += n
-        self.frames += n * frames
+        if hasattr(driver, "last_batch_counts"):
+            self.clips += driver.last_batch_counts["clips"]
+            self.frames += driver.last_batch_counts["frames"]
+        else:
+            self.clips += n
+            self.frames += n * frames
         step = driver.ctx.clock.step
         if step != 1 and step % self.every:
             return

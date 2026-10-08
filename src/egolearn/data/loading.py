@@ -55,7 +55,10 @@ _WORKER: dict = {}  # per-process state, filled by _pool_init in each worker
 
 def _pool_init(stream: Stream, view_specs: dict, imports: list[str]) -> None:
     import importlib
+    import signal
 
+    # Only the training process handles checkpoint-pause signals.
+    signal.signal(signal.SIGUSR1, signal.SIG_IGN)
     torch.set_num_threads(1)
     # project components (views, ...) register themselves at import time; a
     # spawned worker starts from a bare interpreter, so the config's

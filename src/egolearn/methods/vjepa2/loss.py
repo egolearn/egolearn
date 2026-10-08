@@ -14,7 +14,6 @@ from egolearn.model.losses.vjepa import VJEPA
 
 @LOSSES.register("vjepa2")
 class VJEPA2(VJEPA):
-    requires_offline = True
     supports_grad_accumulation = False
 
     def __init__(
@@ -38,6 +37,26 @@ class VJEPA2(VJEPA):
             raise ValueError("V-JEPA 2 requires at least one mask kind")
         self.precision = precision
         self.diagnostics: dict[str, torch.Tensor | float] = {}
+
+    def validate_pipeline(self, pipe) -> None:
+        from egolearn.methods.vjepa2.admission import DenseClipEmitter
+        from egolearn.training.offline import OfflineDriver
+
+        if isinstance(pipe.driver, OfflineDriver):
+            if pipe.driver.unit != "clip":
+                raise ValueError("V-JEPA 2 requires complete clips")
+            return
+        slots = [s for s in pipe.recipe.slots if s.name == self.slot]
+        emitters = [b for b in pipe.admission if isinstance(b, DenseClipEmitter)]
+        if len(slots) != 1 or slots[0].unit != "clip" or len(emitters) != 1:
+            raise ValueError("streaming V-JEPA 2 requires a dense_clip emitter and clip slot")
+        slot, emitter = slots[0], emitters[0]
+        if (slot.clip_len, slot.clip_stride) != (emitter.clip_len, emitter.clip_stride):
+            raise ValueError("streaming clip recipe must match the dense_clip emitter")
+        if len(pipe.admission) != 1 or slot.source.get("kind") != "tier":
+            raise ValueError("streaming V-JEPA 2 requires only dense_clip admission and a tier")
+        if pipe.routes.get("VisualSegment") != slot.source.get("memory"):
+            raise ValueError("streaming clip slot must read the dense_clip memory")
 
     def validate_model(self, model) -> None:
         context, target = model.encoders[self.context], model.encoders[self.target]

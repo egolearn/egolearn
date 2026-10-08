@@ -13,6 +13,7 @@ import egolearn
 from egolearn.methods.vjepa2.loss import VJEPA2
 from egolearn.run_record import record_run
 from egolearn.training.hooks import CheckpointHook, WandbHook
+from egolearn.training.offline import OfflineDriver
 from egolearn.utils.snapshot import load_snapshot
 
 
@@ -30,6 +31,8 @@ def run(config: dict):
         print(pipe.summary(), flush=True)
         exit_code = 1
         try:
+            if not isinstance(pipe.driver, OfflineDriver):
+                raise ValueError("use egolearn.methods.vjepa2.full_train for streaming runs")
             if cfg.get("dry_run"):
                 exit_code = 0
                 return pipe
@@ -84,6 +87,11 @@ def _preflight_inputs(pipe) -> dict[str, float]:
     pipe.ctx.fresh_rng(f"offline.shuffle.epoch{epoch}").shuffle(order)
     selected = pipe.driver._pick(refs, order, batch_index)
     batch = pipe.driver._compose(selected, seq=pipe.ctx.clock.compose_seq)
+    return check_batch(pipe, batch)
+
+
+def check_batch(pipe, batch) -> dict[str, float]:
+    """Validate actual clip pixels and gradient flow without an optimizer update."""
     diagnostics = {}
     for loss in pipe.losses:
         if isinstance(loss, VJEPA2):

@@ -130,3 +130,69 @@ The initial branch integrates #37 (IntPhys), #49 (run records, including #36/#42
 submission and CLI), #40 (resume metadata), and #34 (checkpoint/provenance).
 Their commit identities are in the design. Reconcile with main when those PRs
 land. The nested-directory adapter reuses the isolated change from `feat/mae`.
+
+## Full IID and streaming runs
+
+The `full_saycam_iid`, `full_saycam_streaming`, `full_babyview_iid`, and
+`full_babyview_streaming` recipes train the validated small architecture from
+scratch with batches of 32 complete clips. Streaming fills a 32-clip FIFO,
+then admits two new clips per update. Clips contain 16 frames at the prepared
+5 fps and never cross recordings or timestamp gaps. The FIFO spans recordings;
+it provides local replay without access to future clips. Incomplete recording
+and gap tails are counted and dropped. Every complete clip is admitted once.
+
+IID shuffles the identical clip inventory each epoch. For N clips, batch B and
+advance S, both modes run `ceil((N - B + S) / S)` updates, approximately B/S=16
+IID passes. The inventory, discarded frames and exact update budget are saved
+in the manifest. Set `run_control.expected_frames` and `expected_clips` from an
+independent mount inventory to reject missing archives. Keep these dataset
+counts and local output paths outside Git.
+
+```bash
+uv run python -m egolearn.methods.vjepa2.full_train \
+  --config-dir projects/vjepa2/configs --config-name full_saycam_streaming
+uv run python -m egolearn.methods.vjepa2.full_train \
+  --config-dir projects/vjepa2/configs --config-name full_babyview_iid
+```
+
+Both modes use the same update-indexed LR: 1e-4, warm up for the larger of 100
+updates and 5% of the budget, then cosine decay. AdamW decay is .04 and EMA is
+constant .998, retaining the pilot's optimizer and teacher settings to isolate
+data order. These remain small-model experimental settings, not a reproduction
+of Meta's training recipe. Batch size or clip advance changes require matching
+FIFO, recipe and warmup settings; the runner rejects inconsistencies.
+
+Each output directory has an immutable scientific manifest, attempt configs,
+JSONL metrics, status, an exact `random.pth`, rolling resumable snapshot, and
+snapshots at matched IID epoch boundaries. `final.pth` is a restricted-load
+compatible evaluation export written only after the budget and source counts
+pass. Resume automatically restores `snapshot_latest.pth`, including optimizer,
+EMA, memory, admission position and randomness. Recipe/runtime/inventory changes
+require a new output directory; operational controls may change between attempts.
+Intentional pauses produce attempt records with `status: failed` and
+`error_type: PauseTraining` in the generic record format; `status.json` says
+`paused`. They never produce a final export. W&B attempts share an experiment
+group; their IDs and URLs are saved in status and attempt files.
+
+`run_control.stop_after_steps=8 preflight=true` validates actual clip pixels and
+gradients, trains eight updates under the **full** schedule, saves a snapshot,
+and returns 76. Set the cap to 16 to check continuation, then to 0 to finish.
+For independent validation, use a separate output directory. SIGUSR1 or
+`max_seconds` (default 46 hours including startup) pauses at a completed update
+and returns 75. The full schedule remains unchanged.
+
+Slurm runs require an **absolute** output directory, for example
+`run_dir="$EGOLEARN_ARTIFACTS/vjepa2-saycam-streaming-seed0"`. Use that same path
+for manual resubmissions. Local runs may use relative directories.
+
+For the immutable Slurm launcher, opt into `EGOLEARN_REQUEUE_ON_PAUSE=1`, request
+`--requeue --signal=B:USR1@600 --time=48:00:00`, and run Python directly (or use
+`exec python ...` in array commands so signals reach the trainer). Exit 75
+requeues into a new allocation; failures and preflight exit 76 do not requeue.
+Send manual USR1 only after the new `attempts/*.json` file appears for the
+current attempt; a previous attempt may have left a stale `running` status.
+Python has not installed its handler during interpreter/import startup. The scheduled signal
+arrives near the allocation deadline. Use `--open-mode=append` to retain logs
+across requeues. Do not restart inside an expiring allocation. Schedule IntPhys evaluation as an
+`afterok` dependent job, using the same random/final protocol documented above.
+See [the full-run design](../../docs/design/vjepa2-full.md).

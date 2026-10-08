@@ -361,6 +361,7 @@ def build(cfg: dict) -> Pipeline:
             advance=dcfg.get("advance"),
             rate=dcfg.get("rate"),
             warmup=dcfg.get("warmup"),
+            strict_batches=dcfg.get("strict_batches", False),
             hooks=hooks,
             max_steps=dcfg.get("max_steps"),
             grad_accumulation=dcfg.get("grad_accumulation", 1),
@@ -389,6 +390,11 @@ def build(cfg: dict) -> Pipeline:
     pipe.warnings.extend(build_warnings)
     validate(pipe)
     for loss in losses:
+        if hasattr(loss, "validate_pipeline"):
+            try:
+                loss.validate_pipeline(pipe)
+            except ValueError as exc:
+                raise PipelineError(str(exc)) from exc
         if getattr(loss, "requires_offline", False) and mode != "offline":
             raise PipelineError(f"loss {loss.name}: requires offline clip training")
         if not getattr(loss, "supports_grad_accumulation", True) and driver.grad_accumulation != 1:

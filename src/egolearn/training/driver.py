@@ -73,6 +73,7 @@ class LockstepDriver:
         grad_accumulation: int = 1,
         stream_head_size: int = 512,
         prefetch: bool = False,
+        strict_batches: bool = False,
     ):
         self.run_config: dict | None = None
         self.run_inputs: dict | None = None
@@ -104,6 +105,7 @@ class LockstepDriver:
         # randomness derives from the batch's sequence number, so prefetch
         # on/off is a pure throughput knob: same batches either way.
         self.prefetch = bool(prefetch)
+        self.strict_batches = bool(strict_batches)
         self._prefetch_pool = None
         if self.prefetch:
             from concurrent.futures import ThreadPoolExecutor
@@ -131,7 +133,7 @@ class LockstepDriver:
         for session in self.stream.sessions():
             self._current_sid = session.sid
             for b in self.admission:
-                b.start_session(session.sid)
+                b.begin_session(session)
             yield from session.observations()
             for b in self.admission:
                 b.end_session()
@@ -202,6 +204,8 @@ class LockstepDriver:
                 got += sum(1 for e in events if e[K.EVENT_SCHEMA] == target_schema)
         else:
             raise ValueError(f"unknown advance kind {kind!r}")
+        if kind == "events" and self.advance.get("require_events", False):
+            return got > 0
         return consumed > 0 or self.ctx.clock.events_emitted > events_before
 
     # ------------------------------------------------------------------
@@ -258,6 +262,8 @@ class LockstepDriver:
     # warmup
     # ------------------------------------------------------------------
     def _warmup_done(self) -> bool:
+        if "events_emitted" in self.warmup:
+            return self.ctx.clock.events_emitted >= int(self.warmup["events_emitted"])
         if "tier_full" in self.warmup:
             mem_name, tier = self.warmup["tier_full"].split(".", 1)
             return self.memories[mem_name].tier_full(tier)
@@ -301,6 +307,8 @@ class LockstepDriver:
                             self.ctx,
                         )
             if batch is None:
+                if self.strict_batches:
+                    raise RuntimeError("streaming batch is missing after admission")
                 return  # strict slot unfilled and no fallback: skip quietly
             if self._prefetch_pool is not None and resample and i + 1 < k:
                 # never across the quantum boundary: the next advance changes
@@ -313,6 +321,14 @@ class LockstepDriver:
                     ),
                     seq,
                 )
+            # Actual consumed tensor sizes, including a fallback recipe if used.
+            self.last_batch_counts = {"clips": 0, "frames": 0}
+            for slot in batch.values():
+                views = slot[K.SLOT_VIEWS]
+                n = views.shape[0]
+                video = slot[K.SLOT_MODALITY] == "video"
+                self.last_batch_counts["clips"] += n if video else 0
+                self.last_batch_counts["frames"] += n * (views.shape[2] if video else 1)
             logs: dict[str, float] = {}
             total = None
             with self.timer.measure("model.forward"):

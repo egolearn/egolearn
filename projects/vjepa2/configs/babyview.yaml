@@ -1,12 +1,6 @@
-defaults: [shared, _self_]
+defaults:
+  - shared
+  - source_babyview
+  - _self_
 hydra:
   searchpath: [pkg://egolearn.configs]
-dataset: babyview
-run_dir: runs/vjepa2_babyview
-stream:
-  _target_: "stream:babyview"
-  root_dir: ${oc.env:BABYVIEW_ROOT}
-  fps: 5.0
-  session_glob: "*/*"
-  natural_order: true
-  strict_filenames: true
