@@ -287,9 +287,26 @@ def preflight_batch(pipe, refs):
         epoch, offset = divmod(ctx.clock.step, len(refs) // driver.n)
         order = list(range(len(refs)))
         ctx.fresh_rng(f"offline.shuffle.epoch{epoch}").shuffle(order)
-        return driver._compose(driver._pick(refs, order, offset), seq=ctx.clock.compose_seq)
-    n = pipe.recipe.slots[0].n
-    start = min(ctx.clock.step * driver.advance["n"], len(refs) - n)
+        selected = driver._pick(refs, order, offset)
+        length, stride = driver.clip_len, driver.clip_stride
+    else:
+        slot = pipe.recipe.slots[0]
+        start = min(ctx.clock.step * driver.advance["n"], len(refs) - slot.n)
+        selected = refs[start : start + slot.n]
+        length, stride = slot.clip_len, slot.clip_stride
+    # Static source images are valid; padding a point or short ref is not.
+    span = (length - 1) * stride + 1
+    if any(
+        r.channel != "video"
+        or not math.isfinite(r.t0)
+        or not math.isfinite(r.t1)
+        or r.is_point
+        or pipe.stream.num_frames(r) != span
+        for r in selected
+    ):
+        raise ValueError("preflight requires complete video clip references")
+    if isinstance(driver, OfflineDriver):
+        return driver._compose(selected, seq=ctx.clock.compose_seq)
     # Composer already supports an explicit event head and sequence number.
     recipe = deepcopy(pipe.recipe)
     recipe.slots[0].source = {"kind": "stream_head", "schema": "VisualSegment"}
@@ -298,7 +315,7 @@ def preflight_batch(pipe, refs):
             "VisualSegment",
             **{K.VIDEO_REF: r, K.TIME_SESSION: r.session, K.TIME_T0: r.t0, K.TIME_T1: r.t1},
         )
-        for r in refs[start : start + n]
+        for r in selected
     ]
     return pipe.composer.compose(
         recipe, {}, {"VisualSegment": events}, ctx, seq=ctx.clock.compose_seq
@@ -403,7 +420,7 @@ def _run_locked(cfg: dict, control: RunControl) -> int:
                     CheckpointHook(str(root))._save(pipe.driver, "random.pth")
                 save_snapshot(str(snapshot), pipe.driver)
             if cfg.get("preflight") and pipe.ctx.clock.step < budget["updates"]:
-                diagnostics = check_batch(pipe, preflight_batch(pipe, refs))
+                diagnostics = check_batch(pipe, preflight_batch(pipe, refs), require_motion=False)
                 if record is not None:
                     record.value["preflight"] = diagnostics
             del refs

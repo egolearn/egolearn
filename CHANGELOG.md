@@ -9,7 +9,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 ### Added
 
 - Causal V-JEPA 2 clip streaming and full IID recipes with matched update budgets,
-  resumable runs, and opt-in Slurm continuation.
+  resumable runs, and opt-in Slurm continuation. Full-run preflight accepts
+  complete static source clips and reports their frequency.
 
 - Explicit V-JEPA 2 pretraining components, SAYCam/BabyView clip recipes,
   initial-model baselines, collapse diagnostics, throughput logs, and IntPhys evaluation config.

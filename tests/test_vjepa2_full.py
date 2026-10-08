@@ -3,6 +3,7 @@
 import json
 import math
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,7 @@ from PIL import Image
 import egolearn
 from egolearn.core import keys as K
 from egolearn.core.context import Context
-from egolearn.data.index import index_stream
+from egolearn.data.index import index_digest, index_stream
 from egolearn.data.sources.base import DenseFrameChannel, Session, Stream
 from egolearn.evaluation import load_model
 from egolearn.methods.vjepa2.admission import DenseClipEmitter
@@ -25,6 +26,7 @@ from egolearn.methods.vjepa2.full_train import (
     prepare,
     run,
 )
+from egolearn.methods.vjepa2.train import check_batch
 
 CONFIGS = Path(__file__).resolve().parents[1] / "projects/vjepa2/configs"
 
@@ -203,6 +205,54 @@ def test_streaming_preflight_is_actual_batch_and_tail_does_not_repeat(tmp_path, 
     assert pipe.ctx.clock.admitted == budget["frames"]
     assert not pipe.driver._advance_once()
     pipe.loader.close()
+
+
+@pytest.mark.parametrize("mode", ["iid", "streaming"])
+def test_full_preflight_accepts_complete_static_clips(tmp_path, frames, mode):
+    for path in frames.rglob("*.jpg"):
+        clip = (int(path.stem.removeprefix("frame_")) - 1) // 4
+        Image.new("RGB", (68, 64), (clip * 31, 20, 170)).save(path)
+    cfg = config(tmp_path / mode, frames, mode)
+    pipe, _, _, refs = prepare(cfg)
+    try:
+        pipe.losses[0].initialize_target(pipe.model)
+        batch = preflight_batch(pipe, refs)
+        with pytest.raises(ValueError, match="all identical"):
+            check_batch(pipe, batch)
+        diagnostics = check_batch(pipe, batch, require_motion=False)
+        assert diagnostics["jepa/static_clip_fraction"] == 1
+        assert diagnostics["jepa/identical_adjacent_fraction"] == 1
+        assert pipe.ctx.clock.step == pipe.ctx.clock.compose_seq == 0
+    finally:
+        pipe.loader.close()
+    # Exercise the full runner's policy, including its record and optimizer path.
+    cfg["run_control"]["stop_after_steps"] = 1
+    assert run(cfg) == PREFLIGHT_STOP
+
+
+@pytest.mark.parametrize("mode", ["iid", "streaming"])
+@pytest.mark.parametrize("invalid", ["short", "point", "channel", "timestamp"])
+def test_full_preflight_rejects_incomplete_refs(tmp_path, frames, mode, invalid):
+    pipe, _, _, refs = prepare(config(tmp_path / mode, frames, mode))
+    try:
+        bad = []
+        for ref in refs:
+            if invalid == "short":
+                sid, first, _ = ref.locator
+                ref = replace(ref, locator=(sid, first, first + 2))
+            elif invalid == "point":
+                ref = replace(ref, t1=ref.t0)
+            elif invalid == "channel":
+                ref = replace(ref, channel="transcript")
+            else:
+                ref = replace(ref, t1=float("nan"))
+            bad.append(ref)
+        if mode == "iid":
+            pipe.driver.expected_index_digest = index_digest(bad)
+        with pytest.raises(ValueError, match="complete video clip references"):
+            preflight_batch(pipe, bad)
+    finally:
+        pipe.loader.close()
 
 
 @pytest.mark.parametrize("change", ["frames", "clips", "batch", "emitter", "warmup", "transcript"])

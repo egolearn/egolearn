@@ -174,9 +174,10 @@ Intentional pauses produce attempt records with `status: failed` and
 `paused`. They never produce a final export. W&B attempts share an experiment
 group; their IDs and URLs are saved in status and attempt files.
 
-`run_control.stop_after_steps=8 preflight=true` validates actual clip pixels and
-gradients, trains eight updates under the **full** schedule, saves a snapshot,
-and returns 76. Set the cap to 16 to check continuation, then to 0 to finish.
+`run_control.stop_after_steps=8 preflight=true` validates complete source spans,
+reports static clips and duplicate frames, and checks gradients. Valid static
+source clips remain in the training inventory. It trains eight updates under
+the **full** schedule, saves a snapshot, and returns 76. Set the cap to 16 to check continuation, then to 0 to finish.
 For independent validation, use a separate output directory. SIGUSR1 or
 `max_seconds` (default 46 hours including startup) pauses at a completed update
 and returns 75. The full schedule remains unchanged.

@@ -90,7 +90,7 @@ def _preflight_inputs(pipe) -> dict[str, float]:
     return check_batch(pipe, batch)
 
 
-def check_batch(pipe, batch) -> dict[str, float]:
+def check_batch(pipe, batch, *, require_motion: bool = True) -> dict[str, float]:
     """Validate actual clip pixels and gradient flow without an optimizer update."""
     diagnostics = {}
     for loss in pipe.losses:
@@ -101,7 +101,9 @@ def check_batch(pipe, batch) -> dict[str, float]:
             diagnostics[f"{loss.name}/identical_adjacent_fraction"] = float(
                 duplicate.float().mean()
             )
-            if duplicate.all(dim=2).any():
+            static = duplicate.all(dim=2)
+            diagnostics[f"{loss.name}/static_clip_fraction"] = float(static.float().mean())
+            if require_motion and static.any():
                 raise ValueError("preflight found clips whose frames are all identical")
             values = loss.compute(batch, pipe.model.to(pipe.ctx.device), pipe.ctx)
             torch.stack(list(values.values())).sum().backward()
