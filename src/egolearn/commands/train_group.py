@@ -36,11 +36,16 @@ def parse_specs(value: list[dict]) -> list[Launch]:
     """Build commands from unique roots; readiness and training use the same path."""
     launches = []
     for spec in value:
+        allowed = {"config_dir", "config_name", "overrides", "run_dir", "log", "threads"}
+        if set(spec) - allowed:
+            raise ValueError(f"unknown spec keys: {sorted(set(spec) - allowed)}")
+        overrides = spec.get("overrides", [])
+        if not isinstance(overrides, list) or any(not isinstance(x, str) for x in overrides):
+            raise ValueError("overrides must be a list of strings")
         root = Path(spec["run_dir"]).resolve()
         threads = int(spec["threads"])
         if threads < 1:
             raise ValueError("each run requires a positive thread count")
-        overrides = list(spec.get("overrides", []))
         for override in overrides:
             key = override.split("=", 1)[0].lstrip("+~")
             if key in {"run_dir", "dry_run", "run_control"} or key.endswith("stop_after_steps"):
@@ -57,6 +62,7 @@ def parse_specs(value: list[dict]) -> list[Launch]:
                     "--config-name",
                     spec["config_name"],
                     f"run_dir={root}",
+                    f"hydra.run.dir={root}/hydra/${{now:%Y-%m-%d_%H-%M-%S}}",
                     *overrides,
                 ],
                 root,
@@ -88,6 +94,9 @@ def supervise(launches: list[Launch], record: Path, grace_seconds: float = 480) 
     """Pause peers on USR1 or exit 75; fail without requeue on any other failure."""
     if grace_seconds <= 0:
         raise ValueError("shutdown grace must be positive")
+    if os.environ.get("SLURM_JOB_ID"):
+        suffix = f"-{os.environ['SLURM_JOB_ID']}-r{os.environ.get('SLURM_RESTART_COUNT', '0')}"
+        record = record.with_name(record.stem + suffix + record.suffix)
     requested = False
     stopped_at = None
     failed = False
@@ -105,7 +114,15 @@ def supervise(launches: list[Launch], record: Path, grace_seconds: float = 480) 
         record.parent.mkdir(parents=True, exist_ok=True)
         temporary = record.with_suffix(record.suffix + ".tmp")
         temporary.write_text(
-            json.dumps({"job_id": os.environ.get("SLURM_JOB_ID"), "runs": rows}, indent=2) + "\n"
+            json.dumps(
+                {
+                    "job_id": os.environ.get("SLURM_JOB_ID"),
+                    "restart_count": os.environ.get("SLURM_RESTART_COUNT", "0"),
+                    "runs": rows,
+                },
+                indent=2,
+            )
+            + "\n"
         )
         os.replace(temporary, record)
 
@@ -161,10 +178,11 @@ def supervise(launches: list[Launch], record: Path, grace_seconds: float = 480) 
                         requested = True
                         failed |= code != 75
                 if code is None:
-                    fresh = set((launches[i].root / "attempts").glob("*.json")) - seen[i]
-                    if fresh and not rows[i]["ready"]:
-                        rows[i]["ready"] = True
-                        changed = True
+                    if not rows[i]["ready"]:
+                        fresh = set((launches[i].root / "attempts").glob("*.json")) - seen[i]
+                        if fresh:
+                            rows[i]["ready"] = True
+                            changed = True
                     if requested and rows[i]["ready"] and not rows[i]["signalled"]:
                         with suppress(ProcessLookupError):
                             child.send_signal(signal.SIGUSR1)  # trainer PID only

@@ -263,7 +263,9 @@ reads a JSON list. Each entry contains `config_dir`, `config_name`, `overrides`
 count. Paths and logs must be distinct; run directories may not be nested.
 The supervisor builds each `run_dir` override, sets both OMP and MKL thread counts,
 and appends a header and output to each child log. Operational preflight caps and
-dry-run overrides are rejected. Use a fresh group record path for each allocation.
+dry-run overrides are rejected. Slurm record names automatically include the job ID
+and restart count, preserving records across automatic requeue. Hydra output is
+isolated inside each run directory.
 
 Migrate and verify checkpoints in a separate short job before launching a group.
 The child bootstrap ignores USR1 during import and interpreter teardown; the full
@@ -276,3 +278,7 @@ guard when a group is resubmitted. A single bounded shutdown deadline covers bot
 startup readiness and checkpoint completion (default 480 seconds, shorter than the
 Slurm launcher's 600-second warning). Timeout kills remaining child process groups
 and returns failure. Abrupt scheduler termination still relies on atomic snapshots.
+
+For a manual group pause, use `scancel --batch --signal=USR1 JOB_ID`; signal only
+the batch supervisor, which forwards requests to ready trainers. Do not use
+`--full`, which also reaches workers during import.

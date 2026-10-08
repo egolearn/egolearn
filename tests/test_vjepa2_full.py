@@ -574,6 +574,7 @@ def test_migration_additional_safeguards(tmp_path, frames, invalid, monkeypatch)
                 new, str(root), source_sha256=digest, target_sha256=target, reason="test"
             )
     assert not Path(new["run_dir"]).exists()
+    assert not list(tmp_path.glob(".new.failed-*"))
     assert (root / "snapshot_latest.pth").exists()
 
 
@@ -617,3 +618,34 @@ def test_migration_keeps_earlier_epoch_checkpoints(tmp_path, frames):
     record = fork_run(target, str(root), source_sha256=digest, target_sha256=digest, reason="test")
     assert record["step"] == 3
     assert (Path(target["run_dir"]) / "snapshot_epoch_001.pth").read_bytes() == earlier
+
+
+def test_real_group_cli_pauses_and_resumes(tmp_path, frames):
+    from egolearn.commands.train_group import parse_specs, supervise
+
+    cfg_dir = tmp_path / "configs"
+    cfg_dir.mkdir()
+    specs = []
+    for mode in ("iid", "streaming"):
+        cfg = config(tmp_path / mode, frames, mode)
+        (cfg_dir / f"{mode}.yaml").write_text(OmegaConf.to_yaml(OmegaConf.create(cfg)))
+        specs.append(
+            {
+                "config_dir": str(cfg_dir),
+                "config_name": mode,
+                "run_dir": cfg["run_dir"],
+                "log": str(tmp_path / f"{mode}.log"),
+                "threads": 1,
+                "overrides": ["run_control.max_seconds=1e-9"],
+            }
+        )
+    assert supervise(parse_specs(specs), tmp_path / "first.json", grace_seconds=120) == 75
+    for spec in specs:
+        status = json.loads((Path(spec["run_dir"]) / "status.json").read_text())
+        assert status["state"] == "paused" and status["step"] >= 1
+        spec["overrides"] = ["run_control.max_seconds=0"]
+    assert supervise(parse_specs(specs), tmp_path / "second.json", grace_seconds=120) == 0
+    for spec in specs:
+        status = json.loads((Path(spec["run_dir"]) / "status.json").read_text())
+        assert status["state"] == "complete" and status["step"] == 4
+        assert (Path(spec["run_dir"]) / "hydra").is_dir()

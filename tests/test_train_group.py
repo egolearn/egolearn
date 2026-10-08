@@ -12,6 +12,13 @@ import pytest
 
 from egolearn.commands.train_group import BOOTSTRAP, Launch, parse_specs, supervise
 
+
+@pytest.fixture(autouse=True)
+def clear_slurm_environment(monkeypatch):
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    monkeypatch.delenv("SLURM_RESTART_COUNT", raising=False)
+
+
 FAKE = """
 import json, os, signal, subprocess, sys, time
 from pathlib import Path
@@ -166,3 +173,27 @@ def test_specs_reject_ambiguous_or_partial_runs(tmp_path, invalid):
         spec["overrides"] = [override]
     with pytest.raises(ValueError):
         parse_specs(specs)
+
+
+def test_group_records_survive_slurm_requeue(tmp_path, launches, monkeypatch):
+    monkeypatch.setenv("SLURM_JOB_ID", "123")
+    for restart in (0, 1):
+        monkeypatch.setenv("SLURM_RESTART_COUNT", str(restart))
+        assert supervise(launches(("done", 0)), tmp_path / "group.json") == 0
+    for restart in (0, 1):
+        record = json.loads((tmp_path / f"group-123-r{restart}.json").read_text())
+        assert record["restart_count"] == str(restart)
+
+
+@pytest.mark.parametrize("extra", [{"override": []}, {"overrides": "x=y"}, {"overrides": [1]}])
+def test_specs_reject_unknown_keys_and_untyped_overrides(tmp_path, extra):
+    spec = {
+        "run_dir": str(tmp_path / "run"),
+        "log": str(tmp_path / "out"),
+        "threads": 4,
+        "config_dir": "projects/vjepa2/configs",
+        "config_name": "full_babyview_iid",
+        **extra,
+    }
+    with pytest.raises(ValueError):
+        parse_specs([spec])
