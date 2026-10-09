@@ -8,6 +8,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Static-clip V-JEPA 2 evaluation with the existing Labeled-S and BabyView
+  frozen linear probes and shape-bias scoring, including the chosen encoder
+  and temporal input protocol in evaluation records.
+
 - Optional packed/pinned batches and bounded decoded-frame caching, with stable
   worker assignment for replayed clips. V-JEPA 2 runs can explicitly migrate a
   verified checkpoint to a new runtime while preserving their original directory.

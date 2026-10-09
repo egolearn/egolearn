@@ -121,6 +121,33 @@ no uncertainty estimate or statistically significant improvement is claimed.
 
 ## Results and dependencies
 
+The `image_evals` configuration runs Labeled-S and BabyView frozen linear
+decoding and novel-object shape bias. Set `LABELED_S_ROOT`, `LABELED_S_SPLIT`
+(the pinned canonical metadata), `BABYVIEW_LINEAR_MANIFEST`, and
+`SHAPE_BIAS_MANIFEST`, then run:
+
+```bash
+uv run python -m egolearn.evaluate --config-dir projects/vjepa2/configs \
+  --config-name image_evals checkpoint="$RUN_DIR/final.pth" \
+  output_json="$RUN_DIR/trained-image-evals.json"
+```
+
+All four data environment variables are required by this recipe. Prepare
+BabyView manifests with `python -m egolearn.evaluation.benchmarks.babyview_4afc.prepare`
+and shape-bias stimuli with `python scripts/prepare_shape_bias.py` (see each
+command's `--help`). The canonical Labeled-S split source and checksum are
+defined in `egolearn.evaluation.benchmarks.labeled_s_linear.probe`.
+
+Repeat with `random.pth` and a separate output path. This protocol freezes the
+EMA `video_target` encoder, repeats each normalized image for 16 frames, and
+mean-pools its output tokens. Images use 128px center crops for linear decoding
+and whole-image resizing for shape bias. The canonical Labeled-S split and
+prepared BabyView split are unchanged; both classifiers use train-only feature
+standardization and the existing L-BFGS scorer (L2=0.001, 500 maximum iterations).
+Shape bias uses all 256 stimuli and 57,600 triplets. This is an explicit
+static-image transfer protocol, not a temporal-understanding benchmark or a
+reproduction of published V-JEPA image-evaluation scores.
+
 No dataset-scale results are committed here. Keep loss histories, checkpoints,
 records, evaluation scores and a local results report outside Git; do not infer
 results from synthetic tests or job submission. Report complete/failed/pending

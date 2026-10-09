@@ -1,0 +1,49 @@
+defaults: [/evaluate, _self_]
+hydra:
+  searchpath: [pkg://egolearn.configs]
+_imports_:
+  - egolearn.methods.vjepa2
+  - egolearn.methods.vjepa2.evaluation
+  - egolearn.evaluation.benchmarks.labeled_s_linear
+  - egolearn.evaluation.benchmarks.babyview_4afc
+  - egolearn.evaluation.benchmarks.shape_bias
+device: cuda
+seed: 0
+checkpoint: ???
+benchmarks:
+  - _target_: "benchmark:vjepa2_image"
+    name: labeled_s_linear
+    probe: labeled_s_linear
+    encoder: video_target
+    num_frames: 16
+    probe_kwargs:
+      data_root: ${oc.env:LABELED_S_ROOT}
+      split_file: ${oc.env:LABELED_S_SPLIT}
+      view: center_crop
+      size: 128
+      batch_size: 32
+      l2: 0.001
+      max_iter: 500
+  - _target_: "benchmark:vjepa2_image"
+    name: babyview_linear
+    probe: linear
+    encoder: video_target
+    num_frames: 16
+    probe_kwargs:
+      manifest: ${oc.env:BABYVIEW_LINEAR_MANIFEST}
+      view: center_crop
+      size: 128
+      batch_size: 32
+      l2: 0.001
+      max_iter: 500
+  - _target_: "benchmark:vjepa2_image"
+    name: shape_bias
+    probe: shape_bias
+    encoder: video_target
+    num_frames: 16
+    probe_kwargs:
+      manifest: ${oc.env:SHAPE_BIAS_MANIFEST}
+      view: resize
+      size: 128
+      batch_size: 32
+      verify_hashes: true
