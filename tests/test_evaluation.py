@@ -458,7 +458,8 @@ def test_linear_sgd_probe_augmentations_are_run_seed_and_worker_count_invariant(
     pooled_worker_seed, pooled = collect(2, 2, run_seed=18)
     other_probe_worker_seed, other_probe = collect(0, 2, run_seed=18, probe_seed=6)
     # Releasing the local loader also releases its persistent worker pool.
-    assert set(active_children()) == initial_children
+    # Pre-existing children from other tests may have finished in the meantime.
+    assert not (set(active_children()) - initial_children)
 
     assert serial_worker_seed == other_run_worker_seed == pooled_worker_seed
     assert other_probe_worker_seed != serial_worker_seed

@@ -75,8 +75,8 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
 
 ## Phase 6 — Cluster launch & artifacts
 
-- [ ] Hydra+submitit compute layer for NYU Torch
-- [ ] Per-run code snapshotting
+- [x] Site-neutral Slurm/Apptainer submission and Hydra sweep arrays
+- [x] Per-run clean-commit code archives and submission records
 - [x] Hub artifact mechanism: revisioned paths, verified fetch and private-by-default push
 - [ ] Publish approved checkpoint/split collections and retire Drive links
 
