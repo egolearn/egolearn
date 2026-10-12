@@ -33,6 +33,7 @@ Loader workers costs nothing and every worker shares the same index pages.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import io
 import json
 import os
@@ -113,10 +114,8 @@ class PackedFrameStore:
     def __del__(self) -> None:
         # fallback for stores that are dropped without close(): release the fds
         for fd in getattr(self, "_fds", {}).values():
-            try:
+            with contextlib.suppress(OSError):
                 os.close(fd)
-            except OSError:
-                pass
 
     # ---- metadata ---------------------------------------------------------
     @property
