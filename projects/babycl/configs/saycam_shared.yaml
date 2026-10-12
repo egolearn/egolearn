@@ -45,6 +45,10 @@ stream:
   include: "S_*"      # subset when root holds several children (SAYCam A/S/Y)
   transcript_json: /path/to/expand_correct_seg.json    # <- utterances
   fps: 5.0
+  # Packed alternative, same refs (build with `python -m egolearn.data.packed pack`;
+  # see docs/data_loading.md):
+  #   _target_: "stream:packed_frames"
+  #   root_dir: /path/to/saycam_5fps_packed
   # Video-first alternative (same refs, no pre-extracted frames; blocked on
   # the Poodle integration -- see egolearn/data/decoding/poodle.py):
   #   _target_: "stream:video"
