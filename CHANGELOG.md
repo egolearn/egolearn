@@ -138,6 +138,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- Snapshot resume restores only saved `init_from` lineage, preserving the live
+  model's construction metadata in subsequent checkpoints and snapshots.
 - Slurm submission creates its code snapshot and run record with Bash and standard
   Unix tools, without invoking Python on the login node. Command arguments must be
   valid UTF-8.
