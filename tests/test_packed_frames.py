@@ -183,6 +183,34 @@ def test_session_selection_and_registry(packed):
         {"_target_": "stream:packed_frames", "root_dir": str(out), "include": "S_*"}
     )
     assert isinstance(stream, PackedFrameStream)
+    assert PackedFrameStream(str(out), fps=5.0, naming="timestamp").fps == 5.0
+    with pytest.raises(ValueError, match="fps"):
+        PackedFrameStream(str(out), fps=2.0)
+    with pytest.raises(ValueError, match="naming"):
+        PackedFrameStream(str(out), naming="frame_index")
+
+
+def test_packaged_preset_swaps_to_the_packed_backend(packed):
+    # the documented switch: a frame-dir preset with _target_ and root_dir changed,
+    # fps left in place, plus the documented blur override
+    from hydra import compose, initialize_config_module
+    from omegaconf import OmegaConf
+
+    _, _, out, _ = packed
+    overrides = [
+        'stream._target_="stream:packed_frames"',
+        f"stream.root_dir={out}",
+        "+views.v1.blur_impl=torchvision",
+    ]
+    with initialize_config_module(config_module="egolearn.configs", version_base="1.3"):
+        cfg = compose(config_name="offline_iid_saycam", overrides=overrides)
+    stream = instantiate(OmegaConf.to_container(cfg.stream, resolve=True))
+    assert isinstance(stream, PackedFrameStream) and stream.fps == 5.0
+    assert stream.session_ids() == [S1, S2, S3]
+    views_cfg = OmegaConf.to_container(cfg.views, resolve=True)
+    assert isinstance(views_cfg, dict)
+    views = ViewBank({str(k): dict(v) for k, v in views_cfg.items()})
+    assert views.names() == ["v1", "v2"]
 
 
 def test_build_cli_force_verify_and_corruption(frame_root, tmp_path, capsys):

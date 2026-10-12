@@ -40,9 +40,12 @@ through its PIL round trips. Set it per view when a bit-exact comparison with
 an older run matters:
 
 ```text
-views.v1.blur_impl=torchvision views.v2.blur_impl=torchvision      # IID preset
-views.ms_v1.blur_impl=torchvision views.ms_v2.blur_impl=torchvision  # BabyCL
++views.v1.blur_impl=torchvision +views.v2.blur_impl=torchvision      # IID preset
++views.ms_v1.blur_impl=torchvision +views.ms_v2.blur_impl=torchvision  # BabyCL
 ```
+
+(The `+` adds the key: the packaged presets do not declare `blur_impl`, so
+they get the default.)
 
 The BabyCL `pair` view keeps its own Pillow radius blur, which is part of that
 method's numerical contract and has no implementation switch. Clip views
@@ -155,7 +158,9 @@ stream:
   transcript_json: /path/to/expand_correct_seg.json   # as with stream:saycam
 ```
 
-`fps` and the naming scheme come from the manifest. Sessions, times, channels,
+`fps` and the naming scheme come from the manifest; a frame-directory config
+with only `_target_` and `root_dir` swapped keeps working, and an `fps` or
+`naming` key that disagrees with the store is an error. Sessions, times, channels,
 refs and pixels are the same as `stream:saycam` on the directories the store
 was built from, so snapshots, memory contents and storyboards from a
 frame-directory run keep working, and the two adapters can be swapped by

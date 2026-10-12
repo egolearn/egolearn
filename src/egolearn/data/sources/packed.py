@@ -29,14 +29,26 @@ class PackedFrameStream(SaycamStream):
         self,
         root_dir: str,
         transcript_json: str | None = None,
+        fps: float | None = None,
+        naming: str | None = None,
         sessions: list[str] | None = None,
         include: str | None = None,
     ):
         """`root_dir` is a packed store directory; `fps` and the frame naming
-        scheme come from its manifest.  `sessions` (explicit order) and
-        `include` (fnmatch on session ids) select among the packed sessions
-        like the frame-dir adapter does among directories."""
+        scheme come from its manifest, and a config that still carries them
+        (a frame-dir config with the backend swapped) is checked against it.
+        `sessions` (explicit order) and `include` (fnmatch on session ids)
+        select among the packed sessions like the frame-dir adapter does
+        among directories."""
         self.store = PackedFrameStore(root_dir)
+        if fps is not None and float(fps) != self.store.fps:
+            raise ValueError(
+                f"stream.fps={fps} but the packed store was built at fps={self.store.fps}"
+            )
+        if naming is not None and naming != self.store.naming:
+            raise ValueError(
+                f"stream.naming={naming!r} but the packed store uses {self.store.naming!r}"
+            )
         super().__init__(
             root_dir,
             transcript_json=transcript_json,
