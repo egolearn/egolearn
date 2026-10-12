@@ -62,7 +62,7 @@ def build_offline_index(stream: SaycamStream, storyboard_json: str | None) -> Ba
             video = videos[sid]
             # Storyboard ranges address this adapter's filename order. A count-only
             # check would silently pair the wrong pixels with segments/utterances.
-            if video["frames"] != stream._frames(sid):
+            if video["frames"] != stream.frame_files(sid):
                 raise ValueError(f"offline storyboard frame order differs for {sid!r}")
             covered_until = 0
             for segment in video["segments"]:

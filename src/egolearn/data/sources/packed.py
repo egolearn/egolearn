@@ -51,18 +51,23 @@ class PackedFrameStream(SaycamStream):
         packed = [s.id for s in self.store.sessions()]
         if self._session_ids is not None:
             known = set(packed)
+            empty = set(self.store.empty_sessions())  # selected at build time, no frames
             for sid in self._session_ids:
-                if sid not in known:
+                if sid not in known and sid not in empty:
                     raise KeyError(
                         f"session {sid!r} is not in the packed store {self.store.root!r}"
                     )
-            return list(self._session_ids)
+            return [sid for sid in self._session_ids if sid in known]
         if self._include is not None:
             return [sid for sid in packed if fnmatch.fnmatch(sid, self._include)]
         return packed
 
-    def frame_files(self, video_dir: str) -> list[str]:
-        raise NotImplementedError("a packed store has no per-frame files")
+    def _frames(self, video_dir: str) -> list[str]:
+        # the source file names, kept in the store: storyboards and other
+        # precomputed indexes validate their frame order against them
+        if video_dir not in self._frames_cache:
+            self._frames_cache[video_dir] = self.store.session_names(video_dir)
+        return self._frames_cache[video_dir]
 
     def sessions(self):
         for sid in self.session_ids():
@@ -88,7 +93,12 @@ class PackedFrameStream(SaycamStream):
         video_dir, i0, i1 = self._locator_span(ref)
         if not (0 <= index < i1 - i0):
             raise IndexError(f"frame index {index} outside ref span {i1 - i0}")
-        return self.store.span(video_dir).first + i0 + index
+        span = self.store.span(video_dir)
+        if not (0 <= i0 + index < span.count):  # a stale ref must not read a neighbour
+            raise IndexError(
+                f"frame {i0 + index} outside session {video_dir} ({span.count} frames)"
+            )
+        return span.first + i0 + index
 
     def open_frame(self, ref: ItemRef, index: int) -> Image.Image:
         return decode_frame(self.store.read(self._global(ref, index)))

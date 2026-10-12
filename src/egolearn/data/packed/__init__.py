@@ -18,6 +18,8 @@ Layout of a store directory (built by `pack_frame_dirs` or
                     session table (id, first global frame, count) in stream order
     index.npy       int64 [N, 3]: (shard, byte offset, byte length) per frame
     times.npy       float64 [N]: media time (seconds) of each frame
+    names.npy       bytes [N]: the source frame file names (storyboards and
+                    other precomputed indexes are validated against them)
     shards/*.bin    the encoded bytes of consecutive frames, back to back
 
 Frames keep their original encoded bytes, so a store decodes to exactly the
@@ -50,6 +52,7 @@ VERSION = 1
 MANIFEST = "manifest.json"
 INDEX = "index.npy"
 TIMES = "times.npy"
+NAMES = "names.npy"
 SHARD_DIR = "shards"
 DEFAULT_SHARD_BYTES = 256 << 20
 # ranges closer than this are served by one read: cheaper than a second
@@ -78,20 +81,24 @@ class PackedFrameStore:
 
     Everything is opened lazily on first use, and pickling keeps only the root
     path, so a store travels to worker processes as a few bytes and each worker
-    maps the index from the page cache.  Shard file descriptors are cached in
-    a small LRU per process (`max_open_shards`), well under an interactive
-    shell's 1024 open-file limit even with many shards.
+    maps the index from the page cache.  Shard file descriptors stay open in a
+    per-process LRU: a store has one shard file per session chunk (about 1,300
+    for the SAYCam S child), and reopening one costs a network round trip, so
+    the cap defaults to a quarter of the process's open-file limit (at least
+    64, at most 4,096), which keeps every shard open under a job step's limit
+    and degrades to an LRU under an interactive shell's 1024.
     """
 
-    def __init__(self, root: str | os.PathLike, max_open_shards: int = 64):
+    def __init__(self, root: str | os.PathLike, max_open_shards: int | None = None):
         self.root = os.fspath(root)
-        self.max_open_shards = max(1, int(max_open_shards))
+        self.max_open_shards = max(1, int(max_open_shards or _default_open_shards()))
         self._reset()
 
     def _reset(self) -> None:
         self._manifest: dict | None = None
         self._index: np.ndarray | None = None
         self._times: np.ndarray | None = None
+        self._names: np.ndarray | None = None
         self._spans: dict[str, SessionSpan] | None = None
         self._fds: OrderedDict[int, int] = OrderedDict()
 
@@ -102,6 +109,14 @@ class PackedFrameStore:
         self.root = state["root"]
         self.max_open_shards = state["max_open_shards"]
         self._reset()
+
+    def __del__(self) -> None:
+        # fallback for stores that are dropped without close(): release the fds
+        for fd in getattr(self, "_fds", {}).values():
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
     # ---- metadata ---------------------------------------------------------
     @property
@@ -153,6 +168,15 @@ class PackedFrameStore:
             self._times = arr
         return self._times
 
+    @property
+    def names(self) -> np.ndarray:
+        if self._names is None:
+            arr = np.load(os.path.join(self.root, NAMES), mmap_mode="r")
+            if arr.shape != (len(self),):
+                raise ValueError(f"{NAMES}: shape {arr.shape} does not match the manifest")
+            self._names = arr
+        return self._names
+
     def sessions(self) -> list[SessionSpan]:
         """Sessions in the order they were packed (the source stream's order)."""
         return [
@@ -171,6 +195,15 @@ class PackedFrameStore:
     def session_times(self, sid: str) -> np.ndarray:
         s = self.span(sid)
         return np.asarray(self.times[s.first : s.first + s.count])
+
+    def session_names(self, sid: str) -> list[str]:
+        """The source frame file names of one session, in frame order."""
+        s = self.span(sid)
+        return [n.decode() for n in self.names[s.first : s.first + s.count]]
+
+    def empty_sessions(self) -> list[str]:
+        """Sessions that were selected at build time but held no frames."""
+        return list(self.manifest.get("empty_sessions", []))
 
     # ---- bytes ------------------------------------------------------------
     def _fd(self, shard: int) -> int:
@@ -276,17 +309,21 @@ def _pack_session(
     return sid, shards, np.array(rows, dtype=np.int64).reshape(-1, 3)
 
 
-def _remove_previous(out: Path) -> None:
-    """Drop the files a previous build of this store wrote (and nothing else)."""
+def _default_open_shards() -> int:
     try:
-        with open(out / MANIFEST) as f:
-            old = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        old = {}
-    for s in old.get("shards", []):
-        (out / s["path"]).unlink(missing_ok=True)
-    for name in (MANIFEST, INDEX, TIMES):
-        (out / name).unlink(missing_ok=True)
+        import resource
+
+        soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+    except (ImportError, OSError, ValueError):  # pragma: no cover - non-POSIX
+        return 64
+    return max(64, min(4096, soft // 4))
+
+
+def _build_files(out: Path) -> list[Path]:
+    """Everything a build (complete or interrupted) may have left under `out`."""
+    files = [out / name for name in (MANIFEST, INDEX, TIMES, NAMES) if (out / name).exists()]
+    files += sorted((out / SHARD_DIR).glob("*.bin")) if (out / SHARD_DIR).is_dir() else []
+    return files
 
 
 def pack_frame_dirs(
@@ -314,13 +351,18 @@ def pack_frame_dirs(
     from egolearn.data.sources.saycam import SaycamStream
 
     root_p, out_p = Path(root), Path(out)
-    if (out_p / MANIFEST).exists():
+    leftovers = _build_files(out_p)
+    if leftovers:
         if not force:
-            raise FileExistsError(f"{out_p} already holds a packed store (use force=True)")
-        _remove_previous(out_p)
+            raise FileExistsError(
+                f"{out_p} already holds a packed store or an interrupted build (use force=True)"
+            )
+        for path in leftovers:  # only files a build of this store writes
+            path.unlink()
     src = SaycamStream(str(root_p), fps=fps, naming=naming, sessions=sessions, include=include)
-    jobs = [(sid, src.frame_files(sid)) for sid in src.session_ids()]
-    jobs = [(sid, files) for sid, files in jobs if files]
+    listed = [(sid, src.frame_files(sid)) for sid in src.session_ids()]
+    jobs = [(sid, files) for sid, files in listed if files]
+    empty = [sid for sid, files in listed if not files]
     if not jobs:
         raise ValueError(f"no frame directories to pack under {root_p}")
     (out_p / SHARD_DIR).mkdir(parents=True, exist_ok=True)
@@ -343,6 +385,7 @@ def pack_frame_dirs(
     session_table: list[dict] = []
     index_parts: list[np.ndarray] = []
     time_parts: list[np.ndarray] = []
+    names: list[bytes] = []
     first = 0
     for (sid, files), (sid2, session_shards, rows) in zip(jobs, packed, strict=True):
         assert sid == sid2
@@ -354,6 +397,7 @@ def pack_frame_dirs(
         rows[:, 0] += base
         index_parts.append(rows)
         time_parts.append(np.asarray(src.frame_times(files), dtype=np.float64))
+        names.extend(fn.encode() for fn in files)
         session_table.append({"id": sid, "first": first, "count": int(rows.shape[0])})
         first += int(rows.shape[0])
 
@@ -361,6 +405,7 @@ def pack_frame_dirs(
     times = np.concatenate(time_parts) if time_parts else np.zeros((0,), dtype=np.float64)
     np.save(out_p / INDEX, index)
     np.save(out_p / TIMES, times)
+    np.save(out_p / NAMES, np.array(names, dtype="S") if names else np.zeros(0, dtype="S1"))
     manifest: dict = {
         "format": FORMAT,
         "version": VERSION,
@@ -372,6 +417,7 @@ def pack_frame_dirs(
         "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "shards": shards,
         "sessions": session_table,
+        "empty_sessions": empty,
     }
     tmp = out_p / (MANIFEST + ".tmp")
     with open(tmp, "w") as f:
@@ -402,7 +448,7 @@ def verify_store(
     seed: int = 0,
 ) -> int:
     """Check a store against the frame directories it was built from: the same
-    sessions with the same frame counts and times, and byte-identical frames
+    sessions with the same frame names and times, and byte-identical frames
     (all of them, or a random `sample`).  Raises ValueError on the first
     mismatch; returns the number of frames compared."""
     from egolearn.data.sources.saycam import SaycamStream
@@ -417,6 +463,8 @@ def verify_store(
         files = src.frame_files(s.id)
         if len(files) != s.count:
             raise ValueError(f"session {s.id}: {len(files)} frames on disk, {s.count} packed")
+        if files != store.session_names(s.id):
+            raise ValueError(f"session {s.id}: frame names or order differ from the packed store")
         if not np.array_equal(store.session_times(s.id), np.asarray(src.frame_times(files))):
             raise ValueError(f"session {s.id}: frame times differ from the packed store")
         checks.extend(
@@ -502,7 +550,3 @@ def main(argv: list[str] | None = None) -> int:
             f"fps={m['fps']} naming={m['naming']} created={m['created']}"
         )
     return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

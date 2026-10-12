@@ -94,9 +94,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   packed into large shard files with a numpy offset index, built and verified
   with `python -m egolearn.data.packed`; the same sessions, times, refs and
   pixels as `stream:saycam`, one read per frame and per contiguous clip, and a
-  memory-mapped index instead of per-session listings. Cold random 256-frame
-  batches drop from 1.2 s to 36 ms on network scratch. `Stream.open_frames`
-  lets the Loader fetch a clip's frames in one call. See `docs/data_loading.md`.
+  memory-mapped index instead of per-session listings, so Loader workers start
+  in seconds instead of minutes. Cold random 256-frame batches drop from 1.2 s
+  to 36 ms on network scratch. `Stream.open_frames` lets the Loader fetch a
+  clip's frames in one call. See `docs/data_loading.md`.
 
 ### Changed
 

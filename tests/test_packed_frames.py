@@ -2,6 +2,7 @@
 frame-dir adapter, one-read clips, cheap pickling, and the build/verify CLI."""
 
 import json
+import os
 import pickle
 import random
 
@@ -182,8 +183,6 @@ def test_session_selection_and_registry(packed):
         {"_target_": "stream:packed_frames", "root_dir": str(out), "include": "S_*"}
     )
     assert isinstance(stream, PackedFrameStream)
-    with pytest.raises(NotImplementedError):
-        stream.frame_files(S1)
 
 
 def test_build_cli_force_verify_and_corruption(frame_root, tmp_path, capsys):
@@ -245,3 +244,83 @@ def test_frame_index_naming(tmp_path):
     assert session.channels["video"].times == [i / 2.0 for i in range(7)]
     assert stream.fps == 2.0 and stream.naming == "frame_index"
     assert verify_store(out, root) == 7
+
+
+def test_frame_names_serve_storyboard_validation_and_empty_sessions(frame_root, tmp_path):
+    from egolearn.methods.babycl.offline import build_offline_index
+
+    root, transcript = frame_root
+    out = tmp_path / "store4"
+    selected = [S3, "S_20130105_empty", S2]  # an explicit list with an empty directory
+    pack_frame_dirs(root, out, sessions=selected)
+    store = PackedFrameStore(out)
+    assert [s.id for s in store.sessions()] == [S3, S2]
+    assert store.empty_sessions() == ["S_20130105_empty"]
+    src = SaycamStream(str(root), transcript_json=str(transcript), sessions=selected)
+    dst = PackedFrameStream(str(out), transcript_json=str(transcript), sessions=selected)
+    assert dst.session_ids() == [s.sid for s in src.sessions()] == [S3, S2]
+    assert dst.frame_files(S3) == src.frame_files(S3) == store.session_names(S3)
+
+    storyboard = tmp_path / "storyboard.json"
+    videos = [
+        {"video_dir": sid, "frames": src.frame_files(sid), "segments": [{"start": 0, "end": n}]}
+        for sid, n in ((S3, N3), (S2, N2))
+    ]
+    storyboard.write_text(json.dumps({"fps": 5.0, "root_dir": "unused", "videos": videos}))
+    a = build_offline_index(src, str(storyboard))
+    b = build_offline_index(dst, str(storyboard))
+    assert (a.num_frames, a.segments, a.pairs) == (b.num_frames, b.segments, b.pairs)
+    assert b.num_frames == N3 + N2 and len(b.segments) == 2 and b.pairs
+    videos[0]["frames"] = list(reversed(videos[0]["frames"]))
+    storyboard.write_text(json.dumps({"fps": 5.0, "root_dir": "unused", "videos": videos}))
+    with pytest.raises(ValueError, match="frame order differs"):
+        build_offline_index(dst, str(storyboard))
+
+
+def test_stale_refs_raise_on_both_adapters(packed):
+    root, _, out, _ = packed
+    src = SaycamStream(str(root), include="S_*")
+    dst = PackedFrameStream(str(out))
+    for ref, index in (
+        (ItemRef(S1, "video", 0.0, 0.0, (S1, N1)), 0),  # point ref past the session's end
+        (ItemRef(S1, "video", 0.0, 1.0, (S1, N1 - 2, N1 + 5)), 3),  # interval ref overrunning it
+    ):
+        with pytest.raises(IndexError):
+            src.open_frame(ref, index)
+        with pytest.raises(IndexError):
+            dst.open_frame(ref, index)
+        with pytest.raises(IndexError):
+            dst.open_frames(ref, [index])
+
+
+def test_interrupted_build_is_refused_without_force_and_cleaned_with_it(frame_root, tmp_path):
+    root, _ = frame_root
+    out = tmp_path / "store5"
+    (out / "shards").mkdir(parents=True)
+    stray = out / "shards" / "S_old.000.bin"
+    stray.write_bytes(b"leftover from a build that never wrote its manifest")
+    with pytest.raises(FileExistsError, match="interrupted build"):
+        pack_frame_dirs(root, out, include="S_*")
+    pack_frame_dirs(root, out, include="S_*", force=True)
+    assert not stray.exists()
+    assert verify_store(out, root) == N1 + N2 + N3
+
+
+def test_shard_descriptors_are_capped_and_released(packed):
+    import gc
+
+    _, _, out, _ = packed
+    fd_dir = "/proc/self/fd"
+    count = (lambda: len(os.listdir(fd_dir))) if os.path.isdir(fd_dir) else (lambda: 0)
+    gc.collect()
+    base = count()
+    store = PackedFrameStore(out, max_open_shards=1)  # LRU of one: every shard change reopens
+    keys = list(range(0, N1 + N2 + N3, 7))
+    assert store.read_many(keys) == [store.read(k) for k in keys]
+    assert len(store._fds) == 1
+    assert PackedFrameStore(out).max_open_shards >= 64
+    if os.path.isdir(fd_dir):
+        assert count() > base  # a shard fd plus the memory-mapped index
+    del store
+    gc.collect()
+    assert count() == base  # the finalizer released them without an explicit close()

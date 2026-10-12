@@ -103,9 +103,10 @@ one session per process, and writes the manifest last, so a directory without
 one is an incomplete build. Frames keep their original encoded bytes: nothing
 is re-encoded, and `verify` checks byte identity and frame times against the
 source directories. `--force` replaces an existing store (only the files the
-previous build wrote). The SAYCam S child (3.65 M frames, 73 GB) packs in a
-few minutes with 32 workers and produces about 1,300 shard files of up to
-256 MB (`--shard-bytes`).
+previous build wrote, or an interrupted build left behind). The SAYCam S
+child (3.65 M frames, 76 GB) packed in 4 minutes with 32 workers into 1,242
+shard files of up to 256 MB (`--shard-bytes`), one or more per session;
+verifying 20,000 random frames against the source took 77 s.
 
 A store directory holds:
 
@@ -114,6 +115,7 @@ A store directory holds:
 | `manifest.json` | format tag, the source's fps and naming, the shard list, the session table (id, first global frame, count) in stream order |
 | `index.npy` | int64 `[N, 3]`: shard, byte offset, byte length of each frame |
 | `times.npy` | float64 `[N]`: media time of each frame |
+| `names.npy` | the source frame file names, so precomputed indexes (BabyCL storyboards) validate their frame order against the store as they do against a directory |
 | `shards/<session>.<k>.bin` | the frames' encoded bytes, back to back |
 
 ### Using a store
@@ -134,7 +136,12 @@ config. The Loader's clip decode fetches a clip's frames in one call
 (`Stream.open_frames`), which the store serves as one read; the store's index
 is memory-mapped and only its path is pickled, so the stream reaches Loader
 workers as a few kilobytes plus the transcript instead of a per-session
-listing cache.
+listing cache. That also removes the worker start-up stall the listing cache
+causes: with 16 workers on a 32-session subset the pool was ready in 19 s
+instead of 202 s, because a spawn whose arguments exceed the pipe buffer
+blocks the trainer until the child has imported torch. Each worker keeps its
+shard files open (up to a quarter of its open-file limit, so all of them
+under a job step's limit; an interactive shell's 1024 degrades to an LRU).
 
 Staging the store on a job's node-local disk (copy the directory, point
 `root_dir` at the copy) turns every read into the last row of the table above.

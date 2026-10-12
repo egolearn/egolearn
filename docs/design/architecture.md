@@ -528,7 +528,7 @@ method = one paper's research code, eval = benchmark code.
 | `src/egolearn/data/loading.py` | shared | the Loader — the only place refs become tensors; all units (frame/segment/pair/clip) |
 | `src/egolearn/data/views.py` | shared | named augmentation pipelines + clip-consistent views |
 | `src/egolearn/data/blur.py` | shared | Gaussian blur implementations for the image views (separable default, reference, none) |
-| `src/egolearn/data/packed.py` | shared | packed frame store: shard files + numpy index; `python -m egolearn.data.packed` builds and verifies |
+| `src/egolearn/data/packed/` | shared | packed frame store: shard files + numpy index; `python -m egolearn.data.packed` builds and verifies |
 | `src/egolearn/data/text.py` | shared | CVCL-style vocab tokenizer |
 | `src/egolearn/data/batching/recipe.py` | streaming | slot/recipe declaration, incl. the fallback recipe |
 | `src/egolearn/data/batching/composer.py` | streaming | fills slots: draw all refs first, then load, tokenize, resolve labels, collate |
