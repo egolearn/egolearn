@@ -366,3 +366,38 @@ def test_shard_descriptors_are_capped_and_released(packed):
     del store
     gc.collect()
     assert count() == base  # the finalizer released them without an explicit close()
+
+
+def test_verify_detects_source_changes_after_packing(frame_root, tmp_path):
+    import shutil
+
+    root, _ = frame_root
+    out = tmp_path / "store6"
+    pack_frame_dirs(root, out, sessions=[S2, "S_20130105_empty"])
+    assert PackedFrameStore(out).manifest["selection"] == {
+        "include": None,
+        "sessions": [S2, "S_20130105_empty"],
+    }
+    assert verify_store(out, root) == N2
+    # a session that was empty when packed gains a frame: the store is stale
+    Image.new("RGB", (8, 8)).save(root / "S_20130105_empty" / "S_20130105_empty_0.00.jpg")
+    with pytest.raises(ValueError, match="does not hold"):
+        verify_store(out, root)
+    # the same holds for a store built before the selection was recorded
+    manifest_path = out / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    del manifest["selection"]
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="does not hold"):
+        verify_store(out, root)
+
+    out2 = tmp_path / "store7"
+    pack_frame_dirs(root, out2, include="S_*")  # now holds the formerly empty session too
+    assert verify_store(out2, root, sample=5) == 5
+    _write_session(root, "S_20130106_new", 2, np.random.default_rng(9))  # a new matching dir
+    with pytest.raises(ValueError, match="does not hold"):
+        verify_store(out2, root, sample=5)
+    shutil.rmtree(root / "S_20130106_new")
+    shutil.rmtree(root / S1)  # a packed session that disappeared
+    with pytest.raises(ValueError, match="no longer listed"):
+        verify_store(out2, root)

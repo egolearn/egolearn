@@ -424,6 +424,8 @@ def pack_frame_dirs(
         "shards": shards,
         "sessions": session_table,
         "empty_sessions": empty,
+        # how the sessions were chosen, so verify can re-run the same listing
+        "selection": {"include": include, "sessions": list(sessions) if sessions else None},
     }
     tmp = out_p / (MANIFEST + ".tmp")
     with open(tmp, "w") as f:
@@ -453,20 +455,48 @@ def verify_store(
     sample: int | None = None,
     seed: int = 0,
 ) -> int:
-    """Check a store against the frame directories it was built from: the same
-    sessions with the same frame names and times, and byte-identical frames
-    (all of them, or a random `sample`).  Raises ValueError on the first
-    mismatch; returns the number of frames compared."""
+    """Check a store against the frame directories it was built from.
+
+    The build's session selection is listed again, and it must yield exactly
+    the packed sessions: a session that was empty at build time and gained
+    frames, or a new directory matching the pattern, fails verification.
+    Every packed session must then have the same frame names and times, and
+    byte-identical frames (all of them, or a random `sample`).  Raises
+    ValueError on the first mismatch; returns the number of frames compared."""
     from egolearn.data.sources.saycam import SaycamStream
 
     store = PackedFrameStore(store_root)
     spans = store.sessions()
+    packed_ids = [s.id for s in spans]
+    selection = store.manifest.get("selection") or {
+        # stores built before the selection was recorded: the sessions seen then
+        "include": None,
+        "sessions": packed_ids + store.empty_sessions(),
+    }
     src = SaycamStream(
-        os.fspath(frame_root), fps=store.fps, naming=store.naming, sessions=[s.id for s in spans]
+        os.fspath(frame_root),
+        fps=store.fps,
+        naming=store.naming,
+        sessions=selection.get("sessions"),
+        include=selection.get("include"),
     )
+    listed: dict[str, list[str]] = {}
+    for sid in src.session_ids():
+        try:
+            listed[sid] = src.frame_files(sid)
+        except FileNotFoundError:  # a selected directory that no longer exists
+            listed[sid] = []
+    extra = [sid for sid, files in listed.items() if files and sid not in set(packed_ids)]
+    if extra:
+        raise ValueError(
+            f"the source now has frames in sessions the store does not hold (rebuild): {extra[:5]}"
+        )
+    gone = [sid for sid in packed_ids if sid not in listed]
+    if gone:
+        raise ValueError(f"packed sessions are no longer listed by the source: {gone[:5]}")
     checks: list[tuple[int, str]] = []
     for s in spans:
-        files = src.frame_files(s.id)
+        files = listed[s.id]
         if len(files) != s.count:
             raise ValueError(f"session {s.id}: {len(files)} frames on disk, {s.count} packed")
         if files != store.session_names(s.id):

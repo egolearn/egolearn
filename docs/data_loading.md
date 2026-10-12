@@ -131,8 +131,10 @@ uv run python -m egolearn.data.packed info /path/to/saycam_5fps_packed
 (`--include`, `--sessions`, `--naming timestamp|frame_index`, `--fps`), packs
 one session per process, and writes the manifest last, so a directory without
 one is an incomplete build. Frames keep their original encoded bytes: nothing
-is re-encoded, and `verify` checks byte identity and frame times against the
-source directories. `--force` replaces an existing store (only the files the
+is re-encoded. `verify` re-runs the build's session selection (recorded in the
+manifest) and requires it to yield exactly the packed sessions, so a session
+that gained frames or a new directory matching the pattern fails; it then
+checks frame names, times and byte identity against the source directories. `--force` replaces an existing store (only the files the
 previous build wrote, or an interrupted build left behind). The SAYCam S
 child (3.65 M frames, 76 GB) packed in 4 minutes with 32 workers into 1,242
 shard files of up to 256 MB (`--shard-bytes`), one or more per session;
