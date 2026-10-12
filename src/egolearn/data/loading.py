@@ -81,10 +81,11 @@ def _pool_init(
 
 def _decode_clip(stream: Stream, ref, start: int, clip_len: int, stride: int) -> torch.Tensor:
     """[T, C, H, W] float clip; indices past the ref's end clamp to the last
-    frame (pad-by-repetition, the common video convention)."""
+    frame (pad-by-repetition, the common video convention).  The frames are
+    requested together (`Stream.open_frames`): one read on a packed store."""
     n = stream.num_frames(ref)
     idx = [min(start + j * stride, n - 1) for j in range(clip_len)]
-    return torch.stack([TF.to_tensor(stream.open_frame(ref, i)) for i in idx])
+    return torch.stack([TF.to_tensor(im) for im in stream.open_frames(ref, idx)])
 
 
 def _pool_task(item: WorkItem) -> torch.Tensor:
@@ -253,10 +254,9 @@ class Loader:
         that seed instead of the global stream, like frame_views.
 
         `view_names` must name clip-domain views (clip_simclr,
-        clip_center_crop, ...).  Frames are decoded one by one through
-        stream.open_frame; batching the decode through
-        VideoDecoder.read_window is an optimization left for the Poodle
-        integration.
+        clip_center_crop, ...).  The clip's frames are fetched together
+        through stream.open_frames, which the packed store serves in one
+        read and the frame-dir adapters as T opens.
         """
         start = self.pick_clip_start(ref, clip_len, stride, rng)
         return self._one_clip(ref, start, view_names, clip_len, stride, seed)

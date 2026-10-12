@@ -1,0 +1,107 @@
+"""PackedFrameStream: the SAYCam/BabyView adapter over a packed frame store
+(egolearn.data.packed) instead of per-frame files.
+
+Same sessions, times, channels, refs and pixels as `stream:saycam` on the
+frame directories the store was built from -- only the read path changes:
+a frame is one `pread` into a large shard, a contiguous clip is one read, and
+the store's memory-mapped index replaces the per-session directory listings
+(so the stream pickles to a few kilobytes plus the transcript when it is handed
+to Loader workers).  Build a store with `python -m egolearn.data.packed pack`.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+
+from PIL import Image
+
+from egolearn.config.registry import STREAMS
+from egolearn.core.refs import ItemRef
+from egolearn.data.packed import PackedFrameStore, decode_frame
+
+from . import base as S
+from .saycam import SaycamStream
+
+
+@STREAMS.register("packed_frames")
+class PackedFrameStream(SaycamStream):
+    def __init__(
+        self,
+        root_dir: str,
+        transcript_json: str | None = None,
+        sessions: list[str] | None = None,
+        include: str | None = None,
+    ):
+        """`root_dir` is a packed store directory; `fps` and the frame naming
+        scheme come from its manifest.  `sessions` (explicit order) and
+        `include` (fnmatch on session ids) select among the packed sessions
+        like the frame-dir adapter does among directories."""
+        self.store = PackedFrameStore(root_dir)
+        super().__init__(
+            root_dir,
+            transcript_json=transcript_json,
+            fps=self.store.fps,
+            naming=self.store.naming,
+            sessions=sessions,
+            include=include,
+        )
+
+    # ---- session enumeration (manifest order, not a directory scan) -------
+    def session_ids(self) -> list[str]:
+        packed = [s.id for s in self.store.sessions()]
+        if self._session_ids is not None:
+            known = set(packed)
+            for sid in self._session_ids:
+                if sid not in known:
+                    raise KeyError(
+                        f"session {sid!r} is not in the packed store {self.store.root!r}"
+                    )
+            return list(self._session_ids)
+        if self._include is not None:
+            return [sid for sid in packed if fnmatch.fnmatch(sid, self._include)]
+        return packed
+
+    def frame_files(self, video_dir: str) -> list[str]:
+        raise NotImplementedError("a packed store has no per-frame files")
+
+    def sessions(self):
+        for sid in self.session_ids():
+            span = self.store.span(sid)
+            times = self.store.session_times(sid).tolist()
+            video = S.DenseFrameChannel("video", sid, times, [(sid, i) for i in range(span.count)])
+            channels: dict[str, S.Channel] = {"video": video}
+            utts = self._utts_by_stem.get(self._stem(sid), [])
+            if utts:
+                channels["transcript"] = S.SparseIntervalChannel("transcript", sid, utts)
+            yield S.Session(sid, channels)
+
+    def total_observations(self) -> int | None:
+        if self._total is None:
+            self._total = sum(
+                self.store.span(sid).count + len(self._utts_by_stem.get(self._stem(sid), []))
+                for sid in self.session_ids()
+            )
+        return self._total
+
+    # ---- reading pixels ------------------------------------------------------
+    def _global(self, ref: ItemRef, index: int) -> int:
+        video_dir, i0, i1 = self._locator_span(ref)
+        if not (0 <= index < i1 - i0):
+            raise IndexError(f"frame index {index} outside ref span {i1 - i0}")
+        return self.store.span(video_dir).first + i0 + index
+
+    def open_frame(self, ref: ItemRef, index: int) -> Image.Image:
+        return decode_frame(self.store.read(self._global(ref, index)))
+
+    def open_frames(self, ref: ItemRef, indices: list[int]) -> list[Image.Image]:
+        """Several frames of one ref in one read (clips); repeats decode once."""
+        keys = [self._global(ref, i) for i in indices]
+        blobs = self.store.read_many(keys)
+        decoded: dict[int, Image.Image] = {}
+        for key, blob in zip(keys, blobs, strict=True):
+            if key not in decoded:
+                decoded[key] = decode_frame(blob)
+        return [decoded[key] for key in keys]
+
+    def close(self) -> None:
+        self.store.close()
