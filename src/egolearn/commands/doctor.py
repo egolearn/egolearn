@@ -73,6 +73,7 @@ def check_cuda(required: bool) -> Check:
 def inspect_environment(
     *,
     cluster: bool = False,
+    submit: bool = False,
     extras: tuple[str, ...] = (),
     require_cuda: bool = False,
     required_env: tuple[str, ...] = (),
@@ -120,7 +121,7 @@ def inspect_environment(
                 "set" if os.environ.get(name) else "not set",
             )
         )
-    if cluster:
+    if cluster or submit:
         variables = cluster_variables()
         in_job = bool(os.environ.get("SLURM_JOB_ID"))
         in_container = bool(
@@ -139,9 +140,17 @@ def inspect_environment(
                     checks.append(Check("fail", name, "not set; source env.sh"))
         if not os.environ.get("EGOLEARN_DATA"):
             checks.append(storage_check("data-root-location", str(root.absolute()), home))
-        # Check submission tools outside an allocation and Apptainer on a
-        # compute host. Neither needs to be installed inside the job container.
-        binaries = () if in_container else ("apptainer",) if in_job else ("bash", "git", "sbatch")
+        # A CPU planning allocation submits new jobs from the compute host.
+        # Select its tools explicitly; ordinary worker containers do not need them.
+        binaries: tuple[str, ...]
+        if submit:
+            binaries = ("bash", "git", "sbatch", "iconv", "tar", "uv")
+        elif in_container:
+            binaries = ()
+        elif in_job:
+            binaries = ("apptainer",)
+        else:
+            binaries = ("bash", "git", "sbatch")
         for binary in binaries:
             checks.append(
                 Check(
@@ -156,6 +165,11 @@ def inspect_environment(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--cluster", action="store_true", help="also check cluster paths and tools")
+    parser.add_argument(
+        "--submit",
+        action="store_true",
+        help="check this host's submission tools (implies --cluster)",
+    )
     parser.add_argument("--extra", action="append", choices=("train", "video"), default=[])
     parser.add_argument("--require-env", action="append", default=[], metavar="NAME")
     cuda = parser.add_mutually_exclusive_group()
@@ -166,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--require-env expects an environment variable name")
     checks = inspect_environment(
         cluster=args.cluster or bool(os.environ.get("SLURM_JOB_ID")),
+        submit=args.submit,
         extras=tuple(args.extra),
         require_cuda=args.require_cuda,
         required_env=tuple(args.require_env),

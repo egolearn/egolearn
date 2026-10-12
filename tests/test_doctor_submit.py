@@ -94,6 +94,39 @@ def test_cluster_tools_match_the_execution_location(tmp_path, monkeypatch, locat
     )
 
 
+@pytest.mark.parametrize("in_allocation", [False, True])
+@pytest.mark.parametrize("missing", [None, "bash", "git", "sbatch", "iconv", "tar", "uv"])
+def test_submission_doctor_checks_tools_on_the_planning_host(
+    tmp_path, monkeypatch, capsys, in_allocation, missing
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    for names in doctor.cluster_variables().values():
+        for name in names:
+            monkeypatch.setenv(name, str(tmp_path / "scratch" / name))
+    for name in ("SLURM_JOB_ID", "APPTAINER_CONTAINER", "SINGULARITY_CONTAINER"):
+        monkeypatch.delenv(name, raising=False)
+    if in_allocation:
+        monkeypatch.setenv("SLURM_JOB_ID", "123")
+    binaries = {"bash", "git", "sbatch", "iconv", "tar", "uv"}
+    monkeypatch.setattr(
+        doctor.shutil,
+        "which",
+        lambda name: f"/usr/bin/{name}" if name in binaries and name != missing else None,
+    )
+
+    assert doctor.main(["--submit", "--skip-cuda"]) == int(missing is not None)
+    output = capsys.readouterr().out
+    for binary in binaries:
+        expected = f"fail: {binary}: not on PATH" if binary == missing else f"ok: {binary}: on PATH"
+        assert expected in output
+    assert "apptainer:" not in output
+    # --submit also checks cluster storage, even outside a Slurm allocation.
+    assert "ok: SIF_DIR:" in output
+    assert str(tmp_path) not in output
+    assert not list(tmp_path.iterdir())
+
+
 def test_submit_from_installed_package_preserves_argv(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "pyproject.toml").write_text('[project]\nname="egolearn"\n')

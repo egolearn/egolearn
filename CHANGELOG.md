@@ -96,6 +96,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Changed
 
+- `egl doctor --submit` checks submission tools and cluster storage on planning
+  hosts, including CPU allocations. The documented benchmark workflow stops
+  before creating a plan if diagnostics fail.
 - Cluster instructions use the shell launcher on login nodes and run Python
   diagnostics and benchmark planning inside compute allocations.
 - Benchmark baseline comparisons require matching seed sets and input keys/checksums;

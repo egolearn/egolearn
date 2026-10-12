@@ -84,6 +84,7 @@ Run these commands on a workstation or in a compute allocation:
 egl doctor
 egl doctor --extra train --require-cuda
 egl doctor --cluster --require-env WANDB_API_KEY
+egl doctor --submit --skip-cuda
 egl submit --gres=gpu:1 --time=01:00:00 -- egl train toy_streaming
 ```
 
@@ -96,10 +97,12 @@ Cluster checks activate with `--cluster` or inside a Slurm job. They share requi
 and optional storage-variable names with the launcher. Host checks resolve symlinks
 before rejecting paths under the host's `$HOME`. Inside an Apptainer container,
 `$HOME` is scratch by design: paths must still be absolute, but may be under that
-container home. Submission tools are checked outside Slurm allocations and
-Apptainer on compute hosts; neither is required inside a job container.
-Doctor creates no directories, downloads
-no packages and changes no settings.
+container home. Use `--submit` on a host that will submit jobs, including a CPU
+planning allocation. It implies `--cluster` and checks Bash, Git, `sbatch`,
+`iconv`, `tar`, and uv. Without `--submit`, cluster diagnostics check Apptainer
+on compute hosts, Bash/Git/`sbatch` outside allocations, and no host tools inside
+a job container. Doctor creates no directories, downloads no packages and changes
+no settings.
 
 On login nodes use the shell launcher's checks or submit doctor to a CPU/GPU
 allocation as shown in [cluster diagnostics](cluster.md#diagnostics).

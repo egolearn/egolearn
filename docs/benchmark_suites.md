@@ -97,13 +97,18 @@ checkout root:
 
 ```bash
 uv sync --locked --extra train
-uv run --no-sync egl doctor --cluster --skip-cuda
-uv run --no-sync egl bench run benchmarks/toy.yaml \
+uv run --no-sync egl doctor --submit --skip-cuda && \
+  uv run --no-sync egl bench run benchmarks/toy.yaml \
   --output "$EGOLEARN_ARTIFACTS/toy-suite" --submit \
   --sbatch=--partition=CPU_PARTITION --sbatch=--cpus-per-task=2 \
   --sbatch=--mem=8G --sbatch=--time=00:10:00
 exit
 ```
+
+`doctor --submit` checks cluster storage and the planning host's Bash, Git,
+`sbatch`, `iconv`, `tar`, and uv executables. Load any required site modules in
+this compute shell before running it. The `&&` prevents planning from creating
+output files when a check fails.
 
 Choose planning time and memory for the input size; hashing a large collection
 can take longer than this toy example. The `--sbatch` settings select resources

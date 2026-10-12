@@ -5,7 +5,9 @@ on the login node. **Do not run Python on login nodes**, including any `egl`
 command, environment installation, diagnostics or benchmark planning. The shell
 launcher needs Bash 4.4+, Git, coreutils, findutils, tar, iconv and `sbatch`;
 compute nodes need Bash 4.4+, Apptainer and `flock`. Environment builds and image
-pulls run in CPU jobs.
+pulls run in CPU jobs. A compute node used for benchmark planning also needs the
+shell launcher's tools listed above and uv, with `sbatch` available on `PATH` to
+submit the worker array. Load the site's required modules in the planning shell.
 
 ## Setup and submission
 
@@ -160,6 +162,11 @@ scripts/slurm/submit --partition=CPU_PARTITION --cpus-per-task=2 --mem=8G \
 For a CUDA check, request a GPU job and pass `--require-cuda` instead of
 `--skip-cuda`. Doctor's CUDA probe imports torch in a child process. Even with
 `--skip-cuda`, doctor itself runs Python and belongs in an allocation.
+
+In a CPU planning shell, use `egl doctor --submit --skip-cuda` to check submission
+tools and cluster storage before planning an array. This checks Bash, Git,
+`sbatch`, `iconv`, `tar`, and uv on that host, including inside a Slurm allocation.
+See the [benchmark planning workflow](benchmark_suites.md#cluster-planning-in-a-cpu-job).
 
 ## Caches and credentials
 
