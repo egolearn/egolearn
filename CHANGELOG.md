@@ -127,6 +127,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- All benchmark configs recorded by standalone evaluation reduce absolute local
+  path settings to file or directory names, while preserving original top-level
+  `hf://` references, structured metadata, and paths used to load benchmark data.
+
 - Evaluation rejects non-finite metrics before recording a benchmark, preserving
   serializable partial results. Linear-probe configs record dataset and manifest
   names without machine-specific directories, alongside existing split hashes.

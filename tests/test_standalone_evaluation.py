@@ -5,6 +5,7 @@ import json
 import random
 import subprocess
 import sys
+from collections import namedtuple
 from copy import deepcopy
 from pathlib import Path
 
@@ -19,6 +20,7 @@ import egolearn
 from egolearn.config.registry import BENCHMARKS, ENCODERS, PROBES, STREAMS
 from egolearn.evaluation import Benchmark, evaluate, evaluate_checkpoint, load_model
 from egolearn.evaluation.benchmarks.imagenet_linear import benchmark as imagenet
+from egolearn.evaluation.evaluator import _configured_benchmark
 from egolearn.evaluation.linear_sgd_probe import LinearSGDProbe
 from egolearn.evaluation.probe import Probe
 from egolearn.model.build import build_model
@@ -152,6 +154,102 @@ def test_checkpoint_round_trip_without_building_training_pipeline(
     assert result.checkpoint["step"] == 17
     assert result.checkpoint["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
     assert result.model_config == pipe.model.construction_config
+
+
+@pytest.mark.parametrize("probe_name", ["vtwt", "baby_winoground", "four_afc"])
+@pytest.mark.parametrize("path_kind", ["absolute", "relative", "hub"])
+def test_probe_configs_record_portable_paths(tmp_path, monkeypatch, probe_name, path_kind):
+    (tmp_path / "labels.csv").write_text("image,positive_phrase,negative_phrase\n")
+    (tmp_path / "vocab.json").write_text('{"<unk>": 0}')
+    (tmp_path / "trials.json").write_text('{"trials": []}')
+    monkeypatch.chdir(tmp_path)
+    hub_prefix = "hf://org/benchmark@v1/"
+    monkeypatch.setattr(
+        sys.modules["egolearn.config.instantiate"],
+        "resolve",
+        lambda reference: tmp_path / reference.removeprefix(hub_prefix),
+    )
+    paths = {"vocab_json": "vocab.json"}
+    if probe_name == "four_afc":
+        target = "egolearn.evaluation.four_afc.FourAFCProbe"
+        paths["manifest"] = "trials.json"
+    else:
+        class_name = "VTWTProbe" if probe_name == "vtwt" else "BabyWinogroundProbe"
+        target = f"egolearn.evaluation.benchmarks.{probe_name}.{class_name}"
+        paths["csv_path"] = "labels.csv"
+        if probe_name == "vtwt":
+            paths["image_dir"] = "images"
+        else:
+            paths.update(pos_dir="positive", neg_dir="negative")
+        paths["output_json"] = "scores.json"
+    arguments = {
+        key: str(tmp_path / name)
+        if path_kind == "absolute"
+        else hub_prefix + name
+        if path_kind == "hub"
+        else f"./{name}"
+        for key, name in paths.items()
+    }
+    spec = {"_target_": target, "name": probe_name, "vision_head": "embed", **arguments}
+    original = deepcopy(spec)
+
+    benchmark, config = _configured_benchmark(spec)
+
+    assert spec == original
+    assert benchmark.name == probe_name
+    assert config["size"] == 224  # constructor defaults are still recorded
+    for key, name in paths.items():
+        assert config[key] == (name if path_kind == "absolute" else arguments[key])
+        if key.endswith("_dir"):
+            expected = f"./{name}" if path_kind == "relative" else str(tmp_path / name)
+            assert getattr(benchmark, key) == expected
+    assert str(tmp_path) not in json.dumps(config)
+
+
+@pytest.mark.parametrize("via_mapping", [False, True], ids=["instance", "mapping"])
+def test_saved_benchmark_configs_preserve_structured_settings(
+    tmp_path, monkeypatch, model_config, via_mapping
+):
+    SourcePair = namedtuple("SourcePair", ["train", "test"])
+    settings = {
+        "classes": ["/m/01g317", "/a/cat", "/b/cat"],
+        "options": ("relative/data.json", "hf://org/data@v1/manifest.json", None, 7, True),
+        "pair": SourcePair("train", "test"),
+    }
+    original = deepcopy(settings)
+
+    class ConfiguredBenchmark(Benchmark):
+        def __init__(self, settings, output_dir=tmp_path / "output"):
+            self.settings = settings
+            self.output_dir = output_dir
+
+        def configuration(self):
+            return {"settings": self.settings, "output_dir": self.output_dir}
+
+        def run(self, model, ctx):
+            assert self.settings == original
+            assert self.output_dir == tmp_path / "output"
+            return {"score": 1.0}
+
+    monkeypatch.setitem(BENCHMARKS._items, "test_portable_config", ConfiguredBenchmark)
+    spec = (
+        {"_target_": "benchmark:test_portable_config", "settings": settings}
+        if via_mapping
+        else ConfiguredBenchmark(settings)
+    )
+    result = evaluate(build_model(model_config), benchmarks=[spec])
+    destination = tmp_path / "results.json"
+    result.save_json(destination)
+    recorded = json.loads(destination.read_text())["configs"]["benchmark"]
+
+    assert recorded["settings"] == {
+        "classes": original["classes"],
+        "options": list(original["options"]),
+        "pair": ["train", "test"],
+    }
+    assert recorded["output_dir"] == "output"
+    assert str(tmp_path) not in destination.read_text()
+    assert settings == original
 
 
 def test_legacy_checkpoint_uses_only_model_related_config(tmp_path, model_config, monkeypatch):
@@ -396,19 +494,24 @@ def test_training_pipeline_rejects_standalone_benchmarks_without_scanning(monkey
 
 
 @pytest.mark.parametrize("probe_type", ["linear", "linear_sgd"])
+@pytest.mark.parametrize("hub_path", [False, True])
 def test_existing_probe_configs_work_in_standalone_runner(
-    tmp_path, imagefolder, model_config, probe_type
+    tmp_path, imagefolder, model_config, probe_type, hub_path, monkeypatch
 ):
     split = imagenet.build_split(imagefolder, expected_classes=2)
     manifest = tmp_path / "split.json"
     manifest.write_text(
         json.dumps(
             {
-                "classes": split.classes,
+                "classes": ["/m/01g317", "/m/0bt9lr"],
                 "train": [{"image": item.image, "label": item.label} for item in split.train],
                 "test": [{"image": item.image, "label": item.label} for item in split.test],
             }
         )
+    )
+    reference = "hf://org/benchmark@v1/split.json" if hub_path else str(manifest)
+    monkeypatch.setattr(
+        sys.modules["egolearn.config.instantiate"], "resolve", lambda reference: manifest
     )
     result = evaluate(
         build_model(model_config),
@@ -416,7 +519,7 @@ def test_existing_probe_configs_work_in_standalone_runner(
             {
                 "_target_": f"probe:{probe_type}",
                 "name": "linear",
-                "manifest": str(manifest),
+                "manifest": reference,
                 **({"workers": 0, "epochs": 1} if probe_type == "linear_sgd" else {"max_iter": 3}),
                 "view": "imagenet_center_crop",
                 "size": 16,
@@ -425,7 +528,9 @@ def test_existing_probe_configs_work_in_standalone_runner(
         ],
     )
     assert result.configs["linear"]["view"] == "imagenet_center_crop"
-    assert result.configs["linear"]["manifest"] == manifest.name
+    assert result.configs["linear"]["manifest"] == (reference if hub_path else manifest.name)
+    assert result.configs["linear"]["split"]["classes"] == ["/m/01g317", "/m/0bt9lr"]
+    assert result.configs["linear"]["split"]["classes"] == result.metadata["linear"]["classes"]
     assert str(tmp_path) not in json.dumps(result.to_dict())
     assert (
         result.metadata["linear"]["manifest_sha256"]

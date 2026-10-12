@@ -60,6 +60,10 @@ labels and classes, not image bytes. Manifest-backed probes also record the
 manifest's byte hash; Labeled-S records the verified canonical split hash and source.
 Linear-probe path settings retain only the dataset directory or file name, so
 recorded configs do not expose machine-specific parent directories.
+For every benchmark, the runner reduces top-level absolute local path settings
+to file or directory names. This cleanup leaves relative values and structured
+metadata intact; config-driven calls retain their original top-level `hf://`
+references. Benchmarks still receive the original paths for loading data.
 
 If benchmark preparation, execution, metric conversion, or metadata collection
 fails, `EvaluationError.partial_result` retains completed benchmarks and their

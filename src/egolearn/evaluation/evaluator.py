@@ -112,6 +112,16 @@ def _frozen_model(model: ComposedModel) -> Iterator[None]:
             module.training = training
 
 
+def _portable_config(value: Any) -> Any:
+    """Reduce an absolute path setting without rewriting structured metadata."""
+    if isinstance(value, (str, Path)):
+        if isinstance(value, str) and value.startswith("hf://"):
+            return value
+        path = Path(value)
+        return path.name if path.is_absolute() else str(value)
+    return value
+
+
 def _configured_benchmark(spec: Benchmark | Mapping) -> tuple[Benchmark, dict]:
     if isinstance(spec, Benchmark):
         benchmark = spec
@@ -126,9 +136,18 @@ def _configured_benchmark(spec: Benchmark | Mapping) -> tuple[Benchmark, dict]:
         arguments = signature.bind(**{k: v for k, v in spec.items() if not k.startswith("_")})
         arguments.apply_defaults()
         config = {**arguments.arguments, **benchmark.configuration()}
+        # An instance may report the resolved cache path; retain the original
+        # Hub identity when the caller supplied one.
+        config.update(
+            {
+                key: value
+                for key, value in arguments.arguments.items()
+                if isinstance(value, str) and value.startswith("hf://")
+            }
+        )
     return benchmark, {
         "_target_": f"{type(benchmark).__module__}.{type(benchmark).__qualname__}",
-        **deepcopy(config),
+        **{key: _portable_config(value) for key, value in deepcopy(config).items()},
     }
 
 
