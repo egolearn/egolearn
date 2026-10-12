@@ -111,3 +111,9 @@ release. Details and exact workflow: [RELEASING.md](RELEASING.md).
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) (branching, gates, style, tests) and
 [SECURITY.md](SECURITY.md) (what must never be committed) before your first PR.
+
+## Cluster jobs
+
+Use `scripts/slurm/submit [sbatch options] -- <command>` for containerized jobs,
+CPU environment preparation and immutable code snapshots. See [cluster setup](docs/cluster.md)
+for the scratch cache environment, pinned image and Hydra sweep arrays.
