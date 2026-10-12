@@ -2,17 +2,20 @@
 
 Adds repository files outside docs/ as pages, rewrites relative links so each
 one points at a site page or at the file on GitHub, and blocks crawlers while
-the site is in staging mode. Code blocks and inline code are never rewritten,
-and links to missing files are left as written so `mkdocs build --strict`
-reports them.
+the site is in staging mode. Links are rewritten on the parsed Markdown tree,
+so code is never touched. Links to missing files are left as written so
+`mkdocs build --strict` reports them; MkDocs does not check raw HTML, so the
+hook reports missing raw-HTML targets itself.
 """
 
 from __future__ import annotations
 
+import logging
 import posixpath
 import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[2]
 GITHUB = "https://github.com/agentic-learning-ai-lab/egolearn"
@@ -28,69 +31,101 @@ EXTRA_PAGES = {
 }
 REPO_OF_PAGE = {site: repo for repo, site in EXTRA_PAGES.items()}
 
-MD_LINK = re.compile(r"(\]\()([^)\s]+)(\))")
-HTML_SRC = re.compile(r"""(\b(?:src|srcset|href)=")([^"]+)(")""")
 SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
-# Fenced blocks (``` or ~~~, closed by the same fence) and inline code spans.
-CODE = re.compile(
-    r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})[^\n]*\n.*?^(?P=indent)(?P=fence)[ \t]*$"
-    r"|(?P<ticks>`+)(?!`).+?(?<!`)(?P=ticks)(?!`)",
-    re.MULTILINE | re.DOTALL,
-)
+HTML_TAG = re.compile(r"<[a-zA-Z][^<>]*>")
+HTML_ATTR = re.compile(r"""(\b(?:src|srcset|href)\s*=\s*(["']))(.+?)(\2)""")
+
+# Warnings on a "mkdocs." logger fail `mkdocs build --strict`.
+log = logging.getLogger("mkdocs.plugins.egolearn")
 
 # repo path -> (site source path, site output URL), or None when not on the site
 SiteLookup = Callable[[str], "tuple[str, str] | None"]
 
 
-def rewrite_links(
-    markdown: str, page_repo: str, page_site: str, page_url: str, lookup: SiteLookup
-) -> str:
-    """Rewrite relative links outside code.
+class Page(NamedTuple):
+    """Where a page lives in the repo and on the site."""
 
-    Targets on the site become relative site links (Markdown links from the
-    page's source path, raw HTML from its output URL), other existing files
-    become GitHub URLs, and missing targets are left unchanged so MkDocs
-    reports them.
+    repo: str
+    site: str
+    url: str
+    lookup: SiteLookup
+
+
+def resolve(target: str, page: Page, html: bool) -> tuple[str | None, bool]:
+    """Return (new target or None to keep it, whether the target is missing).
+
+    Site pages become relative site links (Markdown links from the page's source
+    path, raw HTML from its output URL), other repository files become GitHub URLs.
     """
-    page_dir = posixpath.dirname(page_site)
-
-    def rewrite(match: re.Match, html: bool) -> str:
-        target = match.group(2)
-        if SCHEME.match(target) or target.startswith(("#", "/")):
-            return match.group(0)
-        path, sep, fragment = target.partition("#")
-        repo_target = posixpath.normpath(posixpath.join(posixpath.dirname(page_repo), path))
-        on_site = lookup(repo_target)
-        if on_site is not None:
-            source, url = on_site
-            new = (
-                posixpath.relpath(url, page_url or ".")
-                if html
-                else posixpath.relpath(source, page_dir or ".")
-            )
-        elif (ROOT / repo_target).exists():
-            kind = "tree" if (ROOT / repo_target).is_dir() else "blob"
-            new = f"{GITHUB}/{kind}/main/{repo_target}"
+    if SCHEME.match(target) or target.startswith(("#", "/")):
+        return None, False
+    path, sep, fragment = target.partition("#")
+    repo_target = posixpath.normpath(posixpath.join(posixpath.dirname(page.repo), path))
+    on_site = page.lookup(repo_target)
+    if on_site is not None:
+        source, url = on_site
+        if html:
+            new = posixpath.relpath(url, page.url or ".")
         else:
-            return match.group(0)
-        return f"{match.group(1)}{new}{sep}{fragment}{match.group(3)}"
+            new = posixpath.relpath(source, posixpath.dirname(page.site) or ".")
+    elif (ROOT / repo_target).exists():
+        kind = "tree" if (ROOT / repo_target).is_dir() else "blob"
+        new = f"{GITHUB}/{kind}/main/{repo_target}"
+    else:
+        return None, True
+    return f"{new}{sep}{fragment}", False
 
-    def prose(text: str) -> str:
-        text = MD_LINK.sub(lambda m: rewrite(m, html=False), text)
-        return HTML_SRC.sub(lambda m: rewrite(m, html=True), text)
 
-    out, last = [], 0
-    for code in CODE.finditer(markdown):
-        out.append(prose(markdown[last : code.start()]))
-        out.append(code.group(0))
-        last = code.end()
-    out.append(prose(markdown[last:]))
-    return "".join(out)
+def rewrite_html(html: str, page: Page) -> str:
+    """Rewrite src, srcset and href attributes inside the tags of a raw-HTML chunk."""
+
+    def attr(match: re.Match) -> str:
+        new, missing = resolve(match.group(3), page, html=True)
+        if missing:
+            log.warning(f"Doc file '{page.site}' contains a link to '{match.group(3)}', not found.")
+        return match.group(0) if new is None else f"{match.group(1)}{new}{match.group(4)}"
+
+    return HTML_TAG.sub(lambda tag: HTML_ATTR.sub(attr, tag.group(0)), html)
+
+
+def link_extension(get_page: Callable[[], Page | None]):
+    """A Markdown extension that rewrites links before MkDocs validates them."""
+    from markdown import Extension
+    from markdown.treeprocessors import Treeprocessor
+
+    class Rewrite(Treeprocessor):
+        def run(self, root):
+            page = get_page()
+            if page is None:
+                return root
+            for element in root.iter():
+                key = {"a": "href", "img": "src"}.get(element.tag)
+                if key is None:
+                    continue
+                new, _ = resolve(element.get(key, ""), page, html=False)
+                if new is not None:
+                    element.set(key, new)
+            stash = self.md.htmlStash.rawHtmlBlocks
+            for i, block in enumerate(stash):
+                if isinstance(block, str):
+                    stash[i] = rewrite_html(block, page)
+            return root
+
+    class LinkExtension(Extension):
+        def extendMarkdown(self, md):
+            # After inline parsing (20), before MkDocs resolves links (relpath, 0).
+            md.treeprocessors.register(Rewrite(md), "egolearn_links", 10)
+
+    return LinkExtension()
+
+
+_page: Page | None = None
 
 
 def on_config(config):
     staging = config.extra.get("staging", True)
     config.extra["staging"] = str(staging).strip().lower() not in ("0", "false", "no", "off", "")
+    config.markdown_extensions.append(link_extension(lambda: _page))
     return config
 
 
@@ -106,11 +141,12 @@ def on_files(files, config):
 
 
 def on_page_markdown(markdown, page, config, files):
-    page_site = page.file.src_uri
-    page_repo = REPO_OF_PAGE.get(page_site, "docs/" + page_site)
-    if page_site in REPO_OF_PAGE:
+    global _page
+    site = page.file.src_uri
+    repo = REPO_OF_PAGE.get(site, "docs/" + site)
+    if site in REPO_OF_PAGE:
         # Generated pages edit their source file, not a docs/ copy.
-        page.edit_url = f"{GITHUB}/edit/main/{page_repo}"
+        page.edit_url = f"{GITHUB}/edit/main/{repo}"
 
     def lookup(repo_path: str) -> tuple[str, str] | None:
         source = EXTRA_PAGES.get(repo_path)
@@ -119,4 +155,6 @@ def on_page_markdown(markdown, page, config, files):
         found = files.get_file_from_path(source) if source else None
         return (source, found.url) if found else None
 
-    return rewrite_links(markdown, page_repo, page_site, page.url, lookup)
+    # The page renders right after this hook; the link extension reads it then.
+    _page = Page(repo, site, page.url, lookup)
+    return markdown

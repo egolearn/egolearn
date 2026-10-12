@@ -46,8 +46,9 @@ jobs:
         with:
           enable-cache: true
       # train extra: the unit tests exercise the real pipelines, which need
-      # torch (CPU is fine; the wheel is cached by setup-uv)
-      - run: uv sync --locked --extra train
+      # torch (CPU is fine; the wheel is cached by setup-uv). docs group: the
+      # docs-hook tests render Markdown.
+      - run: uv sync --locked --extra train --group docs
       # addopts in pyproject.toml already excludes the slow/gpu/llm tiers
       - run: uv run pytest
 
