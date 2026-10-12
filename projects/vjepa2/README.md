@@ -121,6 +121,23 @@ no uncertainty estimate or statistically significant improvement is claimed.
 
 ## Results and dependencies
 
+Trained seed-0 ViT-S/16 models are available in the private
+[EgoLearn Hub collection](https://huggingface.co/collections/agentic-learning-ai-lab/egolearn-6abc0a0d87953889058b0317).
+Each pinned artifact includes its model card, scientific configuration, training
+loss history, evaluation results and checksums:
+
+| Dataset | IID | Streaming |
+| --- | --- | --- |
+| SAYCam-S | [Checkpoint](https://huggingface.co/agentic-learning-ai-lab/egolearn-vjepa2-vits16-saycam-iid-seed0/tree/e6d997b1140d8e70f6a1745f22412b362e4f8f53) | [Checkpoint](https://huggingface.co/agentic-learning-ai-lab/egolearn-vjepa2-vits16-saycam-streaming-seed0/tree/a414d784ac5280146646d4a6b3de3a7afd5228b9) |
+| BabyView | [Checkpoint](https://huggingface.co/agentic-learning-ai-lab/egolearn-vjepa2-vits16-babyview-iid-seed0/tree/1070cec79333fbc91c563757e1eddfd4b6f08b75) | [Checkpoint](https://huggingface.co/agentic-learning-ai-lab/egolearn-vjepa2-vits16-babyview-streaming-seed0/tree/ad3a21994b21eb5074c9adfb03cb837e344376c9) |
+
+Download `model.pth` from the chosen revision with an authorized Hub account and
+pass its local path as `checkpoint` to either evaluation command. These exports
+preserve every context/EMA encoder and predictor tensor, plus construction and
+training provenance, while omitting optimizer state. Evaluation records retain
+the original `final.pth` hash; `training.json` maps it to the exported file hash.
+The model cards document the single-seed results and protocol limitations.
+
 The `image_evals` configuration runs Labeled-S and BabyView frozen linear
 decoding and novel-object shape bias. Set `LABELED_S_ROOT`, `LABELED_S_SPLIT`
 (the pinned canonical metadata), `BABYVIEW_LINEAR_MANIFEST`, and
@@ -153,10 +170,11 @@ records, evaluation scores and a local results report outside Git; do not infer
 results from synthetic tests or job submission. Report complete/failed/pending
 status, commit, resolved config, input identities, W&B URL and measured timings.
 
-The initial branch integrates #37 (IntPhys), #49 (run records, including #36/#42
-submission and CLI), #40 (resume metadata), and #34 (checkpoint/provenance).
-Their commit identities are in the design. Reconcile with main when those PRs
-land. The nested-directory adapter reuses the isolated change from `feat/mae`.
+The branch depends on #37 (IntPhys), #49 (run records, including #42's CLI),
+and #34 (checkpoint/provenance). Submission (#36) and resume metadata (#40)
+are merged into main. The design records the initial dependency commits;
+merge main again when the remaining dependencies land. The nested-directory
+adapter reuses the isolated change from `feat/mae`.
 
 ## Full IID and streaming runs
 
