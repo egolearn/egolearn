@@ -25,6 +25,14 @@ clips both travel through the pool; a clip item carries its start index
 augments.  Streaming order stays intact: only stage two (refs -> tensors)
 runs in parallel; everything that decides WHICH refs to load is still
 sequential.
+
+Workers run with denormal floats flushed to zero (`loader.flush_denormal`,
+on by default): the Gaussian blur's small-sigma kernels put tail weights in
+float32's subnormal range, where x86 arithmetic is ~100x slower, and those
+weights cannot move a uint8 pixel, so the loaded tensors are identical with
+or without the flag (tests/test_blur.py checks this).  The setting is per
+process and only ever applied inside a worker; the trainer's own
+arithmetic, and in-process loading with workers=0, keep IEEE denormals.
 """
 
 from __future__ import annotations
@@ -53,10 +61,15 @@ WorkItem = tuple
 _WORKER: dict = {}  # per-process state, filled by _pool_init in each worker
 
 
-def _pool_init(stream: Stream, view_specs: dict, imports: list[str]) -> None:
+def _pool_init(
+    stream: Stream, view_specs: dict, imports: list[str], flush_denormal: bool = True
+) -> None:
     import importlib
 
     torch.set_num_threads(1)
+    # single-threaded, so the (per-thread) flush-to-zero mode covers every op
+    if flush_denormal and not torch.set_flush_denormal(True):
+        raise RuntimeError("this CPU cannot flush denormals; set loader.flush_denormal=false")
     # project components (views, ...) register themselves at import time; a
     # spawned worker starts from a bare interpreter, so the config's
     # `_imports_` must run here too before view pipelines can be rebuilt
@@ -96,11 +109,13 @@ class Loader:
         views: ViewBank,
         workers: int = 0,
         imports: list[str] | None = None,
+        flush_denormal: bool = True,
     ):
         self.stream = stream
         self.views = views
         self.workers = int(workers)
         self.imports = list(imports or [])  # modules workers import to register views
+        self.flush_denormal = bool(flush_denormal)  # worker-only CPU arithmetic mode
         self._pool: ProcessPoolExecutor | None = None
         # optional StageTimer (egolearn.training.profiling); the driver attaches it
         self.timer: StageTimer | None = None
@@ -117,7 +132,7 @@ class Loader:
                 max_workers=self.workers,
                 mp_context=mp.get_context("spawn"),
                 initializer=_pool_init,
-                initargs=(self.stream, self.views.specs, self.imports),
+                initargs=(self.stream, self.views.specs, self.imports, self.flush_denormal),
             )
         return self._pool
 

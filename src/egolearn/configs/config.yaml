@@ -12,3 +12,4 @@ resume: null       # path to a snapshot (saved run state), or "auto" for the new
 init_from: null    # {checkpoint, include?, exclude?, strict?}: initialize model weights
 loader:
   workers: 0       # decode+augment worker processes; 0 = load in-process
+  flush_denormal: true  # workers flush denormal floats (faster blur, same pixels); trainer untouched
