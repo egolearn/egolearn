@@ -217,7 +217,7 @@ def _compose(suite: dict, run_dir: Path, seed: int) -> dict:
 
 
 def cluster_identity() -> dict[str, Any]:
-    """The submitted checkout, rather than the login node's installed wheel, runs the array."""
+    """Identify the editable checkout used for planning inside a compute allocation."""
     from egolearn import __version__
     from egolearn.commands.submit import launcher
 
@@ -225,7 +225,7 @@ def cluster_identity() -> dict[str, Any]:
     if source_checkout() != root.resolve():
         raise ValueError(
             "submitted suites require an editable installation of this checkout; "
-            "run uv sync --extra train here and use uv run egl bench"
+            "inside a CPU allocation, run uv sync --extra train here and use uv run egl bench"
         )
 
     def git(*args: str) -> str:
@@ -471,7 +471,11 @@ def main(argv: list[str] | None = None) -> int:
     running.add_argument("spec", type=Path)
     running.add_argument("--output", type=Path, required=True, help="new directory for this suite")
     running.add_argument("--override", action="append", default=[], metavar="KEY=VALUE")
-    running.add_argument("--submit", action="store_true", help="submit a Slurm array")
+    running.add_argument(
+        "--submit",
+        action="store_true",
+        help="plan and submit a Slurm array from a CPU allocation (never a login node)",
+    )
     running.add_argument(
         "--sbatch", action="append", default=[], help="Slurm option; use --sbatch=..."
     )

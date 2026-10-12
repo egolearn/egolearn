@@ -19,6 +19,7 @@ code snapshotting.
 
 - `fetch_data.py`: wrapper for `python -m egolearn.hub` (fetch, push, verify, checksum); see [Hub artifacts](../docs/evaluation.md#hub-artifacts-and-access-tiers).
 
-Prefer `egl data prepare NAME`, `egl data fetch NAME`, and `egl submit` for the
-corresponding operations; the scripts remain compatibility entry points.
+Use `egl data prepare NAME` and `egl data fetch NAME` on workstations or compute
+nodes. On login nodes, use `scripts/slurm/submit` to queue commands; run Python,
+including `egl doctor` and benchmark planning, inside compute allocations.
 See [the CLI guide](../docs/cli.md) and [benchmark suites](../docs/benchmark_suites.md).

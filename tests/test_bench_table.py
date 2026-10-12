@@ -10,13 +10,13 @@ from egolearn.hub import sha256_file
 from egolearn.run_record import atomic_json
 
 
-def manifest_fixture(root, values=(2.0, 4.0), dirty=False):
+def manifest_fixture(root, values=(2.0, 4.0), dirty=False, *, seeds=None, inputs=None):
     root.mkdir()
     manifest = root / "manifest.json"
     provenance = {"commit": "a" * 40, "dirty": dirty}
     runs = [
         {"seed": seed, "directory": f"seed-{seed}", "config_sha256": "b" * 64}
-        for seed in range(len(values))
+        for seed in (range(len(values)) if seeds is None else seeds)
     ]
     atomic_json(
         manifest,
@@ -25,6 +25,7 @@ def manifest_fixture(root, values=(2.0, 4.0), dirty=False):
             "name": "test",
             "entry": "eval",
             "suite_sha256": "c" * 64,
+            "inputs": {} if inputs is None else inputs,
             "metrics": {"score": "max"},
             "runs": runs,
             "provenance": provenance,
@@ -116,3 +117,74 @@ def test_missing_baseline_run_produces_no_delta(tmp_path, capsys):
     result = json.loads(capsys.readouterr().out)
     assert result["rows"][0]["delta"] is None
     assert result["baseline_problems"]
+
+
+@pytest.mark.parametrize("format", ["md", "csv", "json"])
+@pytest.mark.parametrize("seeds", [(0, 2), (0,), (0, 1, 2)])
+def test_baseline_rejects_different_seed_sets(tmp_path, capsys, format, seeds):
+    baseline = manifest_fixture(tmp_path / "baseline")
+    current = manifest_fixture(tmp_path / "current", (3.0,) * len(seeds), seeds=seeds)
+    with pytest.raises(ValueError, match="baseline seed sets must match"):
+        print_table(current, format, baseline, False)
+    assert not capsys.readouterr().out
+
+
+@pytest.mark.parametrize("format", ["md", "csv", "json"])
+@pytest.mark.parametrize("change", ["hash", "key", "added", "removed"])
+@pytest.mark.parametrize("allow_unverified", [False, True])
+def test_baseline_rejects_different_input_pins(tmp_path, capsys, format, change, allow_unverified):
+    inputs = {"benchmarks.0.manifest": {"path": "/private/trials.json", "sha256": "d" * 64}}
+    baseline = manifest_fixture(tmp_path / "baseline", inputs=inputs, dirty=allow_unverified)
+    if change == "hash":
+        inputs["benchmarks.0.manifest"]["sha256"] = "e" * 64
+    elif change == "key":
+        inputs["benchmarks.1.manifest"] = inputs.pop("benchmarks.0.manifest")
+    elif change == "added":
+        inputs["checkpoint"] = {"path": "/private/model.pth", "sha256": "f" * 64}
+    else:
+        inputs.clear()
+    current = manifest_fixture(tmp_path / "current", inputs=inputs, dirty=allow_unverified)
+    with pytest.raises(ValueError, match="baseline input pins must match"):
+        print_table(current, format, baseline, allow_unverified)
+    assert not capsys.readouterr().out
+
+
+def test_baseline_accepts_reordered_seeds_and_relocated_inputs(tmp_path, capsys):
+    pins = {"checkpoint": "d" * 64, "benchmarks.0.manifest": "e" * 64}
+    baseline = manifest_fixture(
+        tmp_path / "baseline",
+        inputs={
+            key: {"path": str(tmp_path / key), "sha256": digest} for key, digest in pins.items()
+        },
+    )
+    current = manifest_fixture(
+        tmp_path / "current",
+        seeds=(1, 0),
+        inputs={
+            key: {"path": str(tmp_path / "relocated" / key), "sha256": digest}
+            for key, digest in reversed(pins.items())
+        },
+    )
+    assert print_table(current, "json", baseline, False) == 0
+    output = capsys.readouterr().out
+    assert str(tmp_path) not in output
+    result = json.loads(output)
+    assert result["seeds"] == [0, 1]
+    assert result["input_sha256"] == pins
+    assert result["rows"][0]["delta"] == 0.0
+    assert result["rows"][0]["regression"] is False
+
+
+@pytest.mark.parametrize(
+    "inputs", [None, [], {"checkpoint": {}}, {"checkpoint": {"sha256": "bad"}}]
+)
+def test_table_rejects_missing_or_invalid_input_pins(tmp_path, inputs):
+    manifest = manifest_fixture(tmp_path / "suite")
+    payload = json.loads(manifest.read_text())
+    if inputs is None:
+        del payload["inputs"]
+    else:
+        payload["inputs"] = inputs
+    atomic_json(manifest, payload)
+    with pytest.raises(ValueError, match="input"):
+        summarize(manifest)

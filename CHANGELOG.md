@@ -96,6 +96,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Changed
 
+- Cluster instructions use the shell launcher on login nodes and run Python
+  diagnostics and benchmark planning inside compute allocations.
+- Benchmark baseline comparisons require matching seed sets and input keys/checksums;
+  relocated identical inputs remain comparable, and mismatches produce no deltas.
 - Run `scripts/slurm/train.sbatch` and `bench.sbatch` directly on the login node;
   passing either wrapper to `sbatch` now fails with migration instructions.
   Benchmark JSON is written to the isolated run's `work/bench.json`.

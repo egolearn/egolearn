@@ -1,4 +1,4 @@
-"""Read-only checks for local installations and cluster environments."""
+"""Read-only checks for workstations and compute allocations; not for login nodes."""
 
 from __future__ import annotations
 
@@ -139,7 +139,7 @@ def inspect_environment(
                     checks.append(Check("fail", name, "not set; source env.sh"))
         if not os.environ.get("EGOLEARN_DATA"):
             checks.append(storage_check("data-root-location", str(root.absolute()), home))
-        # Submission tools belong to the login host; Apptainer belongs to the
+        # Check submission tools outside an allocation and Apptainer on a
         # compute host. Neither needs to be installed inside the job container.
         binaries = () if in_container else ("apptainer",) if in_job else ("bash", "git", "sbatch")
         for binary in binaries:
