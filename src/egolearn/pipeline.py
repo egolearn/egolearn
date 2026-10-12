@@ -73,8 +73,7 @@ class Pipeline:
         lines.append(f"  mode      : {self.mode}")
         lines.append(f"  stream    : {type(self.stream).__name__}")
         if isinstance(self.driver, OfflineDriver):
-            d = self.driver
-            lines.append(f"  batch     : {d.slot}(n={d.n}, views={d.views})")
+            lines.append(f"  batch     : {self.driver.batch_description}")
         else:
             lines.append("  admission : " + ", ".join(type(b).__name__ for b in self.admission))
             for _name, mem in self.memories.items():
@@ -299,7 +298,8 @@ def build(cfg: dict) -> Pipeline:
 
     driver: LockstepDriver | OfflineDriver
     if mode == "offline":
-        driver = OfflineDriver(
+        driver = instantiate(
+            {"_target_": dcfg.get("_target_", "egolearn.training.offline.OfflineDriver")},
             stream=stream,
             loader=loader,
             model=model,
@@ -313,8 +313,11 @@ def build(cfg: dict) -> Pipeline:
             subsample=dcfg.get("subsample", 1),
             grad_accumulation=dcfg.get("grad_accumulation", 1),
             prefetch=prefetch,
+            tokenizer=tokenizer,
             **(dcfg.get("batch") or {}),
         )
+        if not isinstance(driver, OfflineDriver):
+            raise PipelineError("an offline driver target must subclass OfflineDriver")
     else:
         assert recipe is not None and composer is not None
         driver = LockstepDriver(
@@ -371,7 +374,7 @@ def validate(pipe: Pipeline) -> None:
 
     if isinstance(pipe.driver, OfflineDriver):
         _validate_offline(pipe, pipe.driver, errs)
-        _validate_losses(pipe, {pipe.driver.slot}, errs)
+        _validate_losses(pipe, pipe.driver.slot_names, errs)
         _validate_model_consumers(pipe, errs)
         if errs:
             raise PipelineError("pipeline validation failed:\n  - " + "\n  - ".join(errs))
@@ -542,7 +545,7 @@ def _validate_losses(pipe: Pipeline, slot_names, errs: list[str]) -> None:
 
 
 def _validate_offline(pipe: Pipeline, driver: OfflineDriver, errs: list[str]) -> None:
-    """Offline (IID) mode: views must exist; batches carry no text/labels."""
+    """Validate the views and text slots supplied by an offline driver."""
     need = "video" if driver.unit == "clip" else "image"
     if need not in pipe.model.modalities().values():
         errs.append(f"offline batches are {driver.unit}s, but no encoder has modality {need!r}")
@@ -550,8 +553,10 @@ def _validate_offline(pipe: Pipeline, driver: OfflineDriver, errs: list[str]) ->
         if v not in pipe.views.names():
             errs.append(f"driver.batch: unknown view {v!r} (declared: {pipe.views.names()})")
     for loss_fn in pipe.losses:
-        if loss_fn.requires_text:
+        if loss_fn.requires_text and not set(loss_fn.requires_slots) <= driver.text_slots:
             errs.append(
-                f"loss {loss_fn.name!r} needs text, but offline v1 batches are "
-                "frames-only (unit=pair is a planned extension)"
+                f"loss {loss_fn.name!r} needs text in {loss_fn.requires_slots}, "
+                f"but this offline driver supplies text in {sorted(driver.text_slots)}"
             )
+    if driver.text_slots and pipe.tokenizer is None:
+        errs.append("offline text slots require a tokenizer")

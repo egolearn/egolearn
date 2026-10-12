@@ -8,6 +8,12 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Memory Storyboard and BabyCL as 1:1 method ports (`src/egolearn/methods/`)
+  with reproduction configs under `projects/`.
+
+- BabyCL offline training with complete storyboard/utterance indexing, mixed or
+  pairs-only batches, utterance epochs, and deterministic prefetch/resume.
+
 - Torch-free Hub path resolution and checksummed, private-by-default dataset/checkpoint
   fetch and push commands; documented dataset access tiers. `init_from.checkpoint`
   accepts model Hub references and retains their resolved commit across snapshot resume.
@@ -126,6 +132,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   equality test); stream order and ref picking stay sequential.
 
 ### Fixed
+
+- Benchmark entry points compose Hydra defaults in project configs; offline BabyCL
+  retains its 5,000-step checkpoint cadence when inheriting shared settings.
 
 - Determinism (from PR review): the configured seed now also seeds the
   global torch/python RNGs and snapshots carry their state, so the same
