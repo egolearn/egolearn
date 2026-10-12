@@ -108,6 +108,7 @@ nav:
   - Get started:
     - Overview: overview.md
     - Command line: cli.md
+    - Cluster jobs: cluster.md
     - Start from a checkpoint: initialization.md
   - Evaluation:
     - Evaluate a model: evaluation.md

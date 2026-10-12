@@ -80,8 +80,13 @@ def load_snapshot(path: str, driver) -> None:
     # cast onto the parameters' device by torch
     driver.model.to(driver.ctx.device)
     driver.model.load_state_dict(state["model"])
-    if state.get("model_config") is not None:
-        driver.model.construction_config = state["model_config"]
+    # Resume restores lineage; construction metadata describes the live model.
+    saved_config = state.get("model_config") or {}
+    if "init_from" in saved_config:
+        driver.model.construction_config = dict(
+            getattr(driver.model, "construction_config", None) or {}
+        )
+        driver.model.construction_config["init_from"] = saved_config["init_from"]
     driver.optimizer.load_state_dict(state["optimizer"])
     if state.get("schedule") is not None and getattr(driver, "schedule", None) is not None:
         driver.schedule.load_state_dict(state["schedule"])

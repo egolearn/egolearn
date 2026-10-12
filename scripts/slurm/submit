@@ -1,0 +1,187 @@
+#!/bin/bash
+# Adapted from agentic-learning-ai-lab/jepa-agent at a7124e81 (MIT; see LICENSE).
+# scripts/slurm/submit [sbatch options] -- command [args...]
+# --sweep expands Hydra comma lists; --commands FILE runs trusted shell commands.
+set -euo pipefail
+((BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4))) || {
+  echo 'submit requires Bash 4.4 or newer' >&2; exit 1;
+}
+source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/snapshot.sh"
+check_env
+[[ -z ${SBATCH_ARRAY_INX:-}${SBATCH_ARRAY:-} ]] || fail 'use --sweep/--commands, not SBATCH_ARRAY_INX'
+dry=0 sweep=0 commands='' max_parallel= array=0
+output=${SBATCH_OUTPUT:-} error=${SBATCH_ERROR:-} input=${SBATCH_INPUT:-}
+dependency=${SBATCH_DEPENDENCY:-}
+unset SBATCH_DEPENDENCY
+opts=() cmd=() account=()
+while (($#)); do
+  case "$1" in
+    --dry-run) dry=1; shift;;
+    --sweep) sweep=1; shift;;
+    --commands|--max-parallel)
+      (($# >= 2)) || fail "$1 needs a value"
+      if [[ $1 = --commands ]]; then commands=$2
+      else
+        max_parallel=$2
+        [[ $max_parallel =~ ^[1-9][0-9]*$ ]] || fail '--max-parallel must be positive'
+      fi
+      shift 2;;
+    --) shift; cmd=("$@"); break;;
+    --output|-o|--error|-e|--input|-i|--account|-A|--dep*|-d)
+      if [[ $1 = --dep*=* ]]; then dependency=${1#*=}; shift; continue; fi
+      (($# >= 2)) || fail "$1 needs a value"
+      case "$1" in
+        --output|-o) output=$2;;
+        --error|-e) error=$2;;
+        --input|-i) input=$2;;
+        --account|-A) account=("--account=$2");;
+        --dep*|-d) dependency=$2;;
+      esac
+      shift 2;;
+    -d?*) dependency=${1#-d}; shift;;
+    --output=*|-o?*) output=${1#*=}; [[ $1 = --* ]] || output=${1#-o}; shift;;
+    --error=*|-e?*) error=${1#*=}; [[ $1 = --* ]] || error=${1#-e}; shift;;
+    --input=*|-i?*) input=${1#*=}; [[ $1 = --* ]] || input=${1#-i}; shift;;
+    --account=*|-A?*) account=("${1}"); shift;;
+    --chd*|-D*|--exp*|--wra*|--arr*|-a*) fail "$1 is managed by submit";;
+    *) opts+=("$1"); shift;;
+  esac
+done
+[[ -z $commands || ( $sweep = 0 && ${#cmd[@]} = 0 ) ]] ||
+  fail '--commands cannot be combined with --sweep or a command'
+[[ -n $commands || ${#cmd[@]} -gt 0 ]] || fail 'provide -- <command...> or --commands FILE'
+# run.json stores these arguments as UTF-8; reject invalid bytes before archiving.
+printf '%s\0' "${cmd[@]}" | iconv -f UTF-8 -t UTF-8 >/dev/null ||
+  fail 'command arguments must be valid UTF-8'
+# Resolve stream paths before changing directory. Validate before archiving.
+for name in output error input; do
+  path=${!name}
+  [[ -n $path ]] || continue
+  [[ $path = /* ]] || path="$PWD/$path"
+  outside_home "$path"
+  if [[ $name != input ]]; then
+    [[ $(dirname "$path") != *%* ]] || fail 'put %-patterns in the file name, not the directory'
+  fi
+  if [[ $name = input && $path != *%* ]]; then
+    [[ -r $path && ! -d $path ]] || fail "unreadable input: $path"
+  elif [[ $name != input ]]; then
+    resolved=$(canonical "$path")
+    case "$resolved" in "$(realpath "$PWD")"/*)
+      git check-ignore -q -- "$resolved" || fail "log path inside checkout must be git-ignored: $path";;
+    esac
+  fi
+  printf -v "$name" '%s' "$path"
+done
+prepared_commands= job_dir= prep_id= submitted=0 main_attempted=0 prep_attempted=0
+cleanup() {
+  local result=$?
+  [[ -z $prepared_commands ]] || rm -f "$prepared_commands"
+  if ((result != 0 && submitted == 0)) && [[ -n $job_dir ]]; then
+    if ((main_attempted)) || { ((prep_attempted)) && [[ -z $prep_id ]]; }; then
+      # A controller timeout or interruption can hide a successfully queued job.
+      # Even a negative squeue lookup cannot exclude one that already finished.
+      echo "Submission outcome uncertain; retaining $job_dir and prep ${prep_id:-none}. Check squeue/sacct before cleanup." >&2
+      return "$result"
+    fi
+    if ((dry == 0)) && [[ -n $prep_id ]] && ! scancel "$prep_id"; then
+      echo "Could not cancel prep $prep_id; retaining $job_dir" >&2
+      return "$result"
+    fi
+    [[ ! -d $job_dir/code ]] || chmod -R u+w "$job_dir/code"
+    rm -rf "$job_dir"
+  fi
+  return "$result"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+if [[ $sweep = 1 || -n $commands ]]; then
+  array=1
+  prepared_commands=$(mktemp)
+  if [[ -n $commands ]]; then
+    [[ -f $commands && -r $commands ]] || fail "commands file is not readable: $commands"
+    awk '!/^[[:space:]]*(#|$)/ {print}' "$commands" > "$prepared_commands"
+  else
+    bash scripts/slurm/sweep.sh "${cmd[@]}" > "$prepared_commands"
+  fi
+  n=$(awk 'END {print NR}' "$prepared_commands")
+  ((n > 0)) || fail 'commands file is empty'
+fi
+export EGOLEARN_CODE_COMMIT EGOLEARN_IMAGE EGOLEARN_EXPECTED_STAMP
+EGOLEARN_CODE_COMMIT=$(git rev-parse HEAD)
+EGOLEARN_IMAGE=$(pinned_image) || fail 'containers/IMAGE must pin a sha256 digest'
+EGOLEARN_EXPECTED_STAMP=$(stamp)
+export SIF EGOLEARN_VENV="$EGOLEARN_ENV_ROOT/$EGOLEARN_EXPECTED_STAMP"
+SIF=$(sif_path "$EGOLEARN_IMAGE")
+outside_home "$SIF"
+stale=0
+[[ -f $SIF ]] && environment_ready || stale=1
+[[ $stale = 0 || $dependency != *'?'* ]] || fail 'cannot combine OR dependencies with prep'
+if [[ " ${cmd[*]} " = *' resume=auto '* && " ${cmd[*]} " != *' run_dir=/'* ]]; then
+  echo 'resume=auto: use an absolute run_dir to find an earlier submission; each job has a new work directory.' >&2
+fi
+export EGOLEARN_RUN_DIR
+snapshot_code
+opts+=("${account[@]}" "--chdir=$job_dir/work" --export=ALL)
+if [[ -z $output ]]; then
+  if ((array)); then output=$job_dir/%x-%A_%a.out; else output=$job_dir/%x-%j.out; fi
+fi
+for name in output error input; do
+  path=${!name}
+  [[ -n $path ]] || continue
+  [[ $name = input ]] || mkdir -p "$(dirname "$path")"
+  opts+=("--$name=$path")
+done
+script=$job_dir/code/scripts/slurm/run.sbatch
+if ((array)); then
+  export MANIFEST=$job_dir/commands.sh
+  mv "$prepared_commands" "$MANIFEST"
+  prepared_commands=
+  chmod a-w "$MANIFEST"
+  throttle=
+  [[ -z $max_parallel ]] || throttle="%$max_parallel"
+  opts+=("--array=0-$((n-1))$throttle")
+  script=$job_dir/code/scripts/slurm/run_array.sbatch
+  cmd=()
+  for ((task=0; task<n; task++)); do
+    mkdir -p "$job_dir/tasks/$task/work"
+    while IFS= read -r -d '' entry; do
+      ln -s "$entry" "$job_dir/tasks/$task/work/$(basename "$entry")"
+    done < <(find "$job_dir/code" -mindepth 1 -maxdepth 1 -print0)
+  done
+fi
+# Credentials belong in environment variables, never recorded command arguments.
+write_run_record "${cmd[@]}"
+print_submission() { printf 'sbatch'; printf ' %q' "$@"; printf '\n'; }
+if ((stale)); then
+  read -r -a prep_opts <<< "${EGOLEARN_PREP_SBATCH_ARGS:-}"
+  prep=(--parsable --export=ALL --time=00:30:00 "--output=$job_dir/prep-%j.out"
+    "${account[@]}" "${prep_opts[@]}" "$job_dir/code/scripts/slurm/prep.sbatch")
+  print_submission "${prep[@]}"
+  if ((dry)); then prep_id=PREP_JOB_ID
+  else
+    # CPU prep gets only the account; site placement/resource settings must be explicit.
+    prep_env=(env)
+    for name in "${!SBATCH_@}"; do
+      [[ $name = SBATCH_ACCOUNT ]] || prep_env+=(-u "$name")
+    done
+    prep_attempted=1
+    prep_id=$("${prep_env[@]}" sbatch "${prep[@]}")
+    prep_id=${prep_id%%;*}
+    [[ $prep_id =~ ^[0-9]+$ ]] || fail "invalid prep job id: $prep_id"
+  fi
+  dependency="afterok:$prep_id${dependency:+,$dependency}"
+fi
+[[ -z $dependency ]] || opts+=("--dependency=$dependency")
+print_submission "${opts[@]}" "$script" "${cmd[@]}"
+if ((!dry)); then
+  main_attempted=1
+  main_id=$(sbatch --parsable "${opts[@]}" "$script" "${cmd[@]}")
+  submitted=1
+  printf '%s\n' "$main_id"
+  if ! printf '%s\n' "$main_id" > "$job_dir/job-id"; then
+    echo "Job $main_id was accepted; could not write $job_dir/job-id" >&2
+  fi
+fi
+submitted=1
+echo "Run record: $job_dir/run.json"
