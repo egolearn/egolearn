@@ -21,19 +21,31 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from pathlib import Path
+
+from hydra import compose, initialize_config_dir
+from omegaconf import OmegaConf
 
 import egolearn
-from egolearn.config import load_config
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True, help="YAML config path")
+    ap.add_argument(
+        "--config",
+        required=True,
+        help="primary Hydra .yaml config path (declare hydra.searchpath for packaged defaults)",
+    )
     ap.add_argument("--steps", type=int, default=200, help="gradient steps to run (after warmup)")
     ap.add_argument("--output-json", default=None, help="write the raw per-stage report here")
     args = ap.parse_args()
 
-    cfg = load_config(args.config)
+    config_path = Path(args.config).resolve()
+    if config_path.suffix != ".yaml":
+        ap.error("--config must name a primary Hydra .yaml file")
+    with initialize_config_dir(config_dir=str(config_path.parent), version_base="1.3"):
+        cfg = OmegaConf.to_container(compose(config_name=config_path.name), resolve=True)
+    assert isinstance(cfg, dict)
     cfg.setdefault("driver", {})["max_steps"] = args.steps
 
     pipe = egolearn.build(cfg)
