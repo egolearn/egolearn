@@ -88,6 +88,33 @@ reader processes (cold / warm), and ms per 16-frame clip:
 | parquet shards on scratch (64-row groups) | 875 / 26 | 1.2 / 0.9 |
 | packed store on node-local NVMe | 13 / 8 | 0.4 / 0.3 |
 
+Those are read-plus-decode rates with 32 reader processes. Through the real
+Loader the picture is narrower, because the trainer process pays a fixed
+cost per item to receive shared-memory tensors and the SimCLR views cost
+more than any read. On a fresh CPU node with 16 workers and a 33-session
+subset (94k frames), medians over 8 batches of 256 random frames:
+
+| through the Loader, 16 workers | squashfs | packed store |
+| --- | ---: | ---: |
+| worker pool ready | 213 s | 18 s |
+| first batch on a cold node, decode only | 31.0 s | 0.48 s |
+| later cold batches, decode only | 217 ms | 335 ms |
+| warm batches, decode only | 195 ms | 198 ms |
+| cold / warm, IID SimCLR two views | 567 / 521 ms | 539 / 500 ms |
+| cold / warm, 64 clips of 16 frames | 848 / 806 ms | 764 / 665 ms |
+
+The start-up difference is the stream pickle (3 MB of listing cache for 32
+sessions, 117 MB for the full S child, against 1 KB): a spawn whose
+arguments exceed the pipe buffer blocks the trainer until the child has
+imported torch, once per worker. The 31 s first batch is the squashfs
+daemon fetching directory metadata and data blocks one at a time; after
+that, read-ahead on the image keeps a small subset warm and the daemon's
+single-threaded decompression (about 0.7 ms per frame) becomes its ceiling,
+which 16 workers do not reach. The packed store's cold batches pay one
+network read per frame and have no multi-second outliers. Warm, both
+layouts sit on the same parent-side floor, and with two SimCLR views per
+frame augmentation dominates either way.
+
 ### Building a store
 
 ```bash

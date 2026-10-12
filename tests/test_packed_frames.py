@@ -271,6 +271,10 @@ def test_frame_names_serve_storyboard_validation_and_empty_sessions(frame_root, 
     b = build_offline_index(dst, str(storyboard))
     assert (a.num_frames, a.segments, a.pairs) == (b.num_frames, b.segments, b.pairs)
     assert b.num_frames == N3 + N2 and len(b.segments) == 2 and b.pairs
+    # validation filled the listing cache; it must not travel to workers
+    assert dst._frames_cache and len(pickle.dumps(dst)) < 4096
+    again = pickle.loads(pickle.dumps(dst))
+    assert not again._frames_cache and again.frame_files(S2) == dst.frame_files(S2)
     videos[0]["frames"] = list(reversed(videos[0]["frames"]))
     storyboard.write_text(json.dumps({"fps": 5.0, "root_dir": "unused", "videos": videos}))
     with pytest.raises(ValueError, match="frame order differs"):
@@ -319,6 +323,16 @@ def test_shard_descriptors_are_capped_and_released(packed):
     assert store.read_many(keys) == [store.read(k) for k in keys]
     assert len(store._fds) == 1
     assert PackedFrameStore(out).max_open_shards >= 64
+    assert pickle.loads(pickle.dumps(store)).max_open_shards == 1  # explicit cap survives
+    import resource
+
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft > 600:  # the automatic cap follows the unpickling process's own limit
+        resource.setrlimit(resource.RLIMIT_NOFILE, (600, hard))
+        try:
+            assert pickle.loads(pickle.dumps(PackedFrameStore(out))).max_open_shards == 150
+        finally:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
     if os.path.isdir(fd_dir):
         assert count() > base  # a shard fd plus the memory-mapped index
     del store

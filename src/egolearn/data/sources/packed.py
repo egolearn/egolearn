@@ -115,3 +115,10 @@ class PackedFrameStream(SaycamStream):
 
     def close(self) -> None:
         self.store.close()
+
+    def __getstate__(self) -> dict:
+        # workers rebuild the listing cache from the store's names on demand;
+        # pickling it would hand every worker the full listing again
+        state = self.__dict__.copy()
+        state["_frames_cache"] = {}
+        return state

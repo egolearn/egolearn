@@ -92,8 +92,14 @@ class PackedFrameStore:
 
     def __init__(self, root: str | os.PathLike, max_open_shards: int | None = None):
         self.root = os.fspath(root)
-        self.max_open_shards = max(1, int(max_open_shards or _default_open_shards()))
+        self._max_open_override = None if max_open_shards is None else max(1, int(max_open_shards))
         self._reset()
+
+    @property
+    def max_open_shards(self) -> int:
+        """Open-shard cap of this process: the explicit override, else a quarter
+        of the process's own open-file limit (recomputed after unpickling)."""
+        return self._max_open_override if self._max_open_override is not None else self._auto_cap
 
     def _reset(self) -> None:
         self._manifest: dict | None = None
@@ -102,13 +108,14 @@ class PackedFrameStore:
         self._names: np.ndarray | None = None
         self._spans: dict[str, SessionSpan] | None = None
         self._fds: OrderedDict[int, int] = OrderedDict()
+        self._auto_cap = _default_open_shards()
 
     def __getstate__(self) -> dict:
-        return {"root": self.root, "max_open_shards": self.max_open_shards}
+        return {"root": self.root, "max_open_shards": self._max_open_override}
 
     def __setstate__(self, state: dict) -> None:
         self.root = state["root"]
-        self.max_open_shards = state["max_open_shards"]
+        self._max_open_override = state["max_open_shards"]
         self._reset()
 
     def __del__(self) -> None:
