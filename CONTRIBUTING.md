@@ -90,8 +90,7 @@ added at build time by `scripts/docs/hooks.py`, which also points links to files
 outside the site at GitHub. Preview locally:
 
 ```bash
-uv sync --only-group docs
-.venv/bin/mkdocs serve
+uv run --group docs mkdocs serve
 ```
 
 Cloudflare Pages builds it with:

@@ -11,6 +11,16 @@ copyright: egolearn
 hooks:
   - scripts/docs/hooks.py
 
+# Pages the hook imports from outside docs/: rebuild `mkdocs serve` when they change.
+watch:
+  - README.md
+  - CHANGELOG.md
+  - CONTRIBUTING.md
+  - SECURITY.md
+  - projects/babycl/README.md
+  - projects/storyboard/README.md
+  - scripts/docs/hooks.py
+
 theme:
   name: material
   custom_dir: overrides

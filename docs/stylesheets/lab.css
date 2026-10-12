@@ -860,3 +860,6 @@ img.lab-logo--dark { display: none !important; }
 .md-typeset .wide-tables td:first-child {
   width: 11rem;
 }
+
+/* Anchor targets clear the taller lab header (Material assumes 68px). */
+.md-typeset [id] { scroll-margin-top: calc(var(--lab-header-h) + 0.8rem); }
