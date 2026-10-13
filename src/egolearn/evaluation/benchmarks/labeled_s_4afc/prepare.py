@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
+
+from egolearn.commands.prepare_parsers import preparation_parser
 
 
 def prepare_manifest(data_root: Path, trials_json: Path, vocab_json: Path, output: Path) -> int:
@@ -46,11 +47,7 @@ def prepare_manifest(data_root: Path, trials_json: Path, vocab_json: Path, outpu
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data_root", type=Path, required=True)
-    parser.add_argument("--trials_json", type=Path, required=True)
-    parser.add_argument("--vocab_json", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
+    parser = preparation_parser("labeled-s-4afc", description=__doc__)
     args = parser.parse_args()
     try:
         count = prepare_manifest(args.data_root, args.trials_json, args.vocab_json, args.output)

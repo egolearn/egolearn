@@ -6,11 +6,24 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ## [Unreleased]
 
-
 ### Added
 
 - Landing page at the site root (`landing/`), with the docs site under `/docs/`;
   `scripts/docs/build.sh` builds both for Cloudflare Pages.
+- `egl export` writes safetensors model weights and JSON construction metadata,
+  contract, and portable source provenance. Evaluation and initialization share
+  a reader for exported directories and legacy checkpoints; full snapshots need
+  explicit trust. Model Hub uploads accept the exported pair only, and model
+  references without a filename fail before downloading. Benchmark suites pin
+  both exported files, including paired Hub downloads; environment diagnostics
+  check the safetensors dependency.
+- Complete `egl` lifecycle commands: a shared dataset catalog with access tiers,
+  Hub fetch and checksum verification, benchmark preparation under one data root,
+  read-only environment diagnostics, and dispatch to the cluster launcher.
+  Dataset preparation help works without optional training dependencies.
+- Pinned benchmark suites with frozen per-seed configs, local or Slurm-array
+  execution, atomic run records, and complete-seed mean/SD tables with baseline
+  comparisons. Training and evaluation can also opt into `record_json` directly.
 - Add one-command Slurm/Apptainer submission with CPU environment preparation,
   a pinned lab image, scratch caches, arrays and immutable per-run code snapshots.
 - Memory Storyboard and BabyCL as 1:1 method ports (`src/egolearn/methods/`)
@@ -98,6 +111,13 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Changed
 
+- `egl doctor --submit` checks submission tools and cluster storage on planning
+  hosts, including CPU allocations. The documented benchmark workflow stops
+  before creating a plan if diagnostics fail.
+- Cluster instructions use the shell launcher on login nodes and run Python
+  diagnostics and benchmark planning inside compute allocations.
+- Benchmark baseline comparisons require matching seed sets and input keys/checksums;
+  relocated identical inputs remain comparable, and mismatches produce no deltas.
 - Run `scripts/slurm/train.sbatch` and `bench.sbatch` directly on the login node;
   passing either wrapper to `sbatch` now fails with migration instructions.
   Benchmark JSON is written to the isolated run's `work/bench.json`.
@@ -143,6 +163,19 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- All benchmark configs recorded by standalone evaluation reduce absolute local
+  path settings to file or directory names, while preserving original top-level
+  `hf://` references, structured metadata, and paths used to load benchmark data.
+
+- Evaluation rejects non-finite metrics before recording a benchmark, preserving
+  serializable partial results. Linear-probe configs record dataset and manifest
+  names without machine-specific directories, alongside existing split hashes.
+
+- Share restricted checkpoint reading between evaluation and initialization;
+  full snapshots now require explicit trust, and source provenance stores only
+  checkpoint file names and hashes.
+- Record evaluation code revisions and linear-probe settings and split hashes,
+  preserve completed benchmark results on failure, and restore MPS RNG state.
 - Snapshot resume restores only saved `init_from` lineage, preserving the live
   model's construction metadata in subsequent checkpoints and snapshots.
 - Slurm submission creates its code snapshot and run record with Bash and standard
