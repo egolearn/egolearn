@@ -16,7 +16,7 @@ from egolearn.evaluation.evaluator import (
     _isolated_evaluation_rng,
     evaluate,
 )
-from egolearn.hub import resolve, resolve_with_metadata
+from egolearn.hub import resolve
 from egolearn.model.build import build_model
 from egolearn.model.model import ComposedModel
 from egolearn.utils.checkpoint import read_checkpoint
@@ -63,9 +63,7 @@ def _load_model(
     imports: Sequence[str],
     trusted_snapshot: bool,
 ) -> tuple[ComposedModel, dict[str, Any]]:
-    local_path, provenance = resolve_with_metadata(checkpoint, repo_type="model")
-    state, metadata = read_checkpoint(local_path, trusted_snapshot=trusted_snapshot)
-    metadata = {**provenance, **metadata}
+    state, metadata = read_checkpoint(checkpoint, trusted_snapshot=trusted_snapshot)
     source = model_config if model_config is not None else state.get("model_config")
     if source is None:
         raise ValueError(

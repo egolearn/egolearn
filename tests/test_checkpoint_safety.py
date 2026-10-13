@@ -19,6 +19,13 @@ class PickleSideEffect:
         return Path.touch, (self.marker,)
 
 
+def test_public_snapshot_helpers_keep_their_identity():
+    from egolearn.utils import load_snapshot, save_snapshot, snapshot
+
+    assert load_snapshot is snapshot.load_snapshot
+    assert save_snapshot is snapshot.save_snapshot
+
+
 @pytest.mark.parametrize("entry_point", ["evaluation", "initialization"])
 @pytest.mark.parametrize("trust", [False, "false"])
 def test_checkpoint_objects_are_rejected_without_executing_pickle(tmp_path, entry_point, trust):

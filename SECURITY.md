@@ -21,21 +21,29 @@ only defense — hence gitleaks in pre-commit and CI, and the 500 KB file blocke
   (docs/roadmap.md). The pre-commit hook blocks these.
 - Broad-permission share links (e.g. anyone-with-link Drive folders).
 
-## Checkpoint trust
+## Model export and checkpoint trust
 
-Model evaluation and initialization read ordinary checkpoints with PyTorch's
-restricted `weights_only=True` loader and never retry with unrestricted pickle.
-Full training snapshots contain Python objects and require unrestricted pickle:
-only resume snapshots you created or whose producer and contents you trust.
-For evaluation or `init_from` of such a snapshot, explicitly set
-`trusted_snapshot=True` (Hydra: `trusted_snapshot=true` or
-`+init_from.trusted_snapshot=true`). This opt-in permits arbitrary code execution;
-a file name, hash, or download from the Hub does not establish trust.
-The opt-in must be a boolean; strings such as `"false"` are rejected.
-Model configuration and registration imports also execute code, including those
-embedded in checkpoints. Inspect external configs and embedded construction
-metadata before evaluating a checkpoint. Restricted unpickling does not sandbox
-model code.
+Publish model weights with `egl export <checkpoint> <out_dir>`. The export contains
+`model.safetensors` and `model.json`, without optimizer, RNG, replay state, or pickle
+objects. Model Hub uploads accept this exported pair only; `.pth` checkpoints and
+other payload files are refused. Safetensors data is never passed to `torch.load`.
+
+The pickle trust rule applies to legacy `.pth` checkpoints and our own training
+snapshots. Evaluation, initialization, and export use PyTorch's restricted
+`weights_only=True` reader by default and never retry with unrestricted pickle.
+Snapshots contain Python objects: only resume or export snapshots you created or
+whose producer and contents you trust. Explicitly opt in with `--trusted-snapshot`
+for export, `trusted_snapshot=True` for evaluation, or
+`+init_from.trusted_snapshot=true` for initialization. The API opt-in must be a
+boolean; strings such as `"false"` are rejected. This enables arbitrary pickle
+execution; a hash or Hub download alone does not establish trust.
+
+Model construction metadata and registration imports can execute model code even
+when weights use safetensors. Inspect external configurations before loading a
+model. Export provenance records the source filename and digest plus the code
+revision performing the export; it does not claim to recover the training revision.
+Inspect model metadata for restricted information before publishing. Full training
+snapshots remain local run artifacts and are never published to model repos.
 
 ## If a secret lands in a commit
 

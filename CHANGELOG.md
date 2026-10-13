@@ -8,6 +8,13 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- `egl export` writes safetensors model weights and JSON construction metadata,
+  contract, and portable source provenance. Evaluation and initialization share
+  a reader for exported directories and legacy checkpoints; full snapshots need
+  explicit trust. Model Hub uploads accept the exported pair only, and model
+  references without a filename fail before downloading. Benchmark suites pin
+  both exported files, including paired Hub downloads; environment diagnostics
+  check the safetensors dependency.
 - Complete `egl` lifecycle commands: a shared dataset catalog with access tiers,
   Hub fetch and checksum verification, benchmark preparation under one data root,
   read-only environment diagnostics, and dispatch to the cluster launcher.
