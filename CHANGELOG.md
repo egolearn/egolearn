@@ -138,6 +138,19 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- All benchmark configs recorded by standalone evaluation reduce absolute local
+  path settings to file or directory names, while preserving original top-level
+  `hf://` references, structured metadata, and paths used to load benchmark data.
+
+- Evaluation rejects non-finite metrics before recording a benchmark, preserving
+  serializable partial results. Linear-probe configs record dataset and manifest
+  names without machine-specific directories, alongside existing split hashes.
+
+- Share restricted checkpoint reading between evaluation and initialization;
+  full snapshots now require explicit trust, and source provenance stores only
+  checkpoint file names and hashes.
+- Record evaluation code revisions and linear-probe settings and split hashes,
+  preserve completed benchmark results on failure, and restore MPS RNG state.
 - Snapshot resume restores only saved `init_from` lineage, preserving the live
   model's construction metadata in subsequent checkpoints and snapshots.
 - Slurm submission creates its code snapshot and run record with Bash and standard

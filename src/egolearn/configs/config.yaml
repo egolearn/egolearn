@@ -9,6 +9,7 @@ wandb:
   mode: disabled
 dry_run: false     # build and validate the whole pipeline, then exit without training
 resume: null       # path to a snapshot (saved run state), or "auto" for the newest in run_dir
-init_from: null    # {checkpoint, include?, exclude?, strict?}: initialize model weights
+# Initialize model weights; full snapshots also need trusted_snapshot: true.
+init_from: null    # {checkpoint, include?, exclude?, strict?, trusted_snapshot?}
 loader:
   workers: 0       # decode+augment worker processes; 0 = load in-process
