@@ -68,8 +68,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --locked --only-group docs
-      - run: .venv/bin/mkdocs build --strict
+      - run: bash scripts/docs/build.sh
 
   gitleaks:
     runs-on: ubuntu-latest

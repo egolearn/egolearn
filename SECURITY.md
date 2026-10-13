@@ -14,7 +14,10 @@ only defense — hence gitleaks in pre-commit and CI, and the 500 KB file blocke
 - Egocentric video data or frames — SAYCam and BabyView are **access-controlled
   human-subject datasets** (IRB / data-use agreements); no frames, captions, or
   identifiable stills ever enter the repo, including in tests and docs. Tests use
-  synthetic clips only.
+  synthetic clips only. The one exception is `landing/media/`: images that are
+  already public under an open license (a CC BY paper figure, BabyView's CC0
+  public crops) or shown on a dataset's own project page, each credited on the
+  landing page. Never frames taken from the access-controlled data itself.
 - Reviewer identities, review text, or rebuttal drafts.
 - Unpublished paper text or figures (that belongs in Overleaf).
 - Binaries or files >500 KB — checkpoints, datasets, videos go to the Hub

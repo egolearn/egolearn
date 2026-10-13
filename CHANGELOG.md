@@ -9,6 +9,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Landing page at the site root (`landing/`), with the docs site under `/docs/`;
+  `scripts/docs/build.sh` builds both for Cloudflare Pages.
 - Add one-command Slurm/Apptainer submission with CPU environment preparation,
   a pinned lab image, scratch caches, arrays and immutable per-run code snapshots.
 - Memory Storyboard and BabyCL as 1:1 method ports (`src/egolearn/methods/`)
