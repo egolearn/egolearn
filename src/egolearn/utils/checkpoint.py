@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from pickle import UnpicklingError
 from typing import Any
 
 import torch
 
-from egolearn.hub import resolve_with_metadata
-from egolearn.utils.model_artifact import METADATA, WEIGHTS, file_digest, inspect_export
+from egolearn.utils.model_artifact import (
+    WEIGHTS,
+    export_sha256,
+    file_digest,
+    inspect_export,
+    resolve_model_files,
+)
 
 
 def read_checkpoint(
@@ -23,26 +28,12 @@ def read_checkpoint(
     """
     if not isinstance(trusted_snapshot, bool):
         raise TypeError("trusted_snapshot must be a bool; only True enables unrestricted loading")
-    path, hub = resolve_with_metadata(checkpoint, repo_type="model")
-    path = path.expanduser()
-    if not path.exists():
-        raise FileNotFoundError(f"checkpoint not found: {path}")
-    if path.is_dir() or path.suffix == ".safetensors":
+    path, metadata, hub = resolve_model_files(checkpoint)
+    if metadata is not None:
         from safetensors import SafetensorError
         from safetensors.torch import load_file
 
         weights = path / WEIGHTS if path.is_dir() else path
-        if weights.name != WEIGHTS:
-            raise ValueError("an exported checkpoint must name model.safetensors or its directory")
-        metadata = weights.with_name(METADATA)
-        if hub and not path.is_dir():
-            relative = str(checkpoint).split("@", 1)[1].partition("/")[2]
-            sibling = PurePosixPath(relative).with_name(METADATA)
-            kind = "models" if hub["repo_type"] == "model" else "datasets"
-            # Resolve the sibling at the weights' immutable commit, never the mutable tag.
-            metadata, _ = resolve_with_metadata(
-                f"hf://{kind}/{hub['repo']}@{hub['commit']}/{sibling}", repo_type=hub["repo_type"]
-            )
         document = inspect_export(weights, metadata)
         try:
             tensors = load_file(weights, device="cpu")
@@ -56,9 +47,7 @@ def read_checkpoint(
         }
         # The artifact identity covers construction metadata as well as tensor bytes.
         metadata_sha = file_digest(metadata)
-        digest = hashlib.sha256(
-            (document["weights_sha256"] + metadata_sha).encode("ascii")
-        ).hexdigest()
+        digest = export_sha256(document["weights_sha256"], metadata_sha)
         return state, {
             **hub,
             "filename": weights.name,

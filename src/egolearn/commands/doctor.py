@@ -83,11 +83,11 @@ def inspect_environment(
     virtual = sys.prefix != sys.base_prefix or bool(os.environ.get("CONDA_PREFIX"))
     checks.append(Check("ok" if virtual else "warn", "venv", "active" if virtual else "not active"))
     installed = {}
-    for package in ("torch", "torchvision", "pillow", "wandb"):
+    for package in ("torch", "torchvision", "pillow", "wandb", "safetensors"):
         with suppress(importlib.metadata.PackageNotFoundError):
             installed[package] = importlib.metadata.version(package)
     for extra, packages in (
-        ("train", ("torch", "torchvision", "pillow", "wandb")),
+        ("train", ("torch", "torchvision", "pillow", "wandb", "safetensors")),
         ("video", ("pillow",)),
     ):
         missing = [package for package in packages if package not in installed]

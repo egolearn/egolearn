@@ -1,7 +1,7 @@
 # Command line
 
 Use `uv run egl` after `uv sync`, or `egl` in an activated environment.
-`egolearn` is an equivalent installed alias. Commands are `train`, `eval`, `data`,
+`egolearn` is an equivalent installed alias. Commands are `train`, `eval`, `export`, `data`,
 `submit`, `doctor`, and `bench`; each accepts `--help`.
 
 These Python commands are for workstations and compute allocations. On cluster

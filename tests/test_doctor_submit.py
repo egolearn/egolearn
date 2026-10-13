@@ -43,6 +43,20 @@ def test_required_extras_missing_is_failure(monkeypatch):
     assert next(c for c in checks if c.name == "extra:video").status == "warn"
 
 
+@pytest.mark.parametrize("extra", ["train", None])
+def test_doctor_reports_missing_safetensors(monkeypatch, extra):
+    def version(package):
+        if package == "safetensors":
+            raise doctor.importlib.metadata.PackageNotFoundError(package)
+        return "1.0"
+
+    monkeypatch.setattr(doctor.importlib.metadata, "version", version)
+    checks = doctor.inspect_environment(extras=(extra,) if extra else (), skip_cuda=True)
+    train = next(check for check in checks if check.name == "extra:train")
+    assert train.status == ("fail" if extra else "warn")
+    assert train.detail == "missing safetensors"
+
+
 def test_cuda_query_failures_are_bounded_and_reported(monkeypatch):
     def timed_out(*args, **kwargs):
         assert kwargs["timeout"] == 15
@@ -150,6 +164,7 @@ def test_submit_help_needs_no_checkout_but_execution_does(monkeypatch, tmp_path,
 @pytest.mark.parametrize(
     "command",
     [
+        ["export", "--help"],
         ["data", "list", "--json"],
         ["doctor", "--skip-cuda"],
         ["submit", "--help"],

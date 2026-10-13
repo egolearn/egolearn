@@ -16,6 +16,7 @@ from typing import Any
 
 from egolearn.hub import resolve, sha256_file, verify_checksums
 from egolearn.run_record import atomic_json, source_checkout, source_identity
+from egolearn.utils.model_artifact import METADATA, export_sha256, resolve_model_files
 
 _RESERVED = {"seed", "record_json", "run_dir", "output_json", "hydra", "resume", "dry_run"}
 
@@ -67,7 +68,14 @@ def verify_inputs(inputs: dict[str, dict]) -> None:
     for key, item in inputs.items():
         path = Path(item["path"])
         checksum = path / "checksums.sha256" if path.is_dir() else path
-        if sha256_file(checksum) != item["sha256"]:
+        digest = sha256_file(checksum)
+        if (
+            key in {"checkpoint", "init_from.checkpoint"}
+            and path.is_file()
+            and path.suffix == ".safetensors"
+        ):
+            digest = export_sha256(digest, sha256_file(path.with_name(METADATA)))
+        if digest != item["sha256"]:
             raise ValueError(f"SHA-256 mismatch for input {key!r}")
         if path.is_dir():
             problems = verify_checksums(path)
@@ -133,7 +141,9 @@ def load_suite(path: Path, extra_overrides: list[str]) -> dict[str, Any]:
             r"[0-9a-f]{64}", item["sha256"]
         ):
             raise ValueError(f"input {key!r} needs a lowercase SHA-256")
-        if item["path"].startswith("hf://"):
+        if item["path"].startswith("hf://") and key in {"checkpoint", "init_from.checkpoint"}:
+            file, _, _ = resolve_model_files(item["path"])
+        elif item["path"].startswith("hf://"):
             kind = (
                 "model"
                 if key in {"checkpoint", "model_config", "init_from.checkpoint"}

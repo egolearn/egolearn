@@ -47,7 +47,9 @@ defaults for config-driven calls, protocol versions, dataset metadata, seeds,
 package version, source commit and dirty flag, and resolved model config.
 `code_revision` reports `"unavailable"` outside a source checkout or when Git
 cannot be queried. Checkpoint evaluations record the file name, SHA-256, and
-training step when available; no checkpoint directory is stored. Benchmark names
+training step when available; no checkpoint directory is stored. For exports,
+`weights_sha256` and `metadata_sha256` identify each file, while `sha256` hashes
+the concatenated hexadecimal digests (weights first), covering both files. Benchmark names
 must be unique within an evaluation.
 
 Existing small evaluations remain available with their `probe:*` configuration

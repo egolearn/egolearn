@@ -68,11 +68,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command is None:
         parser.print_help()
         return 0
-    if args.command == "export":
-        os.execv(sys.executable, [sys.executable, "-m", "egolearn.export", *args.arguments])
-        return 0
     if args.command not in {"train", "eval"}:
-        command = importlib.import_module(f"egolearn.commands.{args.command}")
+        module = (
+            "egolearn.export" if args.command == "export" else f"egolearn.commands.{args.command}"
+        )
+        command = importlib.import_module(module)
         return command.main(args.arguments)
     try:
         hydra_args = _hydra_arguments(args.arguments)

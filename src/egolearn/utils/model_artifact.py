@@ -6,8 +6,10 @@ import hashlib
 import json
 import math
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
+
+from egolearn.hub import resolve_with_metadata
 
 WEIGHTS = "model.safetensors"
 METADATA = "model.json"
@@ -27,6 +29,33 @@ def _finite_float(value: str) -> float:
 def file_digest(path: Path) -> str:
     with path.open("rb") as file:
         return hashlib.file_digest(file, "sha256").hexdigest()
+
+
+def export_sha256(weights_sha256: str, metadata_sha256: str) -> str:
+    """Identify both model files using their ordered, hexadecimal SHA-256 digests."""
+    return hashlib.sha256((weights_sha256 + metadata_sha256).encode("ascii")).hexdigest()
+
+
+def resolve_model_files(checkpoint: str | Path) -> tuple[Path, Path | None, dict[str, str]]:
+    """Resolve a checkpoint and, for an export, its metadata at the same Hub commit."""
+    path, hub = resolve_with_metadata(checkpoint, repo_type="model")
+    path = path.expanduser()
+    if not path.exists():
+        raise FileNotFoundError(f"checkpoint not found: {path}")
+    metadata = None
+    if path.is_dir() or path.suffix == ".safetensors":
+        weights = path / WEIGHTS if path.is_dir() else path
+        if weights.name != WEIGHTS:
+            raise ValueError("an exported checkpoint must name model.safetensors or its directory")
+        metadata = weights.with_name(METADATA)
+        if hub and not path.is_dir():
+            relative = str(checkpoint).split("@", 1)[1].partition("/")[2]
+            sibling = PurePosixPath(relative).with_name(METADATA)
+            kind = "models" if hub["repo_type"] == "model" else "datasets"
+            metadata, _ = resolve_with_metadata(
+                f"hf://{kind}/{hub['repo']}@{hub['commit']}/{sibling}", repo_type=hub["repo_type"]
+            )
+    return path, metadata, hub
 
 
 def inspect_export(weights: Path, metadata: Path | None = None) -> dict[str, Any]:
