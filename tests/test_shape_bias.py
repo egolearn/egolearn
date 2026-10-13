@@ -167,3 +167,33 @@ def test_probe_writes_compact_artifact(tmp_path: Path, monkeypatch) -> None:
     assert artifact["n_stimuli"] == 256
     assert artifact["n_triplets"] == 57_600
     assert len(artifact["anchors"]) == 256
+
+
+def test_packaged_eval_config_uses_hosted_stimuli(tmp_path: Path, monkeypatch) -> None:
+    import sys
+
+    from hydra import compose, initialize_config_module
+    from omegaconf import OmegaConf
+
+    from egolearn.evaluation.evaluator import _configured_benchmark
+
+    assets = tmp_path / "assets"
+    _make_source_assets(assets, monkeypatch)
+    prepare_shape_bias_stimuli(assets, tmp_path / "repo", seed=1)
+    with initialize_config_module(config_module="egolearn.configs", version_base="1.3"):
+        cfg = OmegaConf.to_container(compose(config_name="shape_bias_eval"), resolve=True)
+    assert isinstance(cfg, dict)
+    spec = cfg["benchmarks"][0]
+    prefix = "hf://datasets/agentic-learning-ai-lab/egolearn-shape-bias@v1/"
+    assert spec["manifest"] == prefix + "stimulus_manifest.json"
+    monkeypatch.setattr(
+        sys.modules["egolearn.config.instantiate"],
+        "resolve",
+        lambda reference: tmp_path / "repo" / reference.removeprefix(prefix),
+    )
+
+    probe, config = _configured_benchmark(spec)
+
+    assert isinstance(probe, ShapeBiasProbe)
+    assert len(probe.records) == 256
+    assert config["manifest"] == spec["manifest"]
