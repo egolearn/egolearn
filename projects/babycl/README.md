@@ -37,6 +37,28 @@ egl train projects/babycl/configs/saycam_default.yaml dry_run=true
 egl train projects/babycl/configs/saycam_default.yaml
 ```
 
+## Offline BabyCL variant
+
+`saycam_iid` trains the full BabyCL objective with the complete selected dataset
+available from the start. It inherits the streaming model, augmentations, losses,
+and solver from `saycam_shared.yaml`.
+
+This differs from the paper's CVCL-only IID baseline:
+
+| Setting | Paper IID baseline | `saycam_iid` |
+|---|---|---|
+| Losses | CVCL only | NT-Xent + TCL + CLIP-InfoNCE |
+| Batch | 8 image/text pairs | 3 x 32 visual frames + 32 image/text pairs |
+| Epochs | 400 | 1 by default; override `driver.epochs` |
+| AdamW learning rate | 1e-4 | 1e-3 vision/embed head; 1e-4 remaining parameters |
+| Weight decay | 0.1 | 1e-4, with vision/embed BN and bias exempt |
+| Schedule | ReduceLROnPlateau | Cosine with warmup |
+
+An epoch shuffles every aligned utterance chunk once and drops the incomplete
+batch; visual segments are sampled independently with replacement. Supply a
+complete storyboard manifest using the [offline input guide](docs/offline.md),
+which documents its format and the launch command.
+
 Published ablations as config diffs:
 
 | Paper ablation | Diff |

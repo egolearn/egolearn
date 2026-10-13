@@ -17,7 +17,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   comparisons. Training and evaluation can also opt into `record_json` directly.
 - Add one-command Slurm/Apptainer submission with CPU environment preparation,
   a pinned lab image, scratch caches, arrays and immutable per-run code snapshots.
-
+- Memory Storyboard and BabyCL as 1:1 method ports (`src/egolearn/methods/`)
+  with reproduction configs under `projects/`.
+- BabyCL offline training with complete storyboard/utterance indexing, mixed or
+  pairs-only batches, utterance epochs, and deterministic prefetch/resume.
 - Torch-free Hub path resolution and checksummed, private-by-default dataset/checkpoint
   fetch and push commands; documented dataset access tiers. `init_from.checkpoint`
   accepts model Hub references and retains their resolved commit across snapshot resume.
@@ -148,10 +151,26 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- All benchmark configs recorded by standalone evaluation reduce absolute local
+  path settings to file or directory names, while preserving original top-level
+  `hf://` references, structured metadata, and paths used to load benchmark data.
+
+- Evaluation rejects non-finite metrics before recording a benchmark, preserving
+  serializable partial results. Linear-probe configs record dataset and manifest
+  names without machine-specific directories, alongside existing split hashes.
+
+- Share restricted checkpoint reading between evaluation and initialization;
+  full snapshots now require explicit trust, and source provenance stores only
+  checkpoint file names and hashes.
+- Record evaluation code revisions and linear-probe settings and split hashes,
+  preserve completed benchmark results on failure, and restore MPS RNG state.
+- Snapshot resume restores only saved `init_from` lineage, preserving the live
+  model's construction metadata in subsequent checkpoints and snapshots.
 - Slurm submission creates its code snapshot and run record with Bash and standard
   Unix tools, without invoking Python on the login node. Command arguments must be
   valid UTF-8.
-
+- Benchmark entry points compose Hydra defaults in project configs; offline BabyCL
+  retains its 5,000-step checkpoint cadence when inheriting shared settings.
 - Determinism (from PR review): the configured seed now also seeds the
   global torch/python RNGs and snapshots carry their state, so the same
   seed gives bit-identical weights and a resumed run matches an
