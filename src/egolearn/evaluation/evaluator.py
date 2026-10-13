@@ -9,7 +9,7 @@ import random
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import Any
 
@@ -171,8 +171,25 @@ def prepared_benchmarks(
 ) -> Sequence[Benchmark | Mapping]:
     if record is None:
         return benchmarks
+
+    def preserve_objects(original, recorded):
+        # Recording converts dataclasses to data, but constructors still need
+        # the original objects. Keep resolved Hub paths from the record too.
+        if is_dataclass(original) and not isinstance(original, type):
+            return original
+        if isinstance(original, Mapping):
+            return {key: preserve_objects(value, recorded[key]) for key, value in original.items()}
+        if isinstance(original, (list, tuple)):
+            return type(original)(
+                preserve_objects(value, plain)
+                for value, plain in zip(original, recorded, strict=True)
+            )
+        return recorded
+
     return [
-        record.config["benchmarks"][index] if isinstance(spec, Mapping) else spec
+        preserve_objects(spec, record.config["benchmarks"][index])
+        if isinstance(spec, Mapping)
+        else spec
         for index, spec in enumerate(benchmarks)
     ]
 

@@ -13,6 +13,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
+from dataclasses import asdict, is_dataclass
 from functools import wraps
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,8 @@ class NonfiniteLoss(ValueError):
 
 
 def _plain(value):
+    if is_dataclass(value) and not isinstance(value, type):
+        return _plain(asdict(value))
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, Mapping):

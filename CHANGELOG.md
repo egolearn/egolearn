@@ -146,6 +146,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- Automatic evaluation records serialize in-memory dataclass arguments while
+  preserving the original objects for benchmark construction. Loading a snapshot
+  restores its run provenance, or clears stale provenance when none was saved.
 - Slurm submission creates its code snapshot and run record with Bash and standard
   Unix tools, without invoking Python on the login node. Command arguments must be
   valid UTF-8.
