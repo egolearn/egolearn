@@ -347,10 +347,14 @@ footer.lab .links .lab-link { font-size: 0.8125rem; color: var(--muted); }
     </div>
 <pre class="code"><span class="c"># train BabyCL on SAYCam in one pass</span>
 <span class="p">$ </span><span class="k">egl train</span> projects/babycl/configs/saycam_default.yaml \
-    stream.root_dir=<span class="s">$SAYCAM/frames</span> \
-    stream.transcript_json=<span class="s">$SAYCAM/utterances.json</span> \
-    tokenizer.vocab_json=<span class="s">$SAYCAM/vocab.json</span> \
-    <span class="s">'probes=[]'</span></pre>
+    stream.root_dir=<span class="s">$SAYCAM</span>
+
+<span class="c"># test a checkpoint on the probes</span>
+<span class="p">$ </span><span class="k">egl eval</span> projects/babycl/configs/eval.yaml \
+    checkpoint=<span class="s">runs/babycl_saycam/final.pth</span>
+
+<span class="c"># reproduce the benchmark table, three seeds</span>
+<span class="p">$ </span><span class="k">egl bench run</span> benchmarks/babycl_saycam.yaml</pre>
   </div>
 </section>
 
