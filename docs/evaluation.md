@@ -137,7 +137,7 @@ The converter checks the frozen trial/category counts, target vocabulary coverag
 and local image paths, and refuses to overwrite an existing output:
 
 ```bash
-uv run python -m egolearn.evaluation.benchmarks.labeled_s_4afc.prepare \
+uv run egl data prepare labeled-s-4afc \
   --data_root "$LABELED_S_ROOT" --trials_json "$LABELED_S_TRIALS" \
   --vocab_json "$VOCAB_JSON" --output data/labeled_s_4afc_manifest.json
 ```
@@ -259,13 +259,15 @@ implementation should receive a model; checkpoint loading belongs to the runner.
 
 ## Hub artifacts and access tiers
 
-`uv run python -m egolearn.hub fetch shape-bias --revision <tag-or-commit>`
+`uv run egl data fetch shape-bias --revision <tag-or-commit>`
 fetches `agentic-learning-ai-lab/egolearn-shape-bias` into
 `$EGOLEARN_DATA/shape-bias` (default `data/shape-bias`). The download is staged,
 checked against `checksums.sha256`, and installed only after verification.
 `.egolearn-fetch.json` records the requested revision, resolved commit and
 verification status. Missing checksums require `--allow-unverified`; corrupt
-checksums always fail. `--repo` and `--dest` override the defaults.
+checksums always fail. `--repo` overrides the dataset repository. To choose the
+storage root, use `egl data --root DIR fetch shape-bias --revision <tag-or-commit>`;
+`--root` goes before `fetch`, and the collection is installed in `DIR/shape-bias`.
 
 Data paths in component configs, including benchmark manifests, may use
 `hf://<org>/<repo>@<revision>[/path/in/repo]`. Revisions are tags or commit IDs
@@ -281,8 +283,8 @@ and are not tracked by `hf cache` cleanup tools. Their path is
 `<Hub cache>/datasets--<org>--<repo>/egolearn-materialized/<generation>/<commit>`;
 remove the `egolearn-materialized` directory manually when no job uses its copies.
 Existing complete copies can be reused from a read-only shared cache. First-time
-materialization needs a writable cache; alternatively use `fetch --dest` to put a
-real-file collection on writable storage. If an offline snapshot was partial,
+materialization needs a writable cache; alternatively use `egl data --root DIR fetch`
+to put a real-file collection on writable storage. If an offline snapshot was partial,
 newly cached files produce a new materialization rather than reusing that subset.
 
 An explicit `hf://models/<org>/<repo>@<revision>/vocab.json` lets a tokenizer or
@@ -317,7 +319,7 @@ To upload a prepared directory (not a training run directory):
 uv run python -m egolearn.hub push prepared/ --name shape-bias --license CC-BY-4.0
 uv run python -m egolearn.hub push weights/ --name babycl-saycam-seed0 \
   --repo-type model --license MIT
-uv run python -m egolearn.hub verify prepared/
+uv run egl data verify prepared/
 uv run python -m egolearn.hub checksum prepared/
 ```
 

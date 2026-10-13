@@ -76,6 +76,17 @@ def test_torch_free_and_local_passthrough():
     assert hub.resolve("relative/file") == Path("relative/file")
 
 
+def test_fetch_no_replace_preserves_local_collection(remote, tmp_path):
+    _, state = remote
+    target = tmp_path / "local" / "shape-bias"
+    target.mkdir(parents=True)
+    (target / "original").write_text("local data")
+    with pytest.raises(FileExistsError, match="replace"):
+        hub.fetch("shape-bias", target.parent, replace=False)
+    assert not state.downloads
+    assert (target / "original").read_text() == "local data"
+
+
 def test_resolve_directory_file_and_commit_log(remote, caplog):
     _, state = remote
     with caplog.at_level("INFO"):

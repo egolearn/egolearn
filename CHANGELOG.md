@@ -6,9 +6,15 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ## [Unreleased]
 
-
 ### Added
 
+- Complete `egl` lifecycle commands: a shared dataset catalog with access tiers,
+  Hub fetch and checksum verification, benchmark preparation under one data root,
+  read-only environment diagnostics, and dispatch to the cluster launcher.
+  Dataset preparation help works without optional training dependencies.
+- Pinned benchmark suites with frozen per-seed configs, local or Slurm-array
+  execution, atomic run records, and complete-seed mean/SD tables with baseline
+  comparisons. Training and evaluation can also opt into `record_json` directly.
 - Add one-command Slurm/Apptainer submission with CPU environment preparation,
   a pinned lab image, scratch caches, arrays and immutable per-run code snapshots.
 - Memory Storyboard and BabyCL as 1:1 method ports (`src/egolearn/methods/`)
@@ -93,6 +99,13 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Changed
 
+- `egl doctor --submit` checks submission tools and cluster storage on planning
+  hosts, including CPU allocations. The documented benchmark workflow stops
+  before creating a plan if diagnostics fail.
+- Cluster instructions use the shell launcher on login nodes and run Python
+  diagnostics and benchmark planning inside compute allocations.
+- Benchmark baseline comparisons require matching seed sets and input keys/checksums;
+  relocated identical inputs remain comparable, and mismatches produce no deltas.
 - Run `scripts/slurm/train.sbatch` and `bench.sbatch` directly on the login node;
   passing either wrapper to `sbatch` now fails with migration instructions.
   Benchmark JSON is written to the isolated run's `work/bench.json`.

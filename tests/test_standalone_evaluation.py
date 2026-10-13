@@ -582,6 +582,48 @@ def test_imagenet_cli_runs_from_outside_repository(tmp_path, imagefolder, model_
     assert result["checkpoint"]["sha256"] == hashlib.sha256(checkpoint.read_bytes()).hexdigest()
 
 
+@pytest.mark.parametrize("trust", [None, False, True], ids=["default", "untrusted", "trusted"])
+def test_eval_entry_point_records_snapshot_trust_outcome(
+    tmp_path, toy_pipeline, monkeypatch, trust
+):
+    from pickle import UnpicklingError
+
+    from egolearn.evaluate import main
+
+    # Populate replay with Python event objects that need explicit snapshot trust.
+    toy_pipeline.driver.max_steps = 1
+    toy_pipeline.driver.fit()
+    checkpoint = tmp_path / "snapshot.pth"
+    save_snapshot(str(checkpoint), toy_pipeline.driver)
+    monkeypatch.setitem(BENCHMARKS._items, "test_weights", WeightBenchmark)
+    output = tmp_path / "evaluation.json"
+    record_path = tmp_path / "record.json"
+    config = {
+        "checkpoint": str(checkpoint),
+        "benchmarks": [{"_target_": "benchmark:test_weights"}],
+        "output_json": str(output),
+        "record_json": str(record_path),
+    }
+    if trust is not None:
+        config["trusted_snapshot"] = trust
+    cfg = OmegaConf.create(config)
+    if trust:
+        main.__wrapped__(cfg)
+        result = json.loads(output.read_text())
+        record = json.loads(record_path.read_text())
+        assert result["status"] == "complete"
+        assert record["status"] == "completed"
+        assert record["metrics"] == {"weights/sum": result["results"]["weights"]["sum"]}
+        assert record["checkpoint"] == result["checkpoint"]
+    else:
+        with pytest.raises(UnpicklingError):
+            main.__wrapped__(cfg)
+        assert not output.exists()
+        record = json.loads(record_path.read_text())
+        assert record["status"] == "failed"
+        assert record["error_type"] == "UnpicklingError"
+
+
 @pytest.mark.parametrize("stage", ["prepare", "run", "metadata"])
 def test_failed_benchmark_keeps_completed_results_and_checkpoint(
     tmp_path, model_config, monkeypatch, stage
@@ -661,8 +703,9 @@ def test_evaluation_restores_mps_rng_on_success_and_failure(model_config, monkey
 
 
 @pytest.mark.parametrize("completed_first", [False, True])
+@pytest.mark.parametrize("record_enabled", [False, True])
 def test_cli_writes_partial_results_and_exits_with_failure(
-    tmp_path, imagefolder, model_config, completed_first
+    tmp_path, imagefolder, model_config, completed_first, record_enabled
 ):
     model = build_model(model_config)
     checkpoint = tmp_path / "model.pth"
@@ -678,10 +721,12 @@ def test_cli_writes_partial_results_and_exits_with_failure(
         "epochs": 1,
     }
     output = tmp_path / "partial.json"
+    record_path = tmp_path / "record.json"
     OmegaConf.save(
         {
             "checkpoint": str(checkpoint),
             "output_json": str(output),
+            "record_json": str(record_path) if record_enabled else None,
             "_imports_": ["egolearn.evaluation.benchmarks.imagenet_linear"],
             "benchmarks": [
                 *([benchmark] if completed_first else []),
@@ -714,6 +759,13 @@ def test_cli_writes_partial_results_and_exits_with_failure(
     assert result["checkpoint"]["filename"] == checkpoint.name
     assert result["status"] == "partial"
     assert result["failed_benchmark"] == "failed"
+    if record_enabled:
+        record = json.loads(record_path.read_text())
+        assert record["status"] == "failed"
+        assert record["error_type"] == "EvaluationError"
+        assert record["wall_seconds"] >= 0
+    else:
+        assert not record_path.exists()
 
 
 @pytest.mark.parametrize("probe_type", ["linear", "linear_sgd"])
