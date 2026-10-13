@@ -8,6 +8,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Landing page at the site root (`landing/`), with the docs site under `/docs/`;
+  `scripts/docs/build.sh` builds both for Cloudflare Pages.
 - `egl export` writes safetensors model weights and JSON construction metadata,
   contract, and portable source provenance. Evaluation and initialization share
   a reader for exported directories and legacy checkpoints; full snapshots need
@@ -161,6 +163,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- Keep a root 404 page in the combined site build and apply the staging flag
+  consistently to the landing page and docs, including an explicitly empty value.
 - All benchmark configs recorded by standalone evaluation reduce absolute local
   path settings to file or directory names, while preserving original top-level
   `hf://` references, structured metadata, and paths used to load benchmark data.

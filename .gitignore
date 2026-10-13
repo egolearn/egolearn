@@ -40,5 +40,6 @@ exports/
 /slurm-*.out
 /slurm-*.err
 
-# Docs site build output (mkdocs build)
+# Docs site build output (mkdocs build, scripts/docs/build.sh)
 /site/
+/dist/
