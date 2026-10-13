@@ -28,6 +28,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   with reproduction configs under `projects/`.
 - BabyCL offline training with complete storyboard/utterance indexing, mixed or
   pairs-only batches, utterance epochs, and deterministic prefetch/resume.
+- Docs site skeleton: MkDocs Material with the lab theme, built from `docs/` plus
+  the root and project READMEs, in staging mode (`noindex`) by default; a
+  non-required `docs` CI job builds it with `--strict`.
 - Torch-free Hub path resolution and checksummed, private-by-default dataset/checkpoint
   fetch and push commands; documented dataset access tiers. `init_from.checkpoint`
   accepts model Hub references and retains their resolved commit across snapshot resume.
