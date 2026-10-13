@@ -5,6 +5,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
+# Normalize before MkDocs reads the flag through YAML: an empty value would
+# otherwise become null. Unset means staging; 0/false/no/off or empty disable it.
+staging="$(printf '%s' "${EGOLEARN_SITE_STAGING-true}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+case "$staging" in
+  0 | false | no | off | "") export EGOLEARN_SITE_STAGING=false ;;
+  *) export EGOLEARN_SITE_STAGING=true ;;
+esac
+
 # The Pages build image ships Python but not uv, and a pip-installed uv is
 # not on its PATH: run that one through python3 -m.
 uv=(uv)
@@ -19,13 +27,12 @@ fi
 rm -rf dist
 .venv/bin/mkdocs build --strict -d dist/docs
 cp -R landing/. dist/
+# Without a root 404 page, Cloudflare treats unknown routes as a single-page app.
+cp dist/docs/404.html dist/404.html
 
-# Read the flag the way scripts/docs/hooks.py does: 0/false/no/off or empty
-# turn staging off, in any case; unset means staging.
-staging="$(printf '%s' "${EGOLEARN_SITE_STAGING-true}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-case "$staging" in
-  0 | false | no | off | "") exit 0 ;;
-esac
+if [[ "$EGOLEARN_SITE_STAGING" == false ]]; then
+  exit 0
+fi
 
 # Staging: block crawlers at the root (the docs pages also get a noindex
 # meta tag from overrides/main.html and /docs/robots.txt from the hook).

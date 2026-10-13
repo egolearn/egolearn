@@ -163,6 +163,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Fixed
 
+- Keep a root 404 page in the combined site build and apply the staging flag
+  consistently to the landing page and docs, including an explicitly empty value.
 - All benchmark configs recorded by standalone evaluation reduce absolute local
   path settings to file or directory names, while preserving original top-level
   `hf://` references, structured metadata, and paths used to load benchmark data.
