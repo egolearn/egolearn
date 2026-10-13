@@ -1,9 +1,10 @@
 # Evaluation is independent of the training config and dataset.
 checkpoint: ???
+trusted_snapshot: false  # opt in only for trusted snapshots; see SECURITY.md
 model_config: null  # required for older checkpoints without construction metadata
-trusted_snapshot: false  # only enable for a snapshot whose pickle contents you trust
 device: cpu
 seed: 0
 _imports_: []
 benchmarks: []
 output_json: evaluation.json
+record_json: null  # optional local run record; benchmark suites always set this

@@ -1,0 +1,37 @@
+# Offline BabyCL variant with the streaming model, losses, and optimizer.
+defaults:
+  - saycam_shared
+  - _self_
+
+hydra:
+  searchpath: [pkg://egolearn.configs]
+
+run_dir: runs/babycl_iid_saycam
+
+# Metadata supplies complete segments and utterances before the first update.
+label_stores: []
+embedders: null
+admission: []
+memories: null
+routes: null
+recipe: null
+probes: []
+
+driver:
+  _target_: egolearn.methods.babycl.offline.BabyCLOfflineDriver
+  mode: offline
+  batch:
+    storyboard_json: /path/to/storyboard.json
+    segment_views: [ms_v1, ms_v2]
+    pair_view: pair
+    segments_per_batch: 3
+    frames_per_segment: 32
+    pairs_per_batch: 32
+  epochs: 1
+  advance: null
+  rate: null
+  warmup: null
+
+hooks:
+  checkpoint_every: 5000
+  snapshot_milestones: []

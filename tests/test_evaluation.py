@@ -2,6 +2,7 @@
 
 import csv
 import hashlib
+import json
 import random
 
 import pytest
@@ -79,6 +80,8 @@ def test_babyview_prepare_follows_the_frozen_protocol(tmp_path):
 
 
 def test_labeled_s_adapter_follows_the_frozen_protocol(tmp_path, monkeypatch):
+    from egolearn.evaluation.evaluator import _configured_benchmark
+
     rows = []
     expected_classes = tuple(f"class_{label}" for label in range(labeled_s_linear.N_CLASSES))
     for index in range(labeled_s_linear.TOTAL_SIZE):
@@ -91,14 +94,27 @@ def test_labeled_s_adapter_follows_the_frozen_protocol(tmp_path, monkeypatch):
     monkeypatch.setattr(
         labeled_s_linear, "SPLIT_SHA256", hashlib.sha256(split_text.encode()).hexdigest()
     )
-    probe = labeled_s_linear.LabeledSLinearProbe(
-        name="labeled_s_linear",
-        data_root=str(tmp_path / "labeled_s"),
-        split_file=str(split_file),
-        check_files=False,
-        size=32,
+    probe, config = _configured_benchmark(
+        {
+            "_target_": "probe:labeled_s_linear",
+            "name": "labeled_s_linear",
+            "data_root": str(tmp_path / "labeled_s"),
+            "split_file": str(split_file),
+            "check_files": False,
+            "size": 32,
+        }
     )
+    assert isinstance(probe, labeled_s_linear.LabeledSLinearProbe)
 
+    metadata = probe.metadata()
+    assert metadata["split_sha256"] == hashlib.sha256(split_text.encode()).hexdigest()
+    assert metadata["split_source"] == split_file.name
+    assert metadata["n_train"] == 2886 and metadata["n_test"] == 2901
+    assert config["size"] == 32
+    assert config["data_root"] == "labeled_s"
+    assert config["split_file"] == split_file.name
+    assert str(tmp_path) not in json.dumps(config)
+    assert str(tmp_path) not in json.dumps(metadata)
     assert probe.split.classes == expected_classes
     assert len(probe.split.train) == 2886
     assert len(probe.split.test) == 2901
@@ -458,7 +474,8 @@ def test_linear_sgd_probe_augmentations_are_run_seed_and_worker_count_invariant(
     pooled_worker_seed, pooled = collect(2, 2, run_seed=18)
     other_probe_worker_seed, other_probe = collect(0, 2, run_seed=18, probe_seed=6)
     # Releasing the local loader also releases its persistent worker pool.
-    assert set(active_children()) == initial_children
+    # Pre-existing children from other tests may have finished in the meantime.
+    assert not (set(active_children()) - initial_children)
 
     assert serial_worker_seed == other_run_worker_seed == pooled_worker_seed
     assert other_probe_worker_seed != serial_worker_seed
@@ -511,3 +528,39 @@ def test_imagenet_linear_adapter_reads_imagefolder_layout(tmp_path, view):
     image = _patterned_image(359, 271)
     expected_transform = VIEWS.get(view or "imagenet_center_crop")(size=224)
     assert torch.equal(probe.scorer.transform(image), expected_transform(image))
+
+
+def test_split_identity_survives_relocation_and_tracks_order_and_labels(tmp_path):
+    from dataclasses import replace
+
+    def split(root):
+        return ClassificationSplit(
+            classes=("red", "blue"),
+            train=(
+                LabeledImage(str(root / "red/a.jpg"), 0),
+                LabeledImage(str(root / "blue/b.jpg"), 1),
+            ),
+            test=(LabeledImage(str(root / "red/c.jpg"), 0),),
+        )
+
+    original = split(tmp_path / "first")
+    digest = original.metadata()["split_sha256"]
+    assert split(tmp_path / "moved").metadata()["split_sha256"] == digest
+    assert replace(original, train=original.train[::-1]).metadata()["split_sha256"] != digest
+    changed = replace(original.train[0], label=1)
+    assert (
+        replace(original, train=(changed, *original.train[1:])).metadata()["split_sha256"] != digest
+    )
+
+
+def test_split_metadata_accepts_numpy_integer_labels():
+    import numpy as np
+
+    def split(label):
+        return ClassificationSplit(
+            classes=("one",),
+            train=(LabeledImage("train.png", label),),
+            test=(LabeledImage("test.png", label),),
+        )
+
+    assert split(np.int64(0)).metadata() == split(0).metadata()

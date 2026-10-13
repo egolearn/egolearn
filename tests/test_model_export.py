@@ -255,7 +255,10 @@ def test_export_cli_reports_expected_errors_without_tracebacks(checkpoint, tmp_p
     assert not captured.out
 
 
-def test_hub_export_load_pins_metadata_to_weights_commit(checkpoint, tmp_path, monkeypatch):
+@pytest.mark.parametrize("entry_point", ["load", "evaluate", "initialize"])
+def test_hub_export_load_pins_metadata_to_weights_commit(
+    checkpoint, tmp_path, monkeypatch, entry_point
+):
     import huggingface_hub
 
     source, model = checkpoint
@@ -279,10 +282,25 @@ def test_hub_export_load_pins_metadata_to_weights_commit(checkpoint, tmp_path, m
     monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
     monkeypatch.setattr(huggingface_hub, "snapshot_download", forbidden)
     reference = "hf://models/org/model@v1/nested/model.safetensors"
-    loaded = load_model(reference)
+    expected = {name: tensor.clone() for name, tensor in model.state_dict().items()}
+    if entry_point == "evaluate":
+        result = evaluate_checkpoint(reference, benchmarks=[WeightBenchmark()])
+        assert result.results["weights"]["sum"] == sum(float(t.sum()) for t in expected.values())
+        metadata = result.checkpoint
+    elif entry_point == "initialize":
+        with torch.no_grad():
+            for parameter in model.parameters():
+                parameter.zero_()
+        metadata = load_pretrained_weights(model, reference)
+        assert all(torch.equal(t, model.state_dict()[n]) for n, t in expected.items())
+    else:
+        loaded = load_model(reference)
+        assert all(torch.equal(t, loaded.state_dict()[n]) for n, t in expected.items())
+        assert calls == [("nested/model.safetensors", "v1"), ("nested/model.json", "a" * 40)]
+        calls.clear()
+        _, metadata = read_checkpoint(reference)
     assert calls == [("nested/model.safetensors", "v1"), ("nested/model.json", "a" * 40)]
-    assert all(torch.equal(t, loaded.state_dict()[n]) for n, t in model.state_dict().items())
-    _, metadata = read_checkpoint(reference)
+    assert metadata is not None
     assert metadata["reference"] == reference and metadata["commit"] == "a" * 40
 
 

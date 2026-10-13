@@ -38,9 +38,12 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from pathlib import Path
+
+from hydra import compose, initialize_config_dir
+from omegaconf import OmegaConf
 
 import egolearn
-from egolearn.config import load_config
 from egolearn.core import keys as K
 
 
@@ -84,7 +87,11 @@ def batch_counts(batch):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True, help="YAML config path")
+    ap.add_argument(
+        "--config",
+        required=True,
+        help="primary Hydra .yaml config path (declare hydra.searchpath for packaged defaults)",
+    )
     ap.add_argument("--batches", type=int, default=50, help="batches to compose in phase 2")
     ap.add_argument(
         "--fill-factor",
@@ -107,12 +114,17 @@ def main() -> int:
     ap.add_argument(
         "--device",
         default=None,
-        help="override cfg.device (embedder compute; use cpu on a login node)",
+        help="override cfg.device (embedder compute; run in a compute allocation on the cluster)",
     )
     ap.add_argument("--output-json", default=None)
     args = ap.parse_args()
 
-    cfg = load_config(args.config)
+    config_path = Path(args.config).resolve()
+    if config_path.suffix != ".yaml":
+        ap.error("--config must name a primary Hydra .yaml file")
+    with initialize_config_dir(config_dir=str(config_path.parent), version_base="1.3"):
+        cfg = OmegaConf.to_container(compose(config_name=config_path.name), resolve=True)
+    assert isinstance(cfg, dict)
     # data plane only: probes would instantiate eval benchmarks we never run
     cfg.pop("probes", None)
     cfg["hooks"] = {}

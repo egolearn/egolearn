@@ -1,8 +1,9 @@
-"""One installed command for EgoLearn's Hydra training and evaluation modules."""
+"""One installed command for models, data, jobs and benchmark suites."""
 
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 import sys
 from importlib.resources import files
@@ -48,14 +49,20 @@ def _hydra_arguments(arguments: list[str]) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Train, evaluate, and export EgoLearn models.",
+        description=(
+            "Train, evaluate, export models, prepare data, submit jobs and run benchmark suites."
+        ),
         epilog=(
             "CONFIG is a packaged name or a .yaml file path. Arguments after train/eval "
             "belong to Hydra, including --help, --multirun, and key=value overrides."
         ),
     )
     parser.add_argument("--version", action="version", version=f"egolearn {__version__}")
-    parser.add_argument("command", nargs="?", choices=("train", "eval", "export"))
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=("train", "eval", "export", "data", "submit", "doctor", "bench"),
+    )
     parser.add_argument("arguments", nargs=argparse.REMAINDER, metavar="[CONFIG] [HYDRA_ARGS ...]")
     args = parser.parse_args(argv)
     if args.command is None:
@@ -64,6 +71,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "export":
         os.execv(sys.executable, [sys.executable, "-m", "egolearn.export", *args.arguments])
         return 0
+    if args.command not in {"train", "eval"}:
+        command = importlib.import_module(f"egolearn.commands.{args.command}")
+        return command.main(args.arguments)
     try:
         hydra_args = _hydra_arguments(args.arguments)
     except ValueError as error:

@@ -22,7 +22,6 @@ Usage (data already on disk, or --download to fetch the zip first):
 
 from __future__ import annotations
 
-import argparse
 import csv
 import json
 import random
@@ -30,6 +29,8 @@ import urllib.request
 import zipfile
 from collections import defaultdict
 from pathlib import Path
+
+from egolearn.commands.prepare_parsers import preparation_parser
 
 CROPS_URL = (
     "https://raw.githubusercontent.com/babyview-project/ccn-2026-object-variability/"
@@ -103,16 +104,7 @@ def generate_split(by_cat: dict[str, list[Path]], test_frac: float, seed: int) -
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--data_root", type=Path, required=True)
-    p.add_argument("--vocab_json", type=Path, required=True)
-    p.add_argument("--out_dir", type=Path, required=True)
-    p.add_argument("--download", action="store_true")
-    p.add_argument("--n_trials", type=int, default=4150)
-    p.add_argument("--n_foils", type=int, default=3)
-    p.add_argument("--trials_seed", type=int, default=0)
-    p.add_argument("--split_seed", type=int, default=0)
-    p.add_argument("--test_frac", type=float, default=0.2)
+    p = preparation_parser("babyview-4afc", description=__doc__)
     args = p.parse_args()
 
     if args.download:

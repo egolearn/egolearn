@@ -20,7 +20,7 @@ exclusive; set `init_from=null` when resuming a config that specifies initializa
 Legacy checkpoints use restricted unpickling. Full snapshots require
 `+init_from.trusted_snapshot=true` and must come from a source you trust.
 Exported safetensors weights require no pickle opt-in; see [model export](cli.md#exporting-weights).
-The source checkpoint hash, selected prefixes, and tensor count are recorded in the
+The source checkpoint file name and hash, selected prefixes, and tensor count are recorded in the
 pipeline summary and subsequent checkpoints' model metadata.
 
 `init_from.checkpoint` also accepts a model Hub reference such as

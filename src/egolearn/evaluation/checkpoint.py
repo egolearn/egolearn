@@ -10,7 +10,12 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 from egolearn.evaluation.benchmark import Benchmark
-from egolearn.evaluation.evaluator import EvaluationResult, _isolated_evaluation_rng, evaluate
+from egolearn.evaluation.evaluator import (
+    EvaluationError,
+    EvaluationResult,
+    _isolated_evaluation_rng,
+    evaluate,
+)
 from egolearn.hub import resolve
 from egolearn.model.build import build_model
 from egolearn.model.model import ComposedModel
@@ -92,10 +97,11 @@ def load_model(
     imports: Sequence[str] = (),
     trusted_snapshot: bool = False,
 ) -> ComposedModel:
-    """Reconstruct a trusted EgoLearn checkpoint/snapshot's model in eval mode.
+    """Reconstruct an EgoLearn checkpoint's model in eval mode.
 
     Existing files need an explicit model config. New pipeline-built checkpoints
     carry their resolved construction config. Training state is never restored.
+    Snapshots require trusted_snapshot=True; see SECURITY.md.
     """
     with _isolated_evaluation_rng(0):
         model, _ = _load_model(
@@ -127,6 +133,12 @@ def evaluate_checkpoint(
             imports=imports,
             trusted_snapshot=trusted_snapshot,
         )
-        result = evaluate(model, benchmarks=benchmarks, device=device, seed=seed, imports=imports)
+        try:
+            result = evaluate(
+                model, benchmarks=benchmarks, device=device, seed=seed, imports=imports
+            )
+        except EvaluationError as exc:
+            exc.partial_result.checkpoint = metadata
+            raise
     result.checkpoint = metadata
     return result

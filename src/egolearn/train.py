@@ -18,17 +18,25 @@ from __future__ import annotations
 
 import glob
 import os
+from typing import Any, cast
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
+from egolearn.run_record import RunRecord, record_run
+
 
 @hydra.main(version_base="1.3", config_path="pkg://egolearn.configs", config_name=None)
 def main(cfg: DictConfig) -> None:
+    plain = cast(dict[str, Any], OmegaConf.to_container(cfg, resolve=True))
+    assert isinstance(plain, dict)
+    with record_run(plain, "train") as record:
+        _train(dict(plain), record)
+
+
+def _train(plain: dict, record: RunRecord | None) -> None:
     import egolearn
 
-    plain = OmegaConf.to_container(cfg, resolve=True)
-    assert isinstance(plain, dict)
     dry_run = bool(plain.pop("dry_run", False))
     resume = plain.pop("resume", None)
 
@@ -44,6 +52,9 @@ def main(cfg: DictConfig) -> None:
     if dry_run:
         print("[dry-run] pipeline valid.")
         return
+
+    if record is not None:
+        pipe.driver.hooks.append(record)
 
     if resume:
         path = str(resume)

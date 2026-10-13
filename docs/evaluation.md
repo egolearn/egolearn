@@ -14,7 +14,7 @@ benchmarks = [
         "_target_": "benchmark:imagenet_linear_sgd",
         "name": "imagenet",
         "data_root": "/datasets/imagenet",
-        "encoder": "vision",
+        "encoder": "image",
     }
 ]
 imports = ["egolearn.evaluation.benchmarks.imagenet_linear"]
@@ -44,13 +44,49 @@ the pretrained encoder remains frozen.
 
 The result records metrics by benchmark name, constructor settings including
 defaults for config-driven calls, protocol versions, dataset metadata, seeds,
-package version, and resolved model config. Checkpoint evaluations also record
-the checkpoint path, SHA-256, and training step when available. Benchmark names
+package version, source commit and dirty flag, and resolved model config.
+`code_revision` reports `"unavailable"` outside a source checkout or when Git
+cannot be queried. Checkpoint evaluations record the file name, SHA-256, and
+training step when available; no checkpoint directory is stored. Benchmark names
 must be unique within an evaluation.
 
 Existing small evaluations remain available with their `probe:*` configuration
 targets. Pass those configs in `benchmarks` to evaluate them after training.
 There is one scoring implementation for training probes and standalone use.
+Linear probes record their own seed (for SGD), hyperparameters, class names,
+split sizes and split SHA-256, including when passed as constructed objects.
+Generic split hashes, also recorded by ImageNet, cover ordered relative paths,
+labels and classes, not image bytes. Manifest-backed probes also record the
+manifest's byte hash; Labeled-S records the verified canonical split hash and source.
+Linear-probe path settings retain only the dataset directory or file name, so
+recorded configs do not expose machine-specific parent directories.
+For every benchmark, the runner reduces top-level absolute local path settings
+to file or directory names. This cleanup leaves relative values and structured
+metadata intact; config-driven calls retain their original top-level `hf://`
+references. Benchmarks still receive the original paths for loading data.
+
+If benchmark preparation, execution, metric conversion, or metadata collection
+fails, `EvaluationError.partial_result` retains completed benchmarks and their
+provenance; `benchmark` identifies the failed benchmark
+and `__cause__` retains its original error. Serialized results record
+`status: "partial"` and `failed_benchmark`; successful suites record
+`status: "complete"`. The CLI replaces `output_json` with this partial result
+before exiting unsuccessfully, including when no benchmark has completed.
+Non-finite metrics (NaN or infinity) fail the benchmark before it is recorded.
+Setup errors (checkpoint loading, imports, benchmark construction, or suite
+validation) propagate normally and leave any existing output file unchanged.
+Consumers must check the process exit status before using `output_json`; a file
+from an earlier run may still exist after a setup failure. In Python:
+
+```python
+from egolearn.evaluation import EvaluationError
+
+try:
+    result = evaluate_checkpoint("run/final.pth", benchmarks=benchmarks, imports=imports)
+except EvaluationError as error:
+    error.partial_result.save_json("partial-evaluation.json")
+    raise
+```
 
 ## SAYCam access
 
@@ -101,7 +137,7 @@ The converter checks the frozen trial/category counts, target vocabulary coverag
 and local image paths, and refuses to overwrite an existing output:
 
 ```bash
-uv run python -m egolearn.evaluation.benchmarks.labeled_s_4afc.prepare \
+uv run egl data prepare labeled-s-4afc \
   --data_root "$LABELED_S_ROOT" --trials_json "$LABELED_S_TRIALS" \
   --vocab_json "$VOCAB_JSON" --output data/labeled_s_4afc_manifest.json
 ```
@@ -151,13 +187,14 @@ appropriate `image_norm` (`imagenet` for EgoLearn-trained BabyCL models,
 
 ## Checkpoint compatibility
 
-Both `CheckpointHook` files (`step_*.pth`, `final.pth`) and training snapshots
-(`snapshot_*.pth`) are supported. New files produced from a pipeline-built model
+`CheckpointHook` files (`step_*.pth`, `final.pth`) use restricted loading by
+default. Training snapshots (`snapshot_*.pth`) require an explicit
+`trusted_snapshot=True` opt-in. New files produced from a pipeline-built model
 include a versioned construction config: encoders, heads, predictors, frozen
 roles, registration imports, and resolved values such as vocabulary size.
 
 For older checkpoints, or checkpoints of manually assembled models, pass
-`model_config="run/.hydra/config.yaml"`. An explicit model-section mapping also
+`model_config="outputs/<date>/<time>/.hydra/config.yaml"`. An explicit model-section mapping also
 works. Use a resolved config, not an uncomposed YAML containing Hydra defaults.
 Only model-related nodes are resolved: training dataset environment variables
 and probe data paths are not needed. An old `vocab_size: auto` setting still
@@ -183,9 +220,12 @@ uv run egl eval imagenet_linear_eval \
   device=cuda output_json=imagenet_results.json
 ```
 
-For an older checkpoint, append `model_config=run/.hydra/config.yaml`.
+For an older checkpoint, append
+`'model_config=outputs/<date>/<time>/.hydra/config.yaml'`, substituting the training
+run's date and time (or your explicit `hydra.run.dir`). For a trusted full
+snapshot, also pass `trusted_snapshot=true`.
 The packaged ImageNet config exposes its protocol settings under `benchmarks.0`,
-for example `benchmarks.0.encoder=vision` or `benchmarks.0.batch_size=256`.
+for example `benchmarks.0.encoder=image` or `benchmarks.0.batch_size=256`.
 `egl eval --help` lists the default evaluation configuration. Custom suites
 can use `egl eval path/to/suite.yaml`. See the [CLI guide](cli.md) for overrides
 and configuration search paths.
@@ -224,13 +264,15 @@ implementation should receive a model; checkpoint loading belongs to the runner.
 
 ## Hub artifacts and access tiers
 
-`uv run python -m egolearn.hub fetch shape-bias --revision <tag-or-commit>`
+`uv run egl data fetch shape-bias --revision <tag-or-commit>`
 fetches `agentic-learning-ai-lab/egolearn-shape-bias` into
 `$EGOLEARN_DATA/shape-bias` (default `data/shape-bias`). The download is staged,
 checked against `checksums.sha256`, and installed only after verification.
 `.egolearn-fetch.json` records the requested revision, resolved commit and
 verification status. Missing checksums require `--allow-unverified`; corrupt
-checksums always fail. `--repo` and `--dest` override the defaults.
+checksums always fail. `--repo` overrides the dataset repository. To choose the
+storage root, use `egl data --root DIR fetch shape-bias --revision <tag-or-commit>`;
+`--root` goes before `fetch`, and the collection is installed in `DIR/shape-bias`.
 
 Data paths in component configs, including benchmark manifests, may use
 `hf://<org>/<repo>@<revision>[/path/in/repo]`. Revisions are tags or commit IDs
@@ -248,8 +290,8 @@ and are not tracked by `hf cache` cleanup tools. Their path is
 `<Hub cache>/datasets--<org>--<repo>/egolearn-materialized/<generation>/<commit>`;
 remove the `egolearn-materialized` directory manually when no job uses its copies.
 Existing complete copies can be reused from a read-only shared cache. First-time
-materialization needs a writable cache; alternatively use `fetch --dest` to put a
-real-file collection on writable storage. If an offline snapshot was partial,
+materialization needs a writable cache; alternatively use `egl data --root DIR fetch`
+to put a real-file collection on writable storage. If an offline snapshot was partial,
 newly cached files produce a new materialization rather than reusing that subset.
 
 An explicit `hf://models/<org>/<repo>@<revision>/vocab.json` lets a tokenizer or
@@ -288,7 +330,7 @@ uv run python -m egolearn.hub push prepared/ --name shape-bias --license CC-BY-4
 uv run egl export runs/example/final.pth exports/babycl-saycam-seed0
 uv run python -m egolearn.hub push exports/babycl-saycam-seed0 --name babycl-saycam-seed0 \
   --repo-type model --license MIT
-uv run python -m egolearn.hub verify prepared/
+uv run egl data verify prepared/
 uv run python -m egolearn.hub checksum prepared/
 ```
 
