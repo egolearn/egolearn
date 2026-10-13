@@ -1,5 +1,6 @@
 """Pin enforcement, frozen configurations, per-seed execution and array dispatch."""
 
+import hashlib
 import json
 import shlex
 import subprocess
@@ -325,7 +326,8 @@ def test_inputs_changed_during_execution_do_not_get_averaged(tmp_path, monkeypat
     assert record["status"] == "failed"
 
 
-def test_real_synthetic_evaluation_suite(tmp_path, monkeypatch):
+@pytest.mark.parametrize("artifact", ["legacy", "export", "hub_export"])
+def test_real_synthetic_evaluation_suite(tmp_path, monkeypatch, artifact):
     import torch
     from PIL import Image
 
@@ -334,7 +336,41 @@ def test_real_synthetic_evaluation_suite(tmp_path, monkeypatch):
     monkeypatch.setenv("OMP_NUM_THREADS", "1")
     model = build_model({"encoders": {"vision": {"_target_": "encoder:toy_cnn", "dim": 8}}})
     checkpoint = tmp_path / "model.pth"
-    torch.save({"model": model.state_dict(), "model_config": model.construction_config}, checkpoint)
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "model_config": model.construction_config,
+            "export_contract": model.export_contract(),
+        },
+        checkpoint,
+    )
+    pin = {"path": "model.pth", "sha256": sha256_file(checkpoint)}
+    downloads = []
+    if artifact != "legacy":
+        import huggingface_hub
+
+        from egolearn.export import export_checkpoint
+
+        exported = export_checkpoint(checkpoint, tmp_path / "export")
+        digest = hashlib.sha256(
+            (
+                sha256_file(exported / "model.safetensors") + sha256_file(exported / "model.json")
+            ).encode("ascii")
+        ).hexdigest()
+        pin = {"path": "export/model.safetensors", "sha256": digest}
+        if artifact == "hub_export":
+            cache = tmp_path / "hub/snapshots" / ("a" * 40)
+
+            def download(*, repo_id, repo_type, revision, filename):
+                assert (repo_id, repo_type) == ("org/model", "model")
+                downloads.append((filename, revision))
+                local = cache / filename
+                local.parent.mkdir(parents=True, exist_ok=True)
+                local.symlink_to(exported / Path(filename).name)
+                return str(local)
+
+            monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+            pin["path"] = "hf://models/org/model@v1/nested/model.safetensors"
     rows = []
     for label, color in enumerate(("red", "blue")):
         image = tmp_path / f"image-{label}.png"
@@ -362,7 +398,7 @@ def test_real_synthetic_evaluation_suite(tmp_path, monkeypatch):
         seeds=[0],
         overrides=[],
         inputs={
-            "checkpoint": {"path": "model.pth", "sha256": sha256_file(checkpoint)},
+            "checkpoint": pin,
             "benchmarks.0.manifest": {"path": "split.json", "sha256": sha256_file(split)},
         },
         metrics={"objects/top1": "max"},
@@ -372,3 +408,49 @@ def test_real_synthetic_evaluation_suite(tmp_path, monkeypatch):
     result = summarize(manifest, allow_unverified=True)
     assert not result["problems"], result
     assert 0 <= result["rows"][0]["mean"] <= 1
+    record = json.loads((manifest.parent / "seed-0/record.json").read_text())
+    assert record["checkpoint"]["sha256"] == pin["sha256"]
+    if artifact == "hub_export":
+        assert downloads == [("nested/model.safetensors", "v1"), ("nested/model.json", "a" * 40)]
+
+
+@pytest.mark.parametrize("hub", [False, True])
+@pytest.mark.parametrize("key", ["checkpoint", "init_from.checkpoint"])
+@pytest.mark.parametrize("filename", ["model.json", "model.safetensors"])
+def test_export_pins_cover_both_files_before_and_after_planning(
+    tmp_path, monkeypatch, key, filename, hub
+):
+    weights = tmp_path / "model.safetensors"
+    metadata = tmp_path / "model.json"
+    # Pin validation hashes bytes without loading model code or tensor frameworks.
+    weights.write_bytes(b"synthetic weights")
+    metadata.write_text('{"model": "synthetic metadata"}')
+    digest = hashlib.sha256(
+        (sha256_file(weights) + sha256_file(metadata)).encode("ascii")
+    ).hexdigest()
+    reference = weights.name
+    downloads = []
+    if hub:
+        import huggingface_hub
+
+        cache = tmp_path / "hub/snapshots" / ("a" * 40)
+
+        def download(*, repo_id, repo_type, revision, filename):
+            downloads.append((filename, revision))
+            local = cache / filename
+            local.parent.mkdir(parents=True, exist_ok=True)
+            if not local.exists():
+                local.symlink_to(tmp_path / Path(filename).name)
+            return str(local)
+
+        monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+        reference = "hf://models/org/model@v1/nested/model.safetensors"
+    spec = suite_file(tmp_path, inputs={key: {"path": reference, "sha256": digest}})
+    planned = bench.load_suite(spec, [])
+    if hub:
+        assert downloads == [("nested/model.safetensors", "v1"), ("nested/model.json", "a" * 40)]
+    (tmp_path / filename).write_text("changed after planning")
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        bench.verify_inputs(planned["inputs"])
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        bench.load_suite(spec, [])

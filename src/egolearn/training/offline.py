@@ -25,7 +25,8 @@ windows instead -- the conventional video pretraining epoch (V-JEPA /
 VideoMAE: shuffled clips, one view, a masked-prediction loss); `subsample`
 then thins windows the way it thins frames.  Utterance-pair IID (original
 CVCL) needs the utterance->frame mapping that admission components own in
-streaming; add unit=pair when a project needs it.
+streaming. BabyCL supplies a method-specific offline driver for mixed segment/pair
+and pairs-only batches, reusing this optimization and checkpoint loop.
 
 Clocks: in streaming runs, progress = the fraction of the stream consumed so far, used instead
 of epochs.  In offline mode `progress` instead means the fraction of planned gradient steps
@@ -48,6 +49,7 @@ from egolearn.core.context import Context
 from egolearn.data.batching.recipe import modality_for_unit
 from egolearn.data.loading import Loader
 from egolearn.data.sources.base import DenseFrameChannel, Stream
+from egolearn.data.text import VocabTokenizer
 from egolearn.model.losses.base import own_forward_slots
 from egolearn.run_record import recorded_fit
 
@@ -77,6 +79,7 @@ class OfflineDriver:
         hooks: list | None = None,
         grad_accumulation: int = 1,
         prefetch: bool = False,
+        tokenizer: VocabTokenizer | None = None,
     ):
         self.run_config: dict | None = None
         self.run_inputs: dict | None = None
@@ -105,6 +108,7 @@ class OfflineDriver:
         self.clip_stride = int(clip_stride)
         self.n = int(n)
         self.views = list(views)
+        self.tokenizer = tokenizer
         self.epochs = None if epochs is None else int(epochs)
         self.max_steps = None if max_steps is None else int(max_steps)
         self.subsample = max(1, int(subsample))
@@ -120,6 +124,22 @@ class OfflineDriver:
         self.memories: dict = {}  # hook compatibility (nothing stored)
 
     # ------------------------------------------------------------------
+    @property
+    def slot_names(self) -> set[str]:
+        return {self.slot}
+
+    @property
+    def text_slots(self) -> set[str]:
+        return set()
+
+    @property
+    def index_units(self) -> str:
+        return f"{self.unit}s"
+
+    @property
+    def batch_description(self) -> str:
+        return f"{self.slot}(n={self.n}, views={self.views})"
+
     def _build_index(self):
         """List every (subsampled) item ref up front, turning the stream into
         the conventional 'dataset as a list' that IID training expects:
@@ -247,7 +267,7 @@ class OfflineDriver:
         # offline progress clock = fraction of planned gradient steps
         self.ctx.clock.total_observations = planned
         print(
-            f"[offline] index: {len(refs)} {self.unit}s, "
+            f"[offline] index: {len(refs)} {self.index_units}, "
             f"{batches_per_epoch} batches/epoch, {planned} planned steps",
             flush=True,
         )

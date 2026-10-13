@@ -24,6 +24,19 @@ def summarize(path: Path, allow_unverified: bool = False) -> dict:
     seeds = [run["seed"] for run in runs]
     if any(type(seed) is not int for seed in seeds) or len(set(seeds)) != len(seeds):
         raise ValueError("manifest contains invalid or repeated seeds")
+    inputs = manifest.get("inputs")
+    if not isinstance(inputs, dict):
+        raise ValueError("manifest must declare input pins (an empty mapping is allowed)")
+    input_sha256 = {}
+    for key, item in inputs.items():
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", item["sha256"]) is None
+        ):
+            raise ValueError(f"manifest input {key!r} must declare a lowercase SHA-256")
+        # Content identifies an input; its local storage path may differ between runs.
+        input_sha256[key] = item["sha256"]
     directions = manifest["metrics"]
     if not directions or any(value not in {"min", "max"} for value in directions.values()):
         raise ValueError("manifest must declare metric directions")
@@ -94,6 +107,8 @@ def summarize(path: Path, allow_unverified: bool = False) -> dict:
     return {
         "name": manifest["name"],
         "entry": manifest["entry"],
+        "seeds": sorted(seeds),
+        "input_sha256": input_sha256,
         "rows": rows,
         "problems": problems,
         "unverified_seeds": unverified,
@@ -111,6 +126,10 @@ def print_table(path: Path, format: str, baseline: Path | None, allow_unverified
         reference = summarize(baseline, allow_unverified)
         if (result["name"], result["entry"]) != (reference["name"], reference["entry"]):
             raise ValueError("baseline must describe the same suite name and entry")
+        if result["seeds"] != reference["seeds"]:
+            raise ValueError("baseline seed sets must match")
+        if result["input_sha256"] != reference["input_sha256"]:
+            raise ValueError("baseline input pins must match (config keys and SHA-256 checksums)")
         reference_rows = {row["metric"]: row for row in reference["rows"]}
         if set(reference_rows) != {row["metric"] for row in result["rows"]}:
             raise ValueError("baseline metric names must match")

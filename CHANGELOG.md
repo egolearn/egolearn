@@ -13,6 +13,13 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   three-seed BabyCL SAYCam suite for Labeled-S 4AFC and linear decoding.
   Ordinary records preserve nonfinite-step skipping, avoid full dataset scans,
   and retain parent-run provenance and durable checkpoint links across attempts.
+- `egl export` writes safetensors model weights and JSON construction metadata,
+  contract, and portable source provenance. Evaluation and initialization share
+  a reader for exported directories and legacy checkpoints; full snapshots need
+  explicit trust. Model Hub uploads accept the exported pair only, and model
+  references without a filename fail before downloading. Benchmark suites pin
+  both exported files, including paired Hub downloads; environment diagnostics
+  check the safetensors dependency.
 - Complete `egl` lifecycle commands: a shared dataset catalog with access tiers,
   Hub fetch and checksum verification, benchmark preparation under one data root,
   read-only environment diagnostics, and dispatch to the cluster launcher.
@@ -22,7 +29,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   comparisons. Training and evaluation can also opt into `record_json` directly.
 - Add one-command Slurm/Apptainer submission with CPU environment preparation,
   a pinned lab image, scratch caches, arrays and immutable per-run code snapshots.
-
+- Memory Storyboard and BabyCL as 1:1 method ports (`src/egolearn/methods/`)
+  with reproduction configs under `projects/`.
+- BabyCL offline training with complete storyboard/utterance indexing, mixed or
+  pairs-only batches, utterance epochs, and deterministic prefetch/resume.
 - Torch-free Hub path resolution and checksummed, private-by-default dataset/checkpoint
   fetch and push commands; documented dataset access tiers. `init_from.checkpoint`
   accepts model Hub references and retains their resolved commit across snapshot resume.
@@ -101,6 +111,13 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Changed
 
+- `egl doctor --submit` checks submission tools and cluster storage on planning
+  hosts, including CPU allocations. The documented benchmark workflow stops
+  before creating a plan if diagnostics fail.
+- Cluster instructions use the shell launcher on login nodes and run Python
+  diagnostics and benchmark planning inside compute allocations.
+- Benchmark baseline comparisons require matching seed sets and input keys/checksums;
+  relocated identical inputs remain comparable, and mismatches produce no deltas.
 - Run `scripts/slurm/train.sbatch` and `bench.sbatch` directly on the login node;
   passing either wrapper to `sbatch` now fails with migration instructions.
   Benchmark JSON is written to the isolated run's `work/bench.json`.
@@ -149,10 +166,26 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 - Automatic evaluation records serialize in-memory dataclass arguments while
   preserving the original objects for benchmark construction. Loading a snapshot
   restores its run provenance, or clears stale provenance when none was saved.
+- All benchmark configs recorded by standalone evaluation reduce absolute local
+  path settings to file or directory names, while preserving original top-level
+  `hf://` references, structured metadata, and paths used to load benchmark data.
+
+- Evaluation rejects non-finite metrics before recording a benchmark, preserving
+  serializable partial results. Linear-probe configs record dataset and manifest
+  names without machine-specific directories, alongside existing split hashes.
+
+- Share restricted checkpoint reading between evaluation and initialization;
+  full snapshots now require explicit trust, and source provenance stores only
+  checkpoint file names and hashes.
+- Record evaluation code revisions and linear-probe settings and split hashes,
+  preserve completed benchmark results on failure, and restore MPS RNG state.
+- Snapshot resume restores only saved `init_from` lineage, preserving the live
+  model's construction metadata in subsequent checkpoints and snapshots.
 - Slurm submission creates its code snapshot and run record with Bash and standard
   Unix tools, without invoking Python on the login node. Command arguments must be
   valid UTF-8.
-
+- Benchmark entry points compose Hydra defaults in project configs; offline BabyCL
+  retains its 5,000-step checkpoint cadence when inheriting shared settings.
 - Determinism (from PR review): the configured seed now also seeds the
   global torch/python RNGs and snapshots carry their state, so the same
   seed gives bit-identical weights and a resumed run matches an

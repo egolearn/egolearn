@@ -6,14 +6,44 @@ an explicit destination and refuses to overwrite an existing run. See
 [run records](benchmark_suites.md#run-records-and-scope) for paths and Python usage.
 
 Use `uv run egl` after `uv sync`, or `egl` in an activated environment.
-`egolearn` is an equivalent installed alias. Commands are `train`, `eval`, `data`,
+`egolearn` is an equivalent installed alias. Commands are `train`, `eval`, `export`, `data`,
 `submit`, `doctor`, and `bench`; each accepts `--help`.
+
+These Python commands are for workstations and compute allocations. On cluster
+login nodes, use `scripts/slurm/submit`; follow the [cluster guide](cluster.md).
 
 `egl train` and `egl eval` dispatch to the Hydra training and evaluation modules.
 The first argument can be a packaged config name or an existing `.yaml` file;
 relative file paths are resolved from the caller's working directory. `egl eval`
 without a config selects the packaged `evaluate` defaults. `egl --version`
 prints the installed version.
+
+## Exporting weights
+
+Install the `train` extra, then export a checkpoint into a new directory:
+
+```bash
+egl export runs/example/final.pth exports/example
+egl eval imagenet_linear_eval checkpoint=exports/example data_root=/path/to/imagenet
+```
+
+`egl export` takes ordinary arguments, not Hydra overrides. `egl export --help`
+lists its options. It writes `model.safetensors` and `model.json` with construction
+metadata, the export contract, source filename/SHA-256/step, and the export code
+revision. A source checkpoint must already contain construction metadata and an
+export contract. Existing output directories are refused, including empty ones.
+For a full snapshot you created and trust, add `--trusted-snapshot`; see
+[checkpoint trust](../SECURITY.md#model-export-and-checkpoint-trust).
+
+Publish the exported directory with:
+
+```bash
+python -m egolearn.hub push exports/example --name example --repo-type model --license MIT
+```
+
+Model uploads validate the pair and reject additional payloads, including `.pth`
+files. Dataset uploads retain their existing collection format. Snapshots stay
+in the local run directory.
 
 ## Configuration and overrides
 
@@ -80,10 +110,13 @@ script entry points retain their original defaults.
 
 ## Diagnostics and cluster submission
 
+Run these commands on a workstation or in a compute allocation:
+
 ```bash
 egl doctor
 egl doctor --extra train --require-cuda
 egl doctor --cluster --require-env WANDB_API_KEY
+egl doctor --submit --skip-cuda
 egl submit --gres=gpu:1 --time=01:00:00 -- egl train toy_streaming
 ```
 
@@ -96,17 +129,23 @@ Cluster checks activate with `--cluster` or inside a Slurm job. They share requi
 and optional storage-variable names with the launcher. Host checks resolve symlinks
 before rejecting paths under the host's `$HOME`. Inside an Apptainer container,
 `$HOME` is scratch by design: paths must still be absolute, but may be under that
-container home. Submission tools are checked on login
-hosts and Apptainer on compute hosts; neither is required inside a job container.
-Doctor creates no directories, downloads
-no packages and changes no settings.
+container home. Use `--submit` on a host that will submit jobs, including a CPU
+planning allocation. It implies `--cluster` and checks Bash, Git, `sbatch`,
+`iconv`, `tar`, and uv. Without `--submit`, cluster diagnostics check Apptainer
+on compute hosts, Bash/Git/`sbatch` outside allocations, and no host tools inside
+a job container. Doctor creates no directories, downloads no packages and changes
+no settings.
+
+On login nodes use the shell launcher's checks or submit doctor to a CPU/GPU
+allocation as shown in [cluster diagnostics](cluster.md#diagnostics).
+`--skip-cuda` skips the torch probe, but doctor itself still runs Python.
 
 Submit forwards its arguments to the [cluster launcher](cluster.md), including
 `--sweep`, `--commands`, and `--dry-run`. Run it from a clean EgoLearn checkout root
 after sourcing `env.sh`: that checkout is the artifact the launcher archives.
 The installed CLI can live elsewhere, but a wheel alone cannot supply a checkout
-to archive. `--help` works outside a checkout. The original launcher remains
-available for login nodes without a Python environment. No shared lab package is
+to archive. `--help` works outside a checkout. Use `scripts/slurm/submit` directly
+on login nodes, where Python commands are prohibited. No shared lab package is
 required; the existing launcher is the sole submission implementation.
 
 ## Benchmark suites
@@ -115,10 +154,11 @@ required; the existing launcher is the sole submission implementation.
 egl bench run benchmarks/toy.yaml --output runs/toy-suite
 egl bench table runs/toy-suite/manifest.json
 egl bench table runs/toy-suite/manifest.json --format json
-egl bench run benchmarks/toy.yaml --output "$EGOLEARN_ARTIFACTS/toy-suite" \
-  --submit --sbatch=--cpus-per-task=2 --sbatch=--time=00:10:00
 ```
 
 The [suite guide](benchmark_suites.md) defines pinned inputs, per-seed records,
 baseline comparisons and failure handling. Local execution is sequential; `--submit`
 creates one Slurm array task per seed. The toy suite uses synthetic data and CPU.
+Follow [cluster planning in a CPU job](benchmark_suites.md#cluster-planning-in-a-cpu-job)
+before running `egl bench run --submit`: it composes configs and hashes inputs
+in the submitting process, so it must run inside a compute allocation.

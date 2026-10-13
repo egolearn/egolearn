@@ -1,19 +1,18 @@
 """Initialize parameters and buffers selected by include/exclude name prefixes.
 
 Strict loading requires complete, shape-compatible selections. Loading consumes
-no RNG; only load trusted checkpoint/snapshot files. On a fresh V-JEPA run, the
+no RNG; legacy snapshots require explicit trust. On a fresh V-JEPA run, the
 step-0 sync replaces any loaded EMA target with the initialized context encoder.
 """
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
 
-from egolearn.hub import resolve_with_metadata
+from egolearn.utils.checkpoint import read_checkpoint
 
 
 def _selected(name: str, include: Sequence[str] | None, exclude: Sequence[str]) -> bool:
@@ -28,17 +27,14 @@ def load_pretrained_weights(
     include: Sequence[str] | None = None,
     exclude: Sequence[str] | None = None,
     strict: bool = True,
+    trusted_snapshot: bool = False,
 ) -> dict:
     """Copy `checkpoint`'s model tensors under `include` prefixes into `model`.
 
-    Returns a provenance summary: path, sha256, the source run's step, the
+    Returns a provenance summary: filename, sha256, the source run's step, the
     prefixes, and how many tensors were copied (and skipped, when not strict).
     Hub references also retain the original reference and resolved commit.
     """
-    path, provenance = resolve_with_metadata(checkpoint, repo_type="model")
-    path = path.expanduser()
-    if not path.is_file():
-        raise FileNotFoundError(f"init_from.checkpoint not found: {path}")
     include = (
         [include] if isinstance(include, str) else list(include) if include is not None else None
     )
@@ -46,14 +42,8 @@ def load_pretrained_weights(
     if include is not None and not include:
         raise ValueError("init_from.include is empty; omit it to copy every tensor")
 
-    with path.open("rb") as file:
-        digest = hashlib.file_digest(file, "sha256").hexdigest()
-        file.seek(0)
-        # snapshots carry refs and RNG states next to the tensors; like
-        # utils.snapshot and evaluation.checkpoint, only load trusted files
-        state = torch.load(file, map_location="cpu", weights_only=False)
-    if not isinstance(state, dict) or "model" not in state:
-        raise ValueError(f"{path} is not an EgoLearn checkpoint/snapshot (no 'model' key)")
+    state, provenance = read_checkpoint(checkpoint, trusted_snapshot=trusted_snapshot)
+    filename = provenance["filename"]
     source: dict[str, torch.Tensor] = state["model"]
     target = model.state_dict()
 
@@ -61,7 +51,7 @@ def load_pretrained_weights(
         for prefix in include:
             if not any(k.startswith(prefix) for k in source):
                 raise ValueError(
-                    f"init_from.include prefix {prefix!r} matches nothing in {path.name} "
+                    f"init_from.include prefix {prefix!r} matches nothing in {filename} "
                     f"(checkpoint tensors look like {next(iter(source), '?')!r})"
                 )
             if not any(k.startswith(prefix) for k in target):
@@ -100,21 +90,17 @@ def load_pretrained_weights(
         if missing:
             raise ValueError(
                 f"init_from: {len(missing)} model tensor(s) under the included prefixes are "
-                f"absent from {path.name}, e.g. {missing[:3]} -- a partially initialized "
+                f"absent from {filename}, e.g. {missing[:3]} -- a partially initialized "
                 "component would silently train from random weights"
             )
     if not copied:
-        raise ValueError(f"init_from: nothing selected from {path.name}")
+        raise ValueError(f"init_from: nothing selected from {filename}")
 
     result = model.load_state_dict(copied, strict=False)
     assert not result.unexpected_keys, result.unexpected_keys
-    step = state.get("step", (state.get("context") or {}).get("clock", {}).get("step"))
     return {
         **provenance,
-        "checkpoint": str(path),
-        "sha256": digest,
-        "training_provenance": state.get("run_provenance") or "unavailable",
-        "step": step,
+        "checkpoint": filename,
         "include": include,
         "exclude": exclude,
         "strict": bool(strict),

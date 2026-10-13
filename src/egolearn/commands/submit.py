@@ -29,6 +29,7 @@ def main(argv: list[str] | None = None) -> int:
             "usage: egl submit [sbatch options] [--dry-run] [--sweep] -- command [args ...]\n"
             "       egl submit [sbatch options] --commands FILE\n\n"
             "Run from a clean EgoLearn checkout after sourcing env.sh.\n"
+            "On login nodes, invoke scripts/slurm/submit directly; this alias runs Python.\n"
             "Arguments pass unchanged to scripts/slurm/submit; see docs/cluster.md.\n"
             "--dry-run creates a local snapshot but submits no jobs."
         )

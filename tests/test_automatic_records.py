@@ -13,7 +13,7 @@ from PIL import Image
 
 import egolearn
 from egolearn.config.registry import BENCHMARKS
-from egolearn.evaluation import Benchmark, evaluate, evaluate_checkpoint
+from egolearn.evaluation import Benchmark, EvaluationError, evaluate, evaluate_checkpoint
 from egolearn.evaluation.linear_probe import ClassificationSplit, LabeledImage, LinearProbe
 from egolearn.hub import sha256_file, write_checksums
 from egolearn.run_record import record_run
@@ -178,8 +178,9 @@ def test_evaluation_failure_retains_completed_protocol_and_checkpoint(tmp_path, 
     checkpoint = tmp_path / "checkpoint.pth"
     CheckpointHook(str(tmp_path))._save(pipe.driver, checkpoint.name)
     record_path = tmp_path / "record.json"
-    with pytest.raises(RuntimeError, match="synthetic failure"):
+    with pytest.raises(EvaluationError, match="fails") as error:
         evaluate_checkpoint(checkpoint, benchmarks=[Score(), Fails()], record_json=record_path)
+    assert str(error.value.__cause__) == "synthetic failure"
     record = json.loads(record_path.read_text())
     assert record["status"] == "failed"
     assert record["checkpoint"]["sha256"] == sha256_file(checkpoint)
@@ -384,7 +385,7 @@ def test_evaluation_records_in_memory_split_without_changing_benchmark_arguments
     assert record["evaluation"]["results"] == result.results
     plain_split = json.loads(json.dumps(asdict(split)))
     assert record["config"]["benchmarks"][0]["split"] == plain_split
-    assert record["evaluation"]["configs"]["linear"]["split"] == plain_split
+    assert record["evaluation"]["configs"]["linear"]["split"] == split.metadata()
     result.save_json(tmp_path / "evaluation.json")
 
 

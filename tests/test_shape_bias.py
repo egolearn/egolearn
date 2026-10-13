@@ -16,6 +16,7 @@ from egolearn.evaluation.benchmarks.shape_bias import (
     validate_stimulus_manifest,
 )
 from egolearn.evaluation.benchmarks.shape_bias.stimuli import sha256_file
+from egolearn.evaluation.evaluator import _configured_benchmark
 from egolearn.model.encoders.base import EncoderOutput
 
 
@@ -143,12 +144,19 @@ def test_probe_writes_compact_artifact(tmp_path: Path, monkeypatch) -> None:
     stimulus_root = tmp_path / "stimuli"
     prepare_shape_bias_stimuli(assets, stimulus_root, seed=1)
     output_path = tmp_path / "shape_bias.json"
-    probe = ShapeBiasProbe(
-        name="shape_bias",
-        manifest=str(stimulus_root / "stimulus_manifest.json"),
-        batch_size=31,
-        output_json=str(output_path),
+    probe, config = _configured_benchmark(
+        {
+            "_target_": "probe:shape_bias",
+            "name": "shape_bias",
+            "manifest": str(stimulus_root / "stimulus_manifest.json"),
+            "batch_size": 31,
+            "output_json": str(output_path),
+        }
     )
+    assert isinstance(probe, ShapeBiasProbe)
+    assert config["manifest"] == "stimulus_manifest.json"
+    assert config["output_json"] == output_path.name
+    assert str(tmp_path) not in json.dumps(config)
 
     metrics = probe.run(_FakeModel(), SimpleNamespace(device=torch.device("cpu")))
 

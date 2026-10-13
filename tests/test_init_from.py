@@ -88,6 +88,7 @@ def test_include_copies_only_the_named_encoder(toy_config, tmp_path, trained):
     assert not _equal(_sub(got, "heads."), _sub(state, "heads."))
     assert pipe.init_from["tensors"] == len(_sub(state, "encoders.vision."))
     assert pipe.init_from["step"] == 2
+    assert pipe.init_from["checkpoint"] == ckpt.name
     assert "init_from" in pipe.summary()
     # provenance travels with the model so later checkpoints record their lineage
     assert pipe.model.construction_config["init_from"]["sha256"] == pipe.init_from["sha256"]
@@ -121,9 +122,9 @@ def test_corrupt_checkpoint_has_pipeline_context(toy_config, tmp_path, payload, 
     assert isinstance(caught.value.__cause__, error)
 
 
-@pytest.mark.parametrize("hub_path", [False, True])
-def test_resumed_checkpoints_keep_initialization_lineage(
-    toy_config, tmp_path, trained, monkeypatch, hub_path
+@pytest.mark.parametrize("initialized,hub_path", [(False, False), (True, False), (True, True)])
+def test_resumed_checkpoints_keep_live_config_and_lineage(
+    toy_config, tmp_path, trained, monkeypatch, initialized, hub_path
 ):
     _, checkpoint, _ = trained
     reference = str(checkpoint)
@@ -140,7 +141,8 @@ def test_resumed_checkpoints_keep_initialization_lineage(
         monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
         reference = "hf://org/model@v1/final.pth"
     cfg = toy_config(tmp_path / "initialized")
-    cfg["init_from"] = {"checkpoint": reference}
+    if initialized:
+        cfg["init_from"] = {"checkpoint": reference}
     pipe = egolearn.build(cfg)
     if hub_path:
         assert pipe.init_from["reference"] == reference
@@ -155,19 +157,46 @@ def test_resumed_checkpoints_keep_initialization_lineage(
     cfg["init_from"] = None
     cfg["driver"]["max_steps"] = 3
     cfg["hooks"]["checkpoint_every"] = 1
+    # Explicit defaults keep the weights compatible while changing the live
+    # construction metadata, including the imports needed to rebuild the model.
+    cfg["model"]["heads"]["proj"]["field"] = "pooled"
+    cfg["_imports_"] = ["egolearn.model.heads"]
     resumed = egolearn.build(cfg)
+    expected = copy.deepcopy(resumed.model.construction_config)
+    if initialized:
+        expected["init_from"] = pipe.init_from
     load_snapshot(snapshot, resumed.driver)
+    assert resumed.model.construction_config == expected
     resumed.driver.fit()
     final = torch.load(tmp_path / "resumed/run/final.pth", weights_only=True)
     assert final["step"] == 3
-    assert final["model_config"] == pipe.model.construction_config
-    assert final["model_config"]["init_from"] == pipe.init_from
+    assert final["model_config"] == expected
+    resumed_snapshot = str(tmp_path / "resumed.pth")
+    save_snapshot(resumed_snapshot, resumed.driver)
+    assert torch.load(resumed_snapshot, weights_only=False)["model_config"] == expected
+
+
+@pytest.mark.parametrize("missing_config", [False, True])
+def test_resume_without_saved_model_config_keeps_live_config(
+    toy_config, tmp_path, trained, missing_config
+):
+    _, _, snapshot = trained
+    state = torch.load(snapshot, weights_only=False)
+    if missing_config:
+        del state["model_config"]
+    else:
+        state["model_config"] = None
+    torch.save(state, snapshot)
+    resumed = egolearn.build(toy_config(tmp_path / "resumed"))
+    expected = copy.deepcopy(resumed.model.construction_config)
+    load_snapshot(str(snapshot), resumed.driver)
+    assert resumed.model.construction_config == expected
 
 
 def test_default_copies_everything_and_snapshots_are_accepted(toy_config, tmp_path, trained):
     state, _, snap = trained
     cfg = toy_config(tmp_path / "dst")
-    cfg["init_from"] = {"checkpoint": str(snap)}
+    cfg["init_from"] = {"checkpoint": str(snap), "trusted_snapshot": True}
     pipe = egolearn.build(cfg)
     assert _equal(pipe.model.state_dict(), state)
     assert pipe.init_from["step"] == 2  # read from the snapshot's clock
