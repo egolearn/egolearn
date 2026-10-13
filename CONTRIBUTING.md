@@ -111,6 +111,12 @@ files.
 | llm | `@pytest.mark.llm` | manual only (paid APIs), never CI | `uv run pytest -m llm` |
 
 Every ported or new library component lands with tests in the appropriate tier.
+Prefer a small set of behavior tests over a test for every function or input
+spelling. Extend an existing test when it already exercises the behavior; keep
+separate cases for known regressions and distinct failure modes. Share setup for
+the same contract, and avoid Cartesian products of independent options unless
+their interaction matters. Keep numerical correctness, reproducibility, checkpoint
+safety, and data-integrity checks when trimming redundant smoke tests.
 
 ## Dependencies
 
