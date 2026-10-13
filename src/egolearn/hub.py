@@ -51,6 +51,11 @@ def resolve_with_metadata(
         raise ValueError("expected hf://[models/|datasets/]org/repo@revision[/file]")
     kind, repo, revision, relative = match.groups()
     repo_type = {"models": "model", "datasets": "dataset"}.get(kind, repo_type)
+    if repo_type == "model" and not relative:
+        raise ValueError(
+            f"model Hub reference requires an explicit filename: {path!s}; "
+            "use hf://models/org/repo@revision/model.safetensors"
+        )
     if relative:
         _check_rel(relative)
     if relative and repo_type == "model":
@@ -256,6 +261,7 @@ def fetch(
     repo: str | None = None,
     repo_type: str = "dataset",
     allow_unverified: bool = False,
+    replace: bool = True,
 ) -> Path:
     """Stage and verify a pinned download before replacing dest/name.
 
@@ -270,6 +276,8 @@ def fetch(
     root = Path(dest or os.environ.get("EGOLEARN_DATA", "data"))
     root.mkdir(parents=True, exist_ok=True)
     target = root / name
+    if target.exists() and not replace:
+        raise FileExistsError(f"destination already exists: {target}; pass --replace to replace it")
     rid = repo or f"{ORG}/egolearn-{name}"
     info = HfApi().repo_info(repo_id=rid, repo_type=repo_type, revision=revision)
     if not info.sha:
@@ -295,6 +303,8 @@ def fetch(
         (stage / FETCH_RECORD).write_text(json.dumps(record, indent=2) + "\n")
         with (root / f".{name}.lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
+            if target.exists() and not replace:
+                raise FileExistsError(f"destination already exists: {target}; pass --replace")
             if target.is_symlink() or (target.exists() and not target.is_dir()):
                 raise ValueError(f"destination must be a directory, not a symlink: {target}")
             backup = Path(temporary) / "previous"
@@ -351,13 +361,16 @@ def push(
     if not src.is_dir():
         raise NotADirectoryError(src)
     rid = repo or f"{ORG}/egolearn-{name}"
-    api = HfApi()
     with tempfile.TemporaryDirectory(prefix="egolearn-push-") as temporary:
         stage = Path(temporary)
         for relative in _listed_files(src):
             target = stage / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src / relative, target)
+        if repo_type == "model":
+            from egolearn.utils.model_artifact import validate_export
+
+            validate_export(stage, publishing=True)
         write_checksums(stage)
         # Do not copy arbitrary run README/configuration metadata into a card.
         (stage / CARD).write_text(
@@ -365,6 +378,7 @@ def push(
             f"# {name}\n\nEgoLearn {repo_type} collection.\n\n"
             f"`{CHECKSUMS}` records SHA-256 digests for every payload file.\n"
         )
+        api = HfApi()
         try:
             existing = api.repo_info(repo_id=rid, repo_type=repo_type)
         except RepositoryNotFoundError:

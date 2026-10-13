@@ -1,14 +1,17 @@
 # Slurm launchers
 
-See [cluster setup and submission](../../docs/cluster.md). The front door is:
+See [cluster setup and submission](../../docs/cluster.md). On the login node, use:
 
 ```bash
 source env.sh
-scripts/slurm/submit [sbatch options] -- python -m egolearn.train [Hydra options]
+scripts/slurm/submit [sbatch options] -- egl train CONFIG [Hydra options]
 ```
 
 `submit` snapshots a clean commit, prepares the pinned container/environment in a
 CPU job when needed, and submits the requested command with a dependency.
+The command after `--` runs on a compute node. Keep Python off login nodes:
+`egl submit`, `egl doctor` and `egl bench` require a workstation or compute allocation.
+See [CPU benchmark planning](../../docs/benchmark_suites.md#cluster-planning-in-a-cpu-job).
 `--sweep` and `--commands` create one array. `--dry-run` prints the planned calls.
 `train.sbatch` and `bench.sbatch` are compatibility wrappers to run on the login node without sbatch (one GPU by default);
 `prep.sbatch`, `run.sbatch` and `run_array.sbatch` are internal entry points.

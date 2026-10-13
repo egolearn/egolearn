@@ -6,7 +6,6 @@ existing renders. Neither model outputs nor their ordering determine trial selec
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import importlib.metadata
 import json
@@ -21,6 +20,7 @@ from typing import Any
 
 from PIL import Image
 
+from egolearn.commands.prepare_parsers import preparation_parser
 from egolearn.evaluation.benchmarks.shape_bias.stimuli import sha256_file, write_json
 
 PAPER = "https://doi.org/10.1016/j.cognition.2023.105690"
@@ -426,18 +426,7 @@ def prepare_exp1(output: Path, *, seed: int = 33, n_per_condition: int = 1024) -
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-dir", type=Path, default=Path("data/spatial_relations/v1"))
-    parser.add_argument("--exp3-image-root", type=Path)
-    parser.add_argument(
-        "--generator-root",
-        type=Path,
-        help="external simple-relational-reasoning checkout; never modified",
-    )
-    parser.add_argument("--experiment", choices=("exp1", "exp3", "both"), default="both")
-    parser.add_argument("--seed", type=int, default=33)
-    parser.add_argument("--n-per-condition", type=int, default=1024)
-    parser.add_argument("--validate-only", action="store_true")
+    parser = preparation_parser("spatial-relations", description=__doc__)
     args = parser.parse_args()
     root = args.output_dir.resolve()
     experiments = ("exp1", "exp3") if args.experiment == "both" else (args.experiment,)

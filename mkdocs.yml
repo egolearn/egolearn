@@ -112,6 +112,7 @@ nav:
     - Start from a checkpoint: initialization.md
   - Evaluation:
     - Evaluate a model: evaluation.md
+    - Benchmark suites: benchmark_suites.md
     - Spatial relations: evaluation/spatial_relations.md
   - Methods:
     - BabyCL: projects/babycl.md

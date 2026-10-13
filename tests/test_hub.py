@@ -76,6 +76,17 @@ def test_torch_free_and_local_passthrough():
     assert hub.resolve("relative/file") == Path("relative/file")
 
 
+def test_fetch_no_replace_preserves_local_collection(remote, tmp_path):
+    _, state = remote
+    target = tmp_path / "local" / "shape-bias"
+    target.mkdir(parents=True)
+    (target / "original").write_text("local data")
+    with pytest.raises(FileExistsError, match="replace"):
+        hub.fetch("shape-bias", target.parent, replace=False)
+    assert not state.downloads
+    assert (target / "original").read_text() == "local data"
+
+
 def test_resolve_directory_file_and_commit_log(remote, caplog):
     _, state = remote
     with caplog.at_level("INFO"):
@@ -85,6 +96,31 @@ def test_resolve_directory_file_and_commit_log(remote, caplog):
     assert "a" * 40 in caplog.text
     with pytest.raises(FileNotFoundError):
         hub.resolve("hf://org/data@v1/absent")
+
+
+@pytest.mark.parametrize(
+    "reference,repo_type",
+    [
+        ("hf://models/org/repo@v1", "dataset"),
+        ("hf://models/org/repo@v1", "model"),
+        ("hf://org/repo@v1", "model"),
+    ],
+)
+def test_model_reference_requires_filename_before_any_download(monkeypatch, reference, repo_type):
+    import huggingface_hub
+
+    def forbidden(**kwargs):
+        raise AssertionError("a filename-less model reference attempted a download")
+
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", forbidden)
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", forbidden)
+    with pytest.raises(ValueError, match="model Hub reference requires an explicit filename"):
+        hub.resolve(reference, repo_type=repo_type)
+
+
+def test_explicit_dataset_directory_still_overrides_model_default(remote):
+    path = hub.resolve("hf://datasets/org/data@v1", repo_type="model")
+    assert (path / "data.txt").read_text() == "synthetic"
 
 
 @pytest.mark.parametrize("path", ["hf://x", "hf://x/y", "hf://x/y@", "hf://x/y@v/../bad"])
@@ -210,8 +246,120 @@ def test_push_requires_public_opt_in(remote):
     with pytest.raises(ValueError, match="--public"):
         hub.push(root, name="sample", license_id="MIT")
     assert not state.uploads
-    hub.push(root, name="sample", license_id="MIT", public=True, repo_type="model")
+    hub.push(root, name="sample", license_id="MIT", public=True)
+    assert state.uploads[0]["repo_type"] == "dataset"
+
+
+@pytest.mark.parametrize(
+    "filename", ["weights.pth", "weights.PTH", "nested/snapshot.pt", "data.txt"]
+)
+def test_model_upload_rejects_non_export_payload_before_api_calls(tmp_path, monkeypatch, filename):
+    import huggingface_hub
+
+    payload = tmp_path / filename
+    payload.parent.mkdir(parents=True, exist_ok=True)
+    payload.write_bytes(b"synthetic payload")
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("invalid model payload reached the Hub API")
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", forbidden)
+    with pytest.raises(ValueError, match="egl export"):
+        hub.push(tmp_path, name="sample", license_id="MIT", repo_type="model")
+
+
+@pytest.fixture
+def model_export(tmp_path):
+    pytest.importorskip("safetensors")
+    import numpy as np
+    from safetensors.numpy import save_file
+
+    root = tmp_path / "export"
+    root.mkdir()
+    save_file({"weight": np.ones((2, 2), dtype=np.float32)}, root / "model.safetensors")
+    document = {
+        "format_version": 1,
+        "model_config": {"model": {}},
+        "export_contract": {},
+        "weights_sha256": hub.sha256_file(root / "model.safetensors"),
+        "provenance": {
+            "filename": "final.pth",
+            "sha256": "c" * 64,
+            "step": 7,
+            "code_revision": {"commit": "d" * 40, "dirty": False},
+        },
+    }
+    (root / "model.json").write_text(json.dumps(document))
+    return root
+
+
+def test_model_upload_uses_validated_export_and_keeps_private_default(remote, model_export):
+    _, state = remote
+    state.exists = False
+    hub.push(model_export, name="sample", license_id="MIT", repo_type="model")
+    assert state.creates[0]["private"] is True
     assert state.uploads[0]["repo_type"] == "model"
+    assert state.files == ["README.md", "checksums.sha256", "model.json", "model.safetensors"]
+
+
+def test_model_export_validation_does_not_import_torch(model_export):
+    script = """
+import sys
+from importlib.abc import MetaPathFinder
+from pathlib import Path
+
+class NoTorch(MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] == 'torch':
+            raise AssertionError('model upload validation imported torch')
+
+sys.meta_path.insert(0, NoTorch())
+from egolearn.utils.model_artifact import validate_export
+validate_export(Path(sys.argv[1]), publishing=True)
+assert 'torch' not in sys.modules
+"""
+    subprocess.run([sys.executable, "-c", script, str(model_export)], check=True)
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "extra_pickle",
+        "invalid_weights",
+        "invalid_header",
+        "invalid_json",
+        "nonfinite",
+        "overflow",
+        "negative_overflow",
+    ],
+)
+def test_model_upload_validates_export_before_creating_repo(remote, model_export, corruption):
+    _, state = remote
+    if corruption == "extra_pickle":
+        (model_export / "snapshot.pth").write_bytes(b"not exported")
+    elif corruption in {"invalid_weights", "invalid_header"}:
+        (model_export / "model.safetensors").write_bytes(b"not safetensors")
+        if corruption == "invalid_header":
+            path = model_export / "model.json"
+            document = json.loads(path.read_text())
+            document["weights_sha256"] = hub.sha256_file(model_export / "model.safetensors")
+            path.write_text(json.dumps(document))
+    elif corruption == "nonfinite":
+        path = model_export / "model.json"
+        document = json.loads(path.read_text())
+        document["model_config"]["invalid"] = float("nan")
+        path.write_text(json.dumps(document))
+    elif corruption in {"overflow", "negative_overflow"}:
+        path = model_export / "model.json"
+        document = json.loads(path.read_text())
+        document["provenance"]["extra"] = "overflowed-number"
+        number = "1e999" if corruption == "overflow" else "-1e999"
+        path.write_text(json.dumps(document).replace('"overflowed-number"', number))
+    else:
+        (model_export / "model.json").write_text("{}")
+    with pytest.raises(ValueError):
+        hub.push(model_export, name="sample", license_id="MIT", repo_type="model")
+    assert not state.creates and not state.uploads
 
 
 @pytest.mark.parametrize("name", ["../escape", ".", "bad/name", "-name"])
