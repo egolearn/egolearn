@@ -13,7 +13,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   subsets (`agentic-learning-ai-lab/egolearn-spatial-relation-categorization`,
   `monitoring/2d-stimuli`, `monitoring/3d-stimuli`), with checksums, under CC BY 4.0.
   Packaged `shape_bias_eval` and `spatial_relations_eval` configs evaluate a
-  checkpoint on them at the `v1` tag, and `egl data fetch spatial-relation-categorization`
+  checkpoint on them at the `v1` tag, and
+  `egl data fetch spatial-relation-categorization --revision v1`
   installs a verified copy. The `spatial-relations` and `spatial-monitoring`
   preparers no longer name Hub collections of their own.
 - Landing page at the site root (`landing/`), with the docs site under `/docs/`;
