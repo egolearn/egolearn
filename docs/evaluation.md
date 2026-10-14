@@ -228,6 +228,9 @@ run's date and time (or your explicit `hydra.run.dir`). For a trusted full
 snapshot, also pass `trusted_snapshot=true`.
 The packaged ImageNet config exposes its protocol settings under `benchmarks.0`,
 for example `benchmarks.0.encoder=image` or `benchmarks.0.batch_size=256`.
+`shape_bias_eval` and `spatial_relations_eval` evaluate shape bias and the spatial
+monitoring subsets on hosted data, so they need only `checkpoint=` (see
+[Hub artifacts](#hub-artifacts-and-access-tiers)).
 `egl eval --help` lists the default evaluation configuration. Custom suites
 can use `egl eval path/to/suite.yaml`. See the [CLI guide](cli.md) for overrides
 and configuration search paths.
@@ -321,9 +324,18 @@ in legacy Python pickle contents. Model config files use model repos too.
 | ImageNet | upstream-licensed | Manifests only; users obtain images from the licensed upstream source |
 | SAYCam, Labeled-S frames, restricted BabyView and BabyVLM images | IRB | Never on the Hub, including private repos or pixel-embedding manifests |
 
-These are publication candidates, not a claim that collections already exist.
-Pinned upstream downloads remain available. A Hub Collection can group approved
-repos after their owners publish them; this change publishes no data or weights.
+Two collections are published, privately until the first release, under CC BY 4.0
+with the authors' permission. Cite the papers when using them.
+
+| Repo | Contents | Packaged config |
+| --- | --- | --- |
+| `agentic-learning-ai-lab/egolearn-shape-bias` | Prepared stimuli (Tartaglini, Vong & Lake, 2022) | `shape_bias_eval` |
+| `agentic-learning-ai-lab/egolearn-spatial-relation-categorization` | `monitoring/` subsets (Davidson, Orhan & Lake, 2024) | `spatial_relations_eval` |
+
+Both are tagged `v1`; fetch them with `egl data fetch shape-bias --revision v1` or
+`egl data fetch spatial-relation-categorization --revision v1`. The other rows are
+publication candidates, not a claim that collections already exist. Pinned upstream
+downloads remain available.
 
 To upload a prepared directory (not a training run directory):
 

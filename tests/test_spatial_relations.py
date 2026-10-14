@@ -514,3 +514,35 @@ def test_hub_snapshot_symlinks_are_materialized_for_dataset_validation(tmp_path,
     assert validate_dataset(materialized)["n_trials"] == 32
     assert not any(p.is_symlink() for p in materialized.rglob("*"))
     assert instantiate(config) == resolved
+
+
+def test_packaged_eval_config_uses_hosted_monitoring_subsets(tmp_path, monkeypatch):
+    import sys
+
+    from hydra import compose, initialize_config_module
+    from omegaconf import OmegaConf
+
+    from egolearn.evaluation.benchmarks.spatial_relations import SpatialRelationsProbe
+    from egolearn.evaluation.benchmarks.spatial_relations.subset import prepare_subset
+    from egolearn.evaluation.evaluator import _configured_benchmark
+
+    _full_subset_fixture(tmp_path / "full")
+    subset = tmp_path / "subset"
+    prepare_subset(tmp_path / "full", subset, exp1_per_condition=2, exp3_configurations=1)
+    with initialize_config_module(config_module="egolearn.configs", version_base="1.3"):
+        cfg = OmegaConf.to_container(compose(config_name="spatial_relations_eval"), resolve=True)
+    assert isinstance(cfg, dict)
+    spec = cfg["benchmarks"][0]
+    prefix = "hf://datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization@v1/"
+    hosted = {
+        prefix + "monitoring/2d-stimuli/manifest.json": subset / "exp1/manifest.json",
+        prefix + "monitoring/3d-stimuli/manifest.json": subset / "exp3/manifest.json",
+    }
+    assert {spec["abstract_2d_manifest"], spec["rendered_3d_manifest"]} == set(hosted)
+    monkeypatch.setattr(sys.modules["egolearn.config.instantiate"], "resolve", hosted.__getitem__)
+
+    probe, config = _configured_benchmark(spec)
+
+    assert isinstance(probe, SpatialRelationsProbe)
+    assert probe.profile == "monitoring"
+    assert config["abstract_2d_manifest"] == spec["abstract_2d_manifest"]

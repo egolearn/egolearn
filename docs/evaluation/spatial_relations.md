@@ -267,7 +267,14 @@ to match the reference inference precision. It encodes each manifest image once
 per evaluation, then reuses features across trials; embeddings are not reused
 across checkpoints. Initialization validates all files and their hashes.
 
-Merge this fragment into an evaluation config (set paths for your dataset root):
+The monitoring subsets are hosted at
+`agentic-learning-ai-lab/egolearn-spatial-relation-categorization` (CC BY 4.0;
+cite Davidson, Orhan & Lake, 2024) under `monitoring/2d-stimuli/` (Exp. 1) and
+`monitoring/3d-stimuli/` (Exp. 3). `egl eval spatial_relations_eval
+checkpoint=<checkpoint or export>` evaluates them directly, and
+`egl data fetch spatial-relation-categorization --revision v1` installs a verified
+local copy. As a training-time probe, merge this fragment into a training config;
+replace the references with local `manifest.json` paths to use locally prepared data:
 
 ```yaml
 _imports_:
@@ -275,14 +282,15 @@ _imports_:
 probes:
   - _target_: "probe:spatial_relations"
     name: spatial_relations_monitoring
-    abstract_2d_manifest: data/spatial_relations/monitoring_v1/exp1/manifest.json
-    rendered_3d_manifest: data/spatial_relations/monitoring_v1/exp3/manifest.json
+    abstract_2d_manifest: "hf://datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization@v1/monitoring/2d-stimuli/manifest.json"
+    rendered_3d_manifest: "hf://datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization@v1/monitoring/3d-stimuli/manifest.json"
     batch_size: 32
     tie_tolerance: 1.0e-6
     output_json: "runs/spatial_relations_monitoring_{step}.json"
 ```
 
-For full evaluation, use the two manifests under `data/spatial_relations/v1/`,
+The full datasets are not hosted yet. For full evaluation, use the two manifests
+under `data/spatial_relations/v1/`,
 the name `spatial_relations_full`, and a separate output path. Combining a full
 component with a monitoring component is rejected. The main log metric is
 `<name>/accuracy`; component metrics are `<name>/abstract_2d/accuracy` and

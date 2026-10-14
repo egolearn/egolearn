@@ -36,11 +36,18 @@ DATASETS = (
         (("--asset-dir", ".sources/shape-bias"), ("--output-dir", "shape-bias")),
     ),
     Dataset(
+        "spatial-relation-categorization",
+        "public",
+        "Hosted spatial relation monitoring subsets (monitoring/)",
+        "https://doi.org/10.1016/j.cognition.2023.105690",
+        "spatial-relation-categorization",
+    ),
+    Dataset(
         "spatial-relations",
         "public",
         "Prepared spatial relation trials",
         "https://doi.org/10.1016/j.cognition.2023.105690",
-        "spatial-relations",
+        None,
         _BENCHMARKS + "spatial_relations.prepare",
         (("--output-dir", "spatial-relations"),),
     ),
@@ -49,7 +56,7 @@ DATASETS = (
         "public",
         "Balanced spatial monitoring subsets",
         "https://doi.org/10.1016/j.cognition.2023.105690",
-        "spatial-monitoring",
+        None,
         _BENCHMARKS + "spatial_relations.subset",
         (
             ("--full-root", "spatial-relations"),
