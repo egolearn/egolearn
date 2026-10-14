@@ -108,6 +108,14 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   train-standardized features. Deterministic and RNG-free, so probing
   mid-training cannot perturb the run (tested); splits are frozen in the
   manifest.
+- Packed frame store (`egolearn.data.packed`, `stream:packed_frames`): frames
+  packed into large shard files with a numpy offset index, built and verified
+  with `python -m egolearn.data.packed`; the same sessions, times, refs and
+  pixels as `stream:saycam`, one read per frame and per contiguous clip, and a
+  memory-mapped index instead of per-session listings, so Loader workers start
+  in seconds instead of minutes. Cold random 256-frame batches drop from 1.2 s
+  to 36 ms on network scratch. `Stream.open_frames` lets the Loader fetch a
+  clip's frames in one call. See `docs/data_loading.md`.
 
 ### Changed
 
@@ -163,6 +171,15 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   augmentation randomness comes from its own derived seed, so the worker
   count never changes what a run computes (covered by a serial-vs-pool
   equality test); stream order and ref picking stay sequential.
+- The SimCLR-style image views (`simclr_strong`, `babycl_ms_aug`) default to a
+  separable Gaussian blur (`blur_impl=separable`: about 4x cheaper, within one
+  intensity level of the reference, same RNG draws); `blur_impl=torchvision`
+  keeps the bit-exact reference and `none` is the ablation. Loader workers
+  flush denormal floats (`loader.flush_denormal`, default on): the blur's
+  small-sigma kernels ran ~100x slower on subnormal tail weights that cannot
+  change a rounded pixel; loaded tensors are identical with or without it
+  (tested) and the trainer process is untouched. Frame-directory listings
+  sort by (time, name), independent of `os.listdir` order.
 
 ### Fixed
 

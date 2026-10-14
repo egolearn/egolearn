@@ -25,6 +25,8 @@ import torch
 import torchvision.transforms as T
 from PIL import ImageOps
 
+from egolearn.data.blur import gaussian_blur
+
 from ..config.registry import VIEWS
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
@@ -80,6 +82,7 @@ def simclr_strong(
     scale_min: float = 0.2,
     scale_max: float = 1.0,
     vertical_flip: bool = False,
+    blur_impl: str = "separable",
 ):
     """Standard SimCLR strong augmentation applied to the RAW frame (usually
     paired with the ntxent loss): view 0 applies GaussianBlur with p=1.0;
@@ -91,8 +94,15 @@ def simclr_strong(
     BEFORE the random crop -- a two-stage chain left over from its original
     pipeline.  That exact chain is the project view `babycl_ms_aug`, not
     this one.
+
+    `blur_impl` picks the Gaussian blur implementation (egolearn.data.blur):
+    `separable` (default) applies the reference kernel in two 1-D passes and
+    can differ from the reference by one intensity level per pixel;
+    `torchvision` is the bit-exact reference; `none` skips the filter while
+    consuming its sigma draw, so every later random decision is unchanged.
     """
     k = max(3, int(0.1 * size) // 2 * 2 + 1)
+    blur = gaussian_blur(k, blur_impl)
     ops: list = []
     if vertical_flip:
         ops.append(T.Lambda(ImageOps.flip))
@@ -105,7 +115,7 @@ def simclr_strong(
         T.RandomGrayscale(p=0.2),
     ]
     blur_p = 1.0 if view_idx == 0 else 0.1
-    ops.append(T.RandomApply([T.GaussianBlur(kernel_size=k, sigma=(0.1, 2.0))], p=blur_p))
+    ops.append(T.RandomApply([blur], p=blur_p))
     if view_idx == 1:
         ops.append(
             T.Lambda(

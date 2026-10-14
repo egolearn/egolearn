@@ -57,7 +57,8 @@ benchmark suites, configuration paths, and multirun.
 The SAYCam videos used in BabyCL and Memory Storyboard are hosted on
 [Databrary](https://nyu.databrary.org/volume/564/).
 See the [evaluation guide](docs/evaluation.md#saycam-access) for IRB approval,
-access requirements, and benchmark data preparation.
+access requirements, and benchmark data preparation. Frame dumps can be packed
+into a shard store for fast random reads; see [data loading](docs/data_loading.md).
 
 ## What's here
 
