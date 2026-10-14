@@ -27,8 +27,8 @@ takes all — as in the original samplers).
 Run:
 
 ```bash
-python -m egolearn.train --config-dir projects/storyboard/configs --config-name saycam dry_run=true
-python -m egolearn.train --config-dir projects/storyboard/configs --config-name saycam
+egl train projects/storyboard/configs/saycam.yaml dry_run=true
+egl train projects/storyboard/configs/saycam.yaml
 ```
 
 Documented framework adaptations (algorithms untouched): label writes go
@@ -38,4 +38,3 @@ recluster trigger is checked per frame instead of per training step (fires
 at the same threshold crossing).
 
 KrishnaCam: swap `stream:` for a frames-directory adapter at 10 fps.
- 

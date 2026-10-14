@@ -14,6 +14,7 @@ everything else comes from the core toolbox.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pickle import UnpicklingError
 
 from egolearn.evaluation.probe import Probe
 from egolearn.model.build import build_model
@@ -61,6 +62,7 @@ class Pipeline:
     driver: LockstepDriver | OfflineDriver
     probes: list = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    init_from: dict | None = None
 
     @property
     def mode(self) -> str:
@@ -71,8 +73,7 @@ class Pipeline:
         lines.append(f"  mode      : {self.mode}")
         lines.append(f"  stream    : {type(self.stream).__name__}")
         if isinstance(self.driver, OfflineDriver):
-            d = self.driver
-            lines.append(f"  batch     : {d.slot}(n={d.n}, views={d.views})")
+            lines.append(f"  batch     : {self.driver.batch_description}")
         else:
             lines.append("  admission : " + ", ".join(type(b).__name__ for b in self.admission))
             for _name, mem in self.memories.items():
@@ -89,6 +90,12 @@ class Pipeline:
         lines.append(
             f"  model     : encoders {self.model.modalities()}  heads {self.model.head_names()}"
         )
+        if self.init_from:
+            lines.append(
+                f"  init_from : {self.init_from['tensors']} tensors under "
+                f"{self.init_from['include'] or ['*']} <- {self.init_from['checkpoint']} "
+                f"(step {self.init_from['step']}, sha256 {self.init_from['sha256'][:12]})"
+            )
         for w in self.warnings:
             lines.append(f"  WARNING   : {w}")
         return "\n".join(lines)
@@ -117,11 +124,18 @@ def build(cfg: dict) -> Pipeline:
     stream: Stream = instantiate(cfg["stream"])
     ctx.clock.total_observations = stream.total_observations()
     views = ViewBank(cfg.get("views", {}))
-    workers = int((cfg.get("loader") or {}).get("workers", 0))
+    loader_cfg = dict(cfg.get("loader") or {})
+    workers = int(loader_cfg.get("workers", 0))
     if workers < 0:
         raise PipelineError(f"loader.workers must be >= 0, got {workers}")
     # workers re-run `_imports_` so project-registered views exist there too
-    loader = Loader(stream, views, workers=workers, imports=list(cfg.get("_imports_", [])))
+    loader = Loader(
+        stream,
+        views,
+        workers=workers,
+        imports=list(cfg.get("_imports_", [])),
+        flush_denormal=bool(loader_cfg.get("flush_denormal", True)),
+    )
 
     tokenizer = None
     if cfg.get("tokenizer"):
@@ -191,6 +205,26 @@ def build(cfg: dict) -> Pipeline:
         )
     except (TypeError, ValueError) as e:
         raise PipelineError(str(e)) from e
+
+    # Initialize weights before creating the optimizer; all other run state is fresh.
+    init_summary = None
+    if cfg.get("init_from"):
+        from egolearn.model.init import load_pretrained_weights
+
+        try:
+            init_summary = load_pretrained_weights(model, **dict(cfg["init_from"]))
+        except (
+            OSError,
+            KeyError,
+            TypeError,
+            ValueError,
+            RuntimeError,
+            UnpicklingError,
+            EOFError,
+        ) as e:
+            raise PipelineError(f"init_from: {e}") from e
+        model.construction_config = dict(model.construction_config or {})
+        model.construction_config["init_from"] = init_summary
 
     # give learner embedders access to the model
     for emb in embedders.values():
@@ -271,7 +305,8 @@ def build(cfg: dict) -> Pipeline:
 
     driver: LockstepDriver | OfflineDriver
     if mode == "offline":
-        driver = OfflineDriver(
+        driver = instantiate(
+            {"_target_": dcfg.get("_target_", "egolearn.training.offline.OfflineDriver")},
             stream=stream,
             loader=loader,
             model=model,
@@ -285,8 +320,11 @@ def build(cfg: dict) -> Pipeline:
             subsample=dcfg.get("subsample", 1),
             grad_accumulation=dcfg.get("grad_accumulation", 1),
             prefetch=prefetch,
+            tokenizer=tokenizer,
             **(dcfg.get("batch") or {}),
         )
+        if not isinstance(driver, OfflineDriver):
+            raise PipelineError("an offline driver target must subclass OfflineDriver")
     else:
         assert recipe is not None and composer is not None
         driver = LockstepDriver(
@@ -327,6 +365,7 @@ def build(cfg: dict) -> Pipeline:
         losses=losses,
         probes=probes,
         driver=driver,
+        init_from=init_summary,
     )
     pipe.warnings.extend(build_warnings)
     validate(pipe)
@@ -342,7 +381,7 @@ def validate(pipe: Pipeline) -> None:
 
     if isinstance(pipe.driver, OfflineDriver):
         _validate_offline(pipe, pipe.driver, errs)
-        _validate_losses(pipe, {pipe.driver.slot}, errs)
+        _validate_losses(pipe, pipe.driver.slot_names, errs)
         _validate_model_consumers(pipe, errs)
         if errs:
             raise PipelineError("pipeline validation failed:\n  - " + "\n  - ".join(errs))
@@ -513,7 +552,7 @@ def _validate_losses(pipe: Pipeline, slot_names, errs: list[str]) -> None:
 
 
 def _validate_offline(pipe: Pipeline, driver: OfflineDriver, errs: list[str]) -> None:
-    """Offline (IID) mode: views must exist; batches carry no text/labels."""
+    """Validate the views and text slots supplied by an offline driver."""
     need = "video" if driver.unit == "clip" else "image"
     if need not in pipe.model.modalities().values():
         errs.append(f"offline batches are {driver.unit}s, but no encoder has modality {need!r}")
@@ -521,8 +560,10 @@ def _validate_offline(pipe: Pipeline, driver: OfflineDriver, errs: list[str]) ->
         if v not in pipe.views.names():
             errs.append(f"driver.batch: unknown view {v!r} (declared: {pipe.views.names()})")
     for loss_fn in pipe.losses:
-        if loss_fn.requires_text:
+        if loss_fn.requires_text and not set(loss_fn.requires_slots) <= driver.text_slots:
             errs.append(
-                f"loss {loss_fn.name!r} needs text, but offline v1 batches are "
-                "frames-only (unit=pair is a planned extension)"
+                f"loss {loss_fn.name!r} needs text in {loss_fn.requires_slots}, "
+                f"but this offline driver supplies text in {sorted(driver.text_slots)}"
             )
+    if driver.text_slots and pipe.tokenizer is None:
+        errs.append("offline text slots require a tokenizer")

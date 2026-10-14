@@ -125,7 +125,9 @@ a session exposes time-aligned channels, dense (video frames) and sparse
 (utterances, narrations, annotations). Sparse items are surfaced at their
 end time — a streaming learner never acts on an utterance it hasn't fully
 heard. Alignment is always media time, never index. Ships with
-`stream:saycam`, `stream:babyview`, `stream:video` and `stream:toy`
+`stream:saycam`, `stream:babyview`, `stream:packed_frames` (the same adapter
+over a packed shard store, one read per frame or clip; see
+[data_loading.md](../data_loading.md)), `stream:video` and `stream:toy`
 (synthetic, with known ground truth).
 
 `decoding/` is where video decode backends live. Baseline storage is
@@ -150,7 +152,8 @@ contiguous clips — and its time shows up as `data.load` in the timing
 report. `views.py` holds named augmentation pipelines (`center_crop`,
 `simclr_strong`; method-tied recipes like `cvcl_aug` live in their methods
 package) plus clip-domain views that draw parameters once per clip so all T
-frames get the same crop/flip/jitter.
+frames get the same crop/flip/jitter. `blur.py` holds the Gaussian blur
+implementations the SimCLR-style views choose from (`blur_impl`).
 
 `batching/` declares what a minibatch is. A recipe is a list of slots; each
 slot names its source (a memory tier, a tier mix with fractions, or the
@@ -366,7 +369,7 @@ changing the worker count preserves sample order and augmented inputs.
 ### Configs: hydra outside, registries inside
 
 The split of labor: **hydra owns how YAML becomes one config dict** —
-defaults lists, `--config-dir`/`--config-name`, CLI overrides
+defaults lists, config selection through `egl train`, CLI overrides
 (`seed=42 driver.rate.steps_per_admit=4`), multirun, and writing every run's
 resolved config to `.hydra/config.yaml` (the reproduction truth). **The
 registries own how that dict becomes objects**: `_target_: "kind:name"`
@@ -406,7 +409,7 @@ hydra:
 See `src/egolearn/configs/offline_iid_saycam.yaml` for an offline example:
 
 ```bash
-uv run python -m egolearn.train --config-name offline_iid_saycam \
+uv run egl train offline_iid_saycam \
     stream.root_dir=$DATA_ROOT
 ```
 
@@ -517,6 +520,7 @@ method = one paper's research code, eval = benchmark code.
 | `src/egolearn/config/instantiate.py` | shared | recursive `_target_` instantiation + the plain single-file config loader |
 | `src/egolearn/data/sources/base.py` | shared | Stream/Session/Channel protocols; sparse items surface at their end time |
 | `src/egolearn/data/sources/saycam.py` | shared | SAYCam + BabyView adapters (frame dirs + the CVCL transcript json) |
+| `src/egolearn/data/sources/packed.py` | shared | the same adapter over a packed frame store: same refs, one read per frame or clip |
 | `src/egolearn/data/sources/video.py` | shared | video-first source: raw video files + a pluggable decoder |
 | `src/egolearn/data/sources/toy.py` | shared | synthetic stream with known ground truth |
 | `src/egolearn/data/decoding/base.py` | shared | `VideoDecoder` protocol, sequential vs random access |
@@ -524,6 +528,8 @@ method = one paper's research code, eval = benchmark code.
 | `src/egolearn/data/decoding/poodle.py` | shared | integration stub for the lab's video pipeline |
 | `src/egolearn/data/loading.py` | shared | the Loader — the only place refs become tensors; all units (frame/segment/pair/clip) |
 | `src/egolearn/data/views.py` | shared | named augmentation pipelines + clip-consistent views |
+| `src/egolearn/data/blur.py` | shared | Gaussian blur implementations for the image views (separable default, reference, none) |
+| `src/egolearn/data/packed/` | shared | packed frame store: shard files + numpy index; `python -m egolearn.data.packed` builds and verifies |
 | `src/egolearn/data/text.py` | shared | CVCL-style vocab tokenizer |
 | `src/egolearn/data/batching/recipe.py` | streaming | slot/recipe declaration, incl. the fallback recipe |
 | `src/egolearn/data/batching/composer.py` | streaming | fills slots: draw all refs first, then load, tokenize, resolve labels, collate |

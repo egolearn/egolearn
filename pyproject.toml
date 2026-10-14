@@ -14,7 +14,12 @@ authors = [{ name = "Agentic Learning AI Lab, New York University" }]
 dependencies = [
     "hydra-core>=1.3",
     "numpy>=2",
+    "huggingface-hub>=1.0",
 ]
+
+[project.scripts]
+egolearn = "egolearn.cli:main"
+egl = "egolearn.cli:main"
 
 # Optional extras are added together with the code that needs them (see docs/roadmap.md).
 # Still planned:
@@ -22,7 +27,7 @@ dependencies = [
 #   eval  : scikit-learn                        (kNN/SVM readout)
 [project.optional-dependencies]
 video = ["pillow>=10", "av>=14"]
-train = ["torch>=2.4", "torchvision>=0.19", "pillow>=10", "av>=14", "wandb>=0.18"]
+train = ["torch>=2.4", "torchvision>=0.19", "pillow>=10", "av>=14", "wandb>=0.18", "safetensors>=0.5"]
 all = ["egolearn[video,train]"]
 
 [dependency-groups]
@@ -31,6 +36,11 @@ dev = [
     "mypy>=1.13",
     "pytest>=8",
     "pre-commit>=4",
+]
+# Docs site (mkdocs.yml); Cloudflare Pages installs only this group.
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.5,<10",
 ]
 
 [tool.hatch.version]

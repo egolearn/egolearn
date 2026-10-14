@@ -162,5 +162,12 @@ class Stream:
         """
         raise NotImplementedError  # pragma: no cover - interface
 
+    def open_frames(self, ref: ItemRef, indices: list[int]) -> list:
+        """PIL images for several frame indices of `ref` (a clip's frames,
+        possibly with repeats), in the requested order.  The default opens
+        them one by one; adapters whose storage can serve a window in one
+        read (the packed store) override it."""
+        return [self.open_frame(ref, i) for i in indices]
+
     def num_frames(self, ref: ItemRef) -> int:
         raise NotImplementedError  # pragma: no cover - interface

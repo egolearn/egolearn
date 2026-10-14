@@ -27,6 +27,9 @@ class Hook:
     def on_admit(self, driver, n_events: int) -> None:
         pass
 
+    def on_skip(self, driver, *, nonfinite: bool) -> None:
+        pass
+
     def on_end(self, driver) -> None:
         pass
 
@@ -87,6 +90,7 @@ class ProbeHook(Hook):
         self.probes = probes
         self.every = int(every_steps)
         self.history: list[dict] = []
+        self.last_results: dict[str, dict[str, float]] = {}
 
     def on_step(self, driver, logs):
         if driver.ctx.clock.step % self.every:
@@ -101,6 +105,7 @@ class ProbeHook(Hook):
         with torch.no_grad():
             for probe in self.probes:
                 metrics = probe.run(driver.model, driver.ctx)
+                self.last_results[probe.name] = dict(metrics)
                 record = {
                     "step": driver.ctx.clock.step,
                     "progress": driver.ctx.clock.progress,

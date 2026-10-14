@@ -1,0 +1,12 @@
+# Synthetic CPU smoke suite; measurements are last-step training metrics.
+version: 1
+name: toy
+entry: train
+config: toy_streaming
+seeds: [7, 8]
+overrides:
+  - ++driver.max_steps=2
+inputs: {}
+metrics:
+  train/last_step/loss: min
+  train/steps: max

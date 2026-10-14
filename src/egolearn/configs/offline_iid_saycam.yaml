@@ -28,6 +28,10 @@ stream:
   _target_: "stream:saycam"
   root_dir: /path/to/saycam_5fps          # <- data location
   fps: 5.0
+  # Packed alternative, same refs (build with `python -m egolearn.data.packed pack`;
+  # see docs/data_loading.md):
+  #   _target_: "stream:packed_frames"
+  #   root_dir: /path/to/saycam_5fps_packed
 
 views:
   v1: {name: simclr_strong, size: 224, view_idx: 0, scale_min: 0.2}

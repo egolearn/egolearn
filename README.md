@@ -18,6 +18,9 @@ memory retrieval, and egocentric video question answering.
 
 ## Quickstart
 
+Run Python setup and commands on a workstation or compute node. For cluster
+login-node submission, start with the [shell launcher](docs/cluster.md).
+
 ```bash
 git clone git@github.com:agentic-learning-ai-lab/egolearn.git
 cd egolearn
@@ -25,33 +28,37 @@ uv sync --extra train        # creates .venv, installs package + torch + dev too
 uv run pre-commit install    # local gates: ruff, gitleaks, large-file blocker
 uv run pytest                # unit tests (slow/gpu/llm tiers excluded by default)
 
-# validate a full pipeline without reading any data
-uv run python -m egolearn.train --config-dir projects/babycl/configs \
-    --config-name saycam_default dry_run=true
+# validate wiring without iterating the stream; Hub references may download artifacts
+uv run egl train projects/babycl/configs/saycam_default.yaml dry_run=true
 # train (dataset roots come from the command line / config, never code)
-uv run python -m egolearn.train --config-dir projects/babycl/configs \
-    --config-name saycam_default stream.root_dir=$DATA_ROOT
+uv run egl train projects/babycl/configs/saycam_default.yaml stream.root_dir=$DATA_ROOT
 ```
 
 Requires [uv](https://docs.astral.sh/uv/); Python 3.12 is provisioned automatically.
 
+## Command line
+
+After `uv sync`, use `uv run egl` (also available as `egolearn`), or `egl` in an activated environment:
+
+```bash
+egl --help
+egl data list
+egl doctor
+egl train toy_streaming dry_run=true
+egl train projects/babycl/configs/saycam_default.yaml seed=42
+egl eval imagenet_linear_eval checkpoint=runs/example/final.pth data_root=/path/to/imagenet
+```
+
+See the [CLI guide](docs/cli.md) for data preparation, diagnostics, submission,
+benchmark suites, configuration paths, and multirun.
+
 ## SAYCam dataset access
 
-The SAYCam videos used in the BabyCL and Memory Storyboard projects are hosted on
-[Databrary](https://nyu.databrary.org/volume/564/). Researchers can request access
-with approval from their institution's IRB and must follow the dataset's data-use
-terms.
-
-For the VTWT and Baby Winoground evaluation benchmarks, prepare the data following the
-[BabyVLM preparation notes](https://github.com/ShawnKing98/babylmms-eval#data-preparation):
-
-1. Download `frames.txt` from the
-   [Multimodal SAYCam-S data release](https://nyu.databrary.org/volume/564/session/67447).
-2. Rename the downloaded file to `frames.zip` and extract it into a local image
-   directory. The release is reported to contain 600,285 images (about 14 GB).
-3. Configure that directory as `image_dir` for VTWT and `pos_dir` for Baby
-   Winoground. The [evaluation guide](docs/evaluation.md#babyvlm-benchmark-data)
-   describes the labels, synthetic negative images, and other probe inputs.
+The SAYCam videos used in BabyCL and Memory Storyboard are hosted on
+[Databrary](https://nyu.databrary.org/volume/564/).
+See the [evaluation guide](docs/evaluation.md#saycam-access) for IRB approval,
+access requirements, and benchmark data preparation. Frame dumps can be packed
+into a shard store for fast random reads; see [data loading](docs/data_loading.md).
 
 ## What's here
 
@@ -72,7 +79,7 @@ faithful ports of the original code, each expressed as a config file. The
 full walkthrough: [docs/design/architecture.md](docs/design/architecture.md).
 
 Trained checkpoints can be evaluated independently through
-`egolearn.evaluation.evaluate_checkpoint` or `python -m egolearn.evaluate`.
+`egolearn.evaluation.evaluate_checkpoint` or `egl eval`.
 Full ImageNet decoding runs as a standalone benchmark, with dataset preparation
 deferred until evaluation. See [the evaluation guide](docs/evaluation.md) for
 Python usage, CLI configuration, and checkpoint compatibility.
@@ -80,6 +87,9 @@ Python usage, CLI configuration, and checkpoint compatibility.
 The rest of the consolidation (LifelongMemory's QA/memory line, more evals)
 arrives per [docs/roadmap.md](docs/roadmap.md), and **nothing is ported
 without triage** — see the porting policy there.
+
+For staged training with selected checkpoint weights, see the
+[initialization guide](docs/initialization.md).
 
 ## Layout
 
@@ -114,3 +124,10 @@ release. Details and exact workflow: [RELEASING.md](RELEASING.md).
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) (branching, gates, style, tests) and
 [SECURITY.md](SECURITY.md) (what must never be committed) before your first PR.
+
+## Cluster jobs
+
+On login nodes, use `scripts/slurm/submit [sbatch options] -- <command>` for containerized jobs,
+CPU environment preparation and immutable code snapshots. See [cluster setup](docs/cluster.md)
+for the scratch cache environment, pinned image and Hydra sweep arrays. Run all
+Python commands, including `egl doctor` and benchmark planning, in compute allocations.

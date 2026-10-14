@@ -1,0 +1,199 @@
+# BabyCL (BabyCLIP) on SAYCam -- the paper's default run expressed purely as config.
+#
+# Code-verified against the mcl repo's ms_train.py / ms_dataloader.py /
+# online_ms_refine.py, array 0 of ms_train_clip_importance_ablation.SBATCH:
+#   batch 128 = 3 segments x 32 frames (visual) + 32 utterance pairs x 1 frame;
+#   two-tier buffers 10%/50% with FIFO->reservoir spill; the stream advances by one
+#   finalized segment, then 8 gradient steps run, each on a freshly resampled batch;
+#   losses 0.5*(NT-Xent + TCL) + 0.5*CLIP-InfoNCE; 4-tier AdamW; cosine + 2% warmup.
+#
+# How to tell this config apart from the storyboard one, structurally:
+#   * memory units = SEGMENT and PAIR; spill admission (new items -> short tier,
+#     what the FIFO evicts overflows into the long reservoir);
+#   * the segmenter finalizes a segment only once the stream is far enough past its
+#     end that nothing can change it (the watermark rule), so each label is written
+#     once and never revised; embeddings come from a frozen encoder;
+#   * TCL uses batch-local labels (seg.batch_label), not global ids;
+#   * the pairs slot mixes 25% short / 75% long inside one memory;
+#   * fallback recipe: when pairs are starved, an all-visual batch of 4 segments is
+#     used instead (the explicit form of ms_dataloader's use_annot gating).
+#
+# Capacity notes: capacities are ABSOLUTE counts (what capacity should mean for an
+# open-ended stream is a deliberately deferred question).  Values below derive from
+# SAYCam-S at 5 fps: ~4060 3-minute segments -> short 406 (10%) / long 2030 (50%);
+# 33737 usable utterances -> short 3374 / long 16869.
+
+defaults:
+  - /config          # packaged root: seed, wandb, dry_run, resume
+  - _self_
+
+run_dir: runs/babycl_saycam
+seed: 1337
+device: cuda
+
+# the method-specific components (babycl_online_segmenter, an_chunk_emitter,
+# frozen_resnext50, text_bow, cvcl_aug) and the benchmark probes register themselves
+# when imported; everything else comes from the core toolbox
+_imports_: [egolearn.methods.babycl,
+            egolearn.evaluation.benchmarks.labeled_s_4afc,
+            egolearn.evaluation.benchmarks.vtwt,
+            egolearn.evaluation.benchmarks.baby_winoground]
+
+stream:
+  _target_: "stream:saycam"
+  root_dir: /path/to/saycam_5fps                       # <- data location
+  include: "S_*"      # subset when root holds several children (SAYCam A/S/Y)
+  transcript_json: /path/to/expand_correct_seg.json    # <- utterances
+  fps: 5.0
+  # Packed alternative, same refs (build with `python -m egolearn.data.packed pack`;
+  # see docs/data_loading.md):
+  #   _target_: "stream:packed_frames"
+  #   root_dir: /path/to/saycam_5fps_packed
+  # Video-first alternative (same refs, no pre-extracted frames; blocked on
+  # the Poodle integration -- see egolearn/data/decoding/poodle.py):
+  #   _target_: "stream:video"
+  #   root_dir: /path/to/saycam_videos
+  #   decoder: {_target_: "decoder:poodle"}
+
+tokenizer:
+  vocab_json: /path/to/vocab.json
+  normalize: false      # SAYCam text is pre-normalized; set true for BabyView
+
+views:
+  # BabyCL's EFFECTIVE segment augmentation is two-stage in the original
+  # (center-crop at gather, strong SimCLR at train) -- fused 1:1 in the
+  # project view babycl_ms_aug; generic simclr_strong crops the RAW frame
+  ms_v1: {name: babycl_ms_aug, size: 224, view_idx: 0, scale_min: 0.2}
+  ms_v2: {name: babycl_ms_aug, size: 224, view_idx: 1, scale_min: 0.2}
+  pair:  {name: cvcl_aug, size: 224}
+  eval:  {name: center_crop, size: 224}
+
+label_stores: [events]
+
+embedders:
+  # BabyCL's online segmenter embeds with a FROZEN ImageNet ResNeXt
+  # (explicit pretraining dependency, surfaced on purpose)
+  cluster: {_target_: "embedder:frozen_resnext50", pretrained: true, view: eval}
+
+admission:
+  # 1:1 port of OnlineSegmenter (utils/online_ms_refine.py): chunks anchored on
+  # utterances and grown by similarity (2-12 s) + gap cutting, packed into ~3 min big
+  # segments; a segment is finalized only once the stream is far enough past its end
+  # to be safe (watermark, safety margin = seg_extend_max_sec); global-id merge at
+  # cos 0.85 with handover across sessions; window_scale 406 covers the short
+  # buffer's time span; embeds every 60th frame, recomputes every 10
+  - {_target_: "admission:babycl_online_segmenter",
+     fps: 5.0, avg_minutes: 3.0, window_scale: 406,
+     embed_stride: 60, compute_stride_frames: 10,
+     seg_extend_min_sec: 2.0, seg_extend_max_sec: 12.0,
+     global_merge_cos: 0.85,
+     label_store: events, embedder: cluster}
+  # 1:1 port of the feeder's AN-chunk path: chunks are raw timestamp runs (contiguous
+  # 5fps steps), each emitted in one piece only after all of its frames have streamed
+  # past, with duplicates dropped -- NO similarity expansion (the original feeder
+  # discards the segmenter's expanded chunks)
+  - {_target_: "admission:an_chunk_emitter", fps: 5.0}
+
+memories:
+  segments:
+    tiers:
+      short: {capacity: 406,  update: fifo}
+      long:  {capacity: 2030, update: reservoir}
+    admit_to: [short]
+    overflow: {short: long}       # BabyCL: FIFO overflow spills to reservoir
+  pairs:
+    tiers:
+      short: {capacity: 3374,  update: fifo}
+      long:  {capacity: 16869, update: reservoir}
+    admit_to: [short]
+    overflow: {short: long}
+
+routes:
+  VisualSegment: segments
+  AlignedPair: pairs
+
+recipe:
+  slots:
+    # 3 segments x 32 frames = 96 visual frames.  BabyCL splits every draw
+    # as want//4 short + rest long; floor(n*frac) reproduces that exactly:
+    # n=3 -> 0 short / 3 long here, n=4 -> 1/3 in the fallback below.
+    - {name: segments,
+       source: {kind: mix, memory: segments, fractions: {short: 0.25, long: 0.75}},
+       n: 3, unit: segment, frames_per_item: 32,
+       views: [ms_v1, ms_v2], batch_label: true, strict: true}
+    # 32 utterance-frame pairs, 25% short / 75% long
+    - {name: pairs,
+       source: {kind: mix, memory: pairs, fractions: {short: 0.25, long: 0.75}},
+       n: 32, unit: pair, views: [pair], text: true, strict: true}
+  fallback:
+    # pairs starved (early stream): all-visual batch of 4 segments,
+    # split 4//4 = 1 short + 3 long (same want//4 rule as above)
+    slots:
+      - {name: segments,
+         source: {kind: mix, memory: segments, fractions: {short: 0.25, long: 0.75}},
+         n: 4, unit: segment, frames_per_item: 32,
+         views: [ms_v1, ms_v2], batch_label: true, strict: true}
+
+model:
+  encoders:
+    vision: {_target_: "encoder:resnext50", pretrained: false}   # from scratch
+    text:   {_target_: "encoder:text_bow", vocab_size: auto, dim: 512}
+  heads:
+    proj128:  {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 128]}
+    cls:      {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 2000]}
+    embed512: {encoder: vision, _target_: "head:linear", in_dim: 2048, out_dim: 512}
+
+losses:
+  # total = 0.5*(L_I + L_S) + 0.5*L_C   (paper eq. 1)
+  - {_target_: "loss:ntxent", name: instance,
+     slots: [segments], head: proj128, temperature: 0.2, weight: 0.5}
+  - {_target_: "loss:tcl", name: temporal,
+     slots: [segments], head: cls, num_classes: 2000, filter_unseen: true, weight: 0.5}
+  - {_target_: "loss:clip_infonce", name: cross_modal,
+     slot: pairs, vision_head: embed512, temperature: 0.07, weight: 0.5,
+     use_sample_weights: false}   # clip-importance ablation: flip to true
+
+solver:
+  opt: adamw
+  groups:
+    # tier 1: shared conv backbone + the 2048->512 embed head @ 1e-3,
+    #         BN/bias exempt from decay
+    - {match: "^encoders\\.vision\\.|^heads\\.embed512\\.", lr: 1.0e-3,
+       weight_decay: 1.0e-4, split_no_decay: true}
+    # tier 2: everything else (projector, classifier, word embeddings) @ 1e-4
+    - {match: ".*", lr: 1.0e-4, weight_decay: 1.0e-4}
+  # anchored to training start (the default): the LR warmup starts counting from the
+  # first training step, not from the start of buffer filling, so warmup = 2% of the
+  # run AFTER buffer warmup and cosine spans the remainder -- matching the original's
+  # step-indexed max(100, 2%*steps_needed) warmup + cosine-to-0
+  schedule: {warmup_frac: 0.02, warmup_min_steps: 100, floor: 0.0}
+
+driver:
+  advance: {kind: events, schema: VisualSegment, n: 1}  # 1 new segment per push
+  rate: {steps_per_admit: 8, resample: true}            # repeats_per_push=8
+  warmup: {tier_full: segments.short}                   # fill 10% before training
+
+hooks:
+  log_every: 50
+  checkpoint_every: 500
+  probe_every: 500
+  snapshot_milestones: [0.05, 0.25, 0.5, 1.0]
+
+probes:
+  - {_target_: "probe:four_afc", name: labeled_s_4afc,
+     manifest: /path/to/labeled_s_4afc_manifest.json,
+     vocab_json: /path/to/vocab.json,
+     vision_head: embed512, size: 224}
+  # zero-shot BabyVLM-line benchmarks (paper §5); image_norm: imagenet for
+  # egolearn-trained models, clip for the CVCL family
+  - {_target_: "probe:vtwt", name: vtwt,
+     csv_path: /path/to/eval/vtwt.csv,
+     image_dir: /path/to/saycam_transcript_5fps,
+     vocab_json: /path/to/vocab.json,
+     vision_head: embed512, image_norm: imagenet}
+  - {_target_: "probe:baby_winoground", name: baby_winoground,
+     csv_path: /path/to/eval/baby_winoground.csv,
+     pos_dir: /path/to/saycam_transcript_5fps,
+     neg_dir: /path/to/eval/baby_winoground_neg_samples,
+     vocab_json: /path/to/vocab.json,
+     vision_head: embed512, image_norm: imagenet}

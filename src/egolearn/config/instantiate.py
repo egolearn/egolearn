@@ -19,6 +19,8 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
+from egolearn.hub import resolve
+
 from .registry import lookup
 
 TARGET_KEY = "_target_"
@@ -50,15 +52,17 @@ def instantiate(node: Any, **overrides):
             kwargs.update(overrides)
             return _resolve(node[TARGET_KEY])(**kwargs)
         return {k: instantiate(v) for k, v in node.items()}
+    if isinstance(node, str) and node.startswith("hf://"):
+        return str(resolve(node))
     return node
 
 
 def load_config(path: str) -> dict:
     """Load one YAML file as a plain dict, without hydra composition.
 
-    For tools that read a self-contained config (benchmarks, notebooks).
-    The train entry point (egolearn.train) composes through hydra instead;
-    hydra-only keys are dropped here so both kinds of file load.
+    Use only for self-contained configs: ``defaults`` and ``hydra`` are dropped,
+    and inherited settings are not loaded. Training and benchmark entry points
+    compose through Hydra instead.
     """
     from omegaconf import OmegaConf
 

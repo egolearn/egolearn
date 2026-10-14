@@ -252,6 +252,27 @@ class LinearSGDEvaluator:
         self.l2_normalize = bool(l2_normalize)
         self.seed = int(seed)
 
+    def configuration(self) -> dict:
+        return {
+            key: getattr(self, key)
+            for key in (
+                "name",
+                "encoder",
+                "head",
+                "size",
+                "view",
+                "batch_size",
+                "workers",
+                "epochs",
+                "lr",
+                "momentum",
+                "weight_decay",
+                "larc_trust_coefficient",
+                "l2_normalize",
+                "seed",
+            )
+        }
+
     def _loader(
         self,
         items,

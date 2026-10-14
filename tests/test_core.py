@@ -5,13 +5,10 @@ Run: pytest tests/ -q
 
 from __future__ import annotations
 
-import os
-import sys
+from copy import deepcopy
 
 import pytest
 import torch
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import egolearn
 from egolearn.core import keys as K
@@ -153,9 +150,9 @@ def test_clip_unit_loads_contiguous_consistent_clips():
     assert torch.equal(sv[0, 2], sv[0, 7])  # clamped repeats
 
 
-def test_clip_slot_composes_through_recipe(tmp_path):
+def test_clip_slot_composes_through_recipe(toy_config, tmp_path):
     # unit=clip flows through memory -> recipe -> composer -> [B,V,T,C,H,W]
-    cfg = _toy_cfg(tmp_path)
+    cfg = toy_config(tmp_path)
     cfg["views"]["cv"] = {"name": "clip_simclr", "size": 48, "view_idx": 0}
     cfg["recipe"]["slots"] = [
         {
@@ -179,134 +176,22 @@ def test_clip_slot_composes_through_recipe(tmp_path):
     assert batch["clips"]["labels"].shape == (2,)
 
 
-# ---------------------------------------------------------------------------
-def _toy_cfg(tmp_path):
-    return {
-        "run_dir": str(tmp_path / "run"),
-        "seed": 7,
-        "device": "cpu",
-        "stream": {
-            "_target_": "stream:toy",
-            "n_sessions": 1,
-            "blocks_per_session": 4,
-            "block_len": 40,
-            "img_size": 64,
-        },
-        "views": {
-            "v1": {"name": "simclr_strong", "size": 64, "view_idx": 0},
-            "v2": {"name": "simclr_strong", "size": 64, "view_idx": 1},
-        },
-        "label_stores": ["fixed"],
-        "admission": [
-            {"_target_": "admission:frame_emitter", "subsample": 1},
-            {
-                "_target_": "admission:fixed_window_labeler",
-                "class_length": 40,
-                "label_store": "fixed",
-            },
-        ],
-        "memories": {
-            "frames": {
-                "tiers": {
-                    "short": {"capacity": 30, "update": "fifo"},
-                    "long": {"capacity": 60, "update": "reservoir"},
-                },
-                "admit_to": ["short", "long"],
-                "overflow": {},
-            }
-        },
-        "routes": {"RawFrame": "frames"},
-        "recipe": {
-            "slots": [
-                {
-                    "name": "curr",
-                    "source": {"kind": "tier", "memory": "frames", "tier": "short"},
-                    "n": 4,
-                    "unit": "frame",
-                    "views": ["v1", "v2"],
-                    "labels_from": "fixed",
-                    "strict": True,
-                },
-            ]
-        },
-        "model": {
-            "encoders": {"vision": {"_target_": "encoder:toy_cnn", "dim": 64}},
-            "heads": {
-                "proj": {"encoder": "vision", "_target_": "head:mlp", "sizes": [64, 64, 32]},
-                "cls": {"encoder": "vision", "_target_": "head:mlp", "sizes": [64, 64, 8]},
-            },
-        },
-        "losses": [
-            {
-                "_target_": "loss:ntxent",
-                "name": "inst",
-                "slots": ["curr"],
-                "head": "proj",
-                "temperature": 0.1,
-                "weight": 1.0,
-            },
-            {
-                "_target_": "loss:tcl",
-                "name": "temp",
-                "slots": ["curr"],
-                "head": "cls",
-                "num_classes": 8,
-                "weight": 1.0,
-            },
-        ],
-        "solver": {
-            "opt": "sgd",
-            "groups": [{"match": ".*", "lr": 0.01, "weight_decay": 0.0}],
-            "schedule": {"constant": True},
-        },
-        "driver": {
-            "advance": {"kind": "observations", "n": 8},
-            "rate": {"steps_per_admit": 1, "resample": True},
-            "warmup": {"admitted": 20},
-            "max_steps": 2,
-        },
-        "hooks": {"log_every": 1},
-    }
-
-
-def test_toy_pipeline_builds_and_composes(tmp_path):
-    pipe = egolearn.build(_toy_cfg(tmp_path))
-    drv = pipe.driver
-    drv._run_warmup()
-    assert len(pipe.memories["frames"].tiers["short"]) > 0
-    batch = pipe.composer.compose(pipe.recipe, pipe.memories, {}, pipe.ctx)
-    assert batch is not None
-    views = batch["curr"]["views"]
-    assert views.shape[0] == 4 and views.shape[1] == 2  # [B, V, C, H, W]
-    assert batch["curr"]["labels"].shape == (4,)
-
-
-def test_toy_pipeline_two_training_steps(tmp_path):
-    pipe = egolearn.build(_toy_cfg(tmp_path))
-    pipe.driver.fit()  # max_steps: 2
-    assert pipe.ctx.clock.step == 2
-    # the latency ledger measured every stage of those steps
-    rep = pipe.driver.timer.report()
-    assert "batch.compose" in rep and "data.load" in rep
-    assert rep["model.forward"]["count"] == 2
-
-
-def test_validation_rejects_unknown_slot(tmp_path):
-    cfg = _toy_cfg(tmp_path)
+def test_validation_rejects_unknown_slot(toy_config, tmp_path):
+    cfg = toy_config(tmp_path)
     cfg["losses"][0]["slots"] = ["nonexistent"]
     with pytest.raises(egolearn.PipelineError, match="nonexistent"):
         egolearn.build(cfg)
 
 
-def test_validation_rejects_unknown_view(tmp_path):
-    cfg = _toy_cfg(tmp_path)
+def test_validation_rejects_unknown_view(toy_config, tmp_path):
+    cfg = toy_config(tmp_path)
     cfg["recipe"]["slots"][0]["views"] = ["not_a_view", "v2"]
     with pytest.raises(egolearn.PipelineError, match="not_a_view"):
         egolearn.build(cfg)
 
 
-def test_validation_rejects_text_loss_without_text_encoder(tmp_path):
-    cfg = _toy_cfg(tmp_path)
+def test_validation_rejects_text_loss_without_text_encoder(toy_config, tmp_path):
+    cfg = toy_config(tmp_path)
     cfg["recipe"]["slots"][0]["strict"] = False
     cfg["losses"].append(
         {
@@ -324,129 +209,24 @@ def test_validation_rejects_text_loss_without_text_encoder(tmp_path):
 # ---------------------------------------------------------------------------
 # offline (IID) mode -- the parallel loop: no memory, no admission
 # ---------------------------------------------------------------------------
-def _offline_cfg(tmp_path):
-    return {
-        "run_dir": str(tmp_path / "run"),
-        "seed": 7,
-        "device": "cpu",
-        "stream": {
-            "_target_": "stream:toy",
-            "n_sessions": 1,
-            "blocks_per_session": 4,
-            "block_len": 40,
-            "img_size": 64,
-        },
-        "views": {
-            "v1": {"name": "simclr_strong", "size": 64, "view_idx": 0},
-            "v2": {"name": "simclr_strong", "size": 64, "view_idx": 1},
-        },
-        "model": {
-            "encoders": {"vision": {"_target_": "encoder:toy_cnn", "dim": 64}},
-            "heads": {"proj": {"encoder": "vision", "_target_": "head:mlp", "sizes": [64, 64, 32]}},
-        },
-        "losses": [
-            {
-                "_target_": "loss:ntxent",
-                "name": "inst",
-                "slots": ["frames"],
-                "head": "proj",
-                "temperature": 0.1,
-                "weight": 1.0,
-            },
-        ],
-        "solver": {
-            "opt": "sgd",
-            "groups": [{"match": ".*", "lr": 0.01, "weight_decay": 0.0}],
-            "schedule": {"constant": True},
-        },
-        "driver": {
-            "mode": "offline",
-            "batch": {"slot": "frames", "n": 8, "views": ["v1", "v2"]},
-            "epochs": 1,
-            "max_steps": 3,
-        },
-        "hooks": {"log_every": 1},
+def _offline_cfg(toy_config, tmp_path):
+    cfg = toy_config(tmp_path)
+    for key in ("admission", "memories", "routes", "recipe", "label_stores"):
+        del cfg[key]
+    del cfg["model"]["heads"]["cls"]
+    cfg["losses"] = cfg["losses"][:1]
+    cfg["losses"][0]["slots"] = ["frames"]
+    cfg["driver"] = {
+        "mode": "offline",
+        "batch": {"slot": "frames", "n": 8, "views": ["v1", "v2"]},
+        "epochs": 1,
+        "max_steps": 3,
     }
+    return cfg
 
 
-def test_offline_mode_trains(tmp_path):
-    pipe = egolearn.build(_offline_cfg(tmp_path))
-    assert pipe.mode == "offline"
-    pipe.driver.fit()
-    assert pipe.ctx.clock.step == 3  # max_steps wins
-    assert pipe.ctx.clock.progress == pytest.approx(3 / 3)
-    rep = pipe.driver.timer.report()
-    assert "batch.compose" in rep and "model.forward" in rep
-
-
-def test_offline_mode_is_deterministic_under_seed(tmp_path):
-    idx = []
-    for _ in range(2):
-        pipe = egolearn.build(_offline_cfg(tmp_path))
-        refs = pipe.driver._build_index()
-        order = list(range(len(refs)))
-        pipe.ctx.fresh_rng("offline.shuffle.epoch0").shuffle(order)
-        idx.append(order[:10])
-    assert idx[0] == idx[1]
-    # fresh_rng is one-shot derived randomness: asking again regenerates the
-    # SAME order (a cached rng would have advanced) -- this is what keeps a
-    # resumed run's epoch shuffle identical to the original's
-    pipe = egolearn.build(_offline_cfg(tmp_path))
-    a = list(range(50))
-    b = list(range(50))
-    pipe.ctx.fresh_rng("offline.shuffle.epoch0").shuffle(a)
-    pipe.ctx.fresh_rng("offline.shuffle.epoch0").shuffle(b)
-    assert a == b
-
-
-def test_offline_resume_continues_from_snapshot(tmp_path):
-    from egolearn.utils.snapshot import load_snapshot, save_snapshot
-
-    # run 3 of 5 planned steps, snapshot, resume in a FRESH pipeline
-    cfg = _offline_cfg(tmp_path)
-    cfg["driver"]["max_steps"] = 3
-    pipe1 = egolearn.build(cfg)
-    pipe1.driver.fit()
-    snap = str(tmp_path / "snap.pth")
-    save_snapshot(snap, pipe1.driver)
-
-    cfg2 = _offline_cfg(tmp_path)
-    cfg2["driver"]["max_steps"] = 5
-    pipe2 = egolearn.build(cfg2)
-    load_snapshot(snap, pipe2.driver)
-    assert pipe2.ctx.clock.step == 3
-    pipe2.driver.fit()  # continues 3 -> 5
-    assert pipe2.ctx.clock.step == 5
-
-
-def test_streaming_resume_replay_rebuilds_state(tmp_path):
-    from egolearn.utils.snapshot import load_snapshot, save_snapshot
-
-    # train 2 steps, snapshot; fresh pipeline resumes: memories identical,
-    # admission state rebuilt by replay, training continues
-    pipe1 = egolearn.build(_toy_cfg(tmp_path))
-    pipe1.driver.fit()  # max_steps: 2
-    admitted = pipe1.ctx.clock.admitted
-    mem_sizes = {t: len(tab) for t, tab in pipe1.memories["frames"].tiers.items()}
-    snap = str(tmp_path / "snap.pth")
-    save_snapshot(snap, pipe1.driver)
-
-    cfg2 = _toy_cfg(tmp_path)
-    cfg2["driver"]["max_steps"] = 4
-    pipe2 = egolearn.build(cfg2)
-    load_snapshot(snap, pipe2.driver)
-    assert pipe2.ctx.clock.step == 2
-    assert pipe2.ctx.clock.admitted == admitted  # replay hit the mark
-    assert {
-        t: len(tab) for t, tab in pipe2.memories["frames"].tiers.items()
-    } == mem_sizes  # memories from snapshot
-    # labeler state rebuilt: composing a batch resolves labels without error
-    pipe2.driver.fit()  # continues 2 -> 4
-    assert pipe2.ctx.clock.step == 4
-
-
-def test_offline_mode_rejects_memory_config(tmp_path):
-    cfg = _offline_cfg(tmp_path)
+def test_offline_mode_rejects_memory_config(toy_config, tmp_path):
+    cfg = _offline_cfg(toy_config, tmp_path)
     cfg["memories"] = {
         "frames": {
             "tiers": {"short": {"capacity": 8, "update": "fifo"}},
@@ -458,8 +238,8 @@ def test_offline_mode_rejects_memory_config(tmp_path):
         egolearn.build(cfg)
 
 
-def test_offline_mode_rejects_unknown_view(tmp_path):
-    cfg = _offline_cfg(tmp_path)
+def test_offline_mode_rejects_unknown_view(toy_config, tmp_path):
+    cfg = _offline_cfg(toy_config, tmp_path)
     cfg["driver"]["batch"]["views"] = ["v1", "nope"]
     with pytest.raises(egolearn.PipelineError, match="nope"):
         egolearn.build(cfg)
@@ -514,10 +294,10 @@ def test_composed_model_two_encoders_and_contract():
         model.precompute_feats({"s": {"views": x.unsqueeze(1)}}, torch.device("cpu"))
 
 
-def test_video_encoder_trains_on_clip_slots(tmp_path):
+def test_video_encoder_trains_on_clip_slots(toy_config, tmp_path):
     # video SSL expressed purely in config: clip unit -> video encoder ->
     # ntxent over the two clip views, end to end through the driver
-    cfg = _toy_cfg(tmp_path)
+    cfg = toy_config(tmp_path)
     cfg["views"] = {
         "cv1": {"name": "clip_simclr", "size": 48, "view_idx": 0},
         "cv2": {"name": "clip_simclr", "size": 48, "view_idx": 1},
@@ -551,13 +331,13 @@ def test_video_encoder_trains_on_clip_slots(tmp_path):
     pipe = egolearn.build(cfg)
     assert "video_representation" in pipe.model.capabilities()
     pipe.driver.fit()
-    assert pipe.ctx.clock.step == 2  # max_steps from _toy_cfg
+    assert pipe.ctx.clock.step == 2  # max_steps from the shared toy config
 
 
-def test_predictor_wiring_and_validation(tmp_path):
+def test_predictor_wiring_and_validation(toy_config, tmp_path):
     import pytest
 
-    cfg = _toy_cfg(tmp_path)
+    cfg = toy_config(tmp_path)
     cfg["model"]["predictors"] = {
         "pred": {"inputs": ["vision"], "_target_": "predictor:mlp", "sizes": [64, 64, 64]}
     }
@@ -569,7 +349,7 @@ def test_predictor_wiring_and_validation(tmp_path):
     with pytest.raises(TypeError, match="pick a field"):
         pipe.model.predict("pred", out)
 
-    cfg2 = _toy_cfg(tmp_path)
+    cfg2 = toy_config(tmp_path)
     cfg2["model"]["predictors"] = {
         "pred": {"inputs": ["video"], "_target_": "predictor:mlp", "sizes": [64, 64]}
     }
@@ -577,7 +357,7 @@ def test_predictor_wiring_and_validation(tmp_path):
         egolearn.build(cfg2)
 
 
-def test_probe_capability_mismatch_fails_at_build(tmp_path):
+def test_probe_capability_mismatch_fails_at_build(toy_config, tmp_path):
     import pytest
 
     from egolearn.config.registry import PROBES
@@ -596,17 +376,17 @@ def test_probe_capability_mismatch_fails_at_build(tmp_path):
             def run(self, model, ctx):
                 return {}
 
-    cfg = _toy_cfg(tmp_path)  # image-only model
+    cfg = toy_config(tmp_path)  # image-only model
     cfg["probes"] = [{"_target_": "probe:needs_text_probe"}]
     with pytest.raises(egolearn.PipelineError, match="needs capability"):
         egolearn.build(cfg)
 
 
-def test_frozen_twin_encoder_stays_out_of_the_way(tmp_path):
+def test_frozen_twin_encoder_stays_out_of_the_way(toy_config, tmp_path):
     # the JEPA EMA-target pattern: a frozen copy of an encoder is carried by
     # the model (so it snapshots) but is excluded from the optimizer and
     # never grabs modality-based routing
-    cfg = _toy_cfg(tmp_path)
+    cfg = toy_config(tmp_path)
     cfg["model"]["encoders"] = {
         "vision": {"_target_": "encoder:toy_cnn", "dim": 64},
         "vision_target": {"_target_": "encoder:toy_cnn", "dim": 64, "frozen": True},
@@ -686,12 +466,12 @@ def test_encoder_output_fields_are_additive():
     assert model.apply_head("proj", out.pooled).shape == (2, 4)
 
 
-def test_head_unknown_encoder_fails_at_build(tmp_path):
+def test_head_unknown_encoder_fails_at_build(toy_config, tmp_path):
     # a head reading a nonexistent encoder is caught even when no loss
     # requires that head (probe-only heads used to slip through)
     import pytest
 
-    cfg = _toy_cfg(tmp_path)
+    cfg = toy_config(tmp_path)
     cfg["model"]["heads"]["orphan"] = {
         "encoder": "backbone",  # no encoder has this name
         "_target_": "head:mlp",
@@ -701,11 +481,11 @@ def test_head_unknown_encoder_fails_at_build(tmp_path):
         egolearn.build(cfg)
 
 
-def test_slot_modality_without_encoder_warns(tmp_path):
+def test_slot_modality_without_encoder_warns(toy_config, tmp_path):
     # a clip slot on an image-only model: no video encoder will ever fill
     # slot["feats"], so the build surfaces a warning instead of leaving the
     # mismatch to explode at the first batch
-    cfg = _toy_cfg(tmp_path)
+    cfg = toy_config(tmp_path)
     cfg["views"]["cv"] = {"name": "clip_simclr", "size": 48, "view_idx": 0}
     cfg["recipe"]["slots"].append(
         {
@@ -722,18 +502,18 @@ def test_slot_modality_without_encoder_warns(tmp_path):
     assert any("clips" in w and "video" in w for w in pipe.warnings)
 
 
-def test_probes_null_key_means_no_probes(tmp_path):
+def test_probes_null_key_means_no_probes(toy_config, tmp_path):
     # `probes:` present but empty (yaml null) disables evaluation, as before
-    cfg = _toy_cfg(tmp_path)
+    cfg = toy_config(tmp_path)
     cfg["probes"] = None
     pipe = egolearn.build(cfg)
     assert pipe.probes == []
 
 
-def test_two_trainable_same_modality_encoders_rejected_at_build(tmp_path):
+def test_two_trainable_same_modality_encoders_rejected_at_build(toy_config, tmp_path):
     import pytest
 
-    cfg = _toy_cfg(tmp_path)
+    cfg = toy_config(tmp_path)
     cfg["model"]["encoders"] = {
         "vision_a": {"_target_": "encoder:toy_cnn", "dim": 64},
         "vision_b": {"_target_": "encoder:toy_cnn", "dim": 64},
@@ -755,8 +535,8 @@ def test_encode_rejects_unknown_names():
         model.encode("text", torch.ones(2, 5, dtype=torch.long), torch.full((2,), 5))
 
 
-def test_solver_warns_on_group_matching_nothing(tmp_path):
-    cfg = _toy_cfg(tmp_path)
+def test_solver_warns_on_group_matching_nothing(toy_config, tmp_path):
+    cfg = toy_config(tmp_path)
     cfg["solver"]["groups"] = [
         {"match": r"^backbone\.", "lr": 1e-3},  # matches nothing: params are encoders.*
         {"match": ".*", "lr": 1e-4},
@@ -768,18 +548,24 @@ def test_solver_warns_on_group_matching_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 # determinism: the three guarantees the framework exists to provide
 # ---------------------------------------------------------------------------
-def test_same_seed_twice_gives_identical_weights(tmp_path):
-    # weight init, augmentations and sampling all pin to the configured seed,
-    # so two full runs from the same config end bit-identical (BN running
-    # statistics included)
+@pytest.mark.parametrize("mode", ["streaming", "offline"])
+def test_same_seed_twice_gives_identical_weights(toy_config, tmp_path, mode):
+    cfg = _offline_cfg(toy_config, tmp_path) if mode == "offline" else toy_config(tmp_path)
     states = []
     for _ in range(2):
-        pipe = egolearn.build(_toy_cfg(tmp_path))
-        pipe.driver.fit()  # max_steps: 2
+        pipe = egolearn.build(deepcopy(cfg))
+        pipe.driver.fit()
+        assert pipe.mode == mode
+        assert pipe.ctx.clock.step == cfg["driver"]["max_steps"]
+        if mode == "offline":
+            assert pipe.ctx.clock.progress == pytest.approx(1.0)
+        report = pipe.driver.timer.report()
+        assert "batch.compose" in report and "data.load" in report
+        assert report["model.forward"]["count"] == pipe.ctx.clock.step
         states.append({k: v.clone() for k, v in pipe.model.state_dict().items()})
     assert states[0].keys() == states[1].keys()
-    for k in states[0]:
-        assert torch.equal(states[0][k], states[1][k]), f"weights differ at {k}"
+    for key in states[0]:
+        assert torch.equal(states[0][key], states[1][key]), key
 
 
 def test_resumed_run_does_not_overwrite_milestone_snapshots(tmp_path):
@@ -808,44 +594,43 @@ def test_resumed_run_does_not_overwrite_milestone_snapshots(tmp_path):
     assert 0.05 in hook._done  # marked handled, so it is not re-checked
 
 
-def test_resumed_run_matches_uninterrupted(tmp_path):
+@pytest.mark.parametrize("mode", ["streaming", "offline", "accumulation", "prefetch"])
+def test_resumed_run_matches_uninterrupted(toy_config, tmp_path, mode):
     from egolearn.utils.snapshot import load_snapshot, save_snapshot
 
-    # straight run to 4 steps
-    cfg = _toy_cfg(tmp_path)
+    cfg = _offline_cfg(toy_config, tmp_path) if mode == "offline" else toy_config(tmp_path)
     cfg["driver"]["max_steps"] = 4
-    ref = egolearn.build(cfg)
+    cut = 2
+    if mode == "accumulation":
+        cfg["driver"]["grad_accumulation"] = 2
+        cut = 3  # Snapshot with one backward pending in the accumulation window.
+    elif mode == "prefetch":
+        cfg = _prefetch_cfg(toy_config, tmp_path, True)
+        cut = 4  # Snapshot at a quantum boundary with a prefetched batch in flight.
+    ref = egolearn.build(deepcopy(cfg))
     ref.driver.fit()
 
-    # same run interrupted at 2, snapshotted, resumed in a fresh process
-    # stand-in (fresh build), continued to 4
-    p1 = egolearn.build(_toy_cfg(tmp_path))
-    p1.driver.fit()  # max_steps: 2
-    snap = str(tmp_path / "det_snap.pth")
-    save_snapshot(snap, p1.driver)
+    interrupted = deepcopy(cfg)
+    interrupted["driver"]["max_steps"] = cut
+    first = egolearn.build(interrupted)
+    first.driver.fit()
+    if mode == "accumulation":
+        assert any(p.grad is not None for p in first.model.parameters())
+    snapshot = str(tmp_path / "resume.pth")
+    save_snapshot(snapshot, first.driver)
 
-    cfg2 = _toy_cfg(tmp_path)
-    cfg2["driver"]["max_steps"] = 4
-    p2 = egolearn.build(cfg2)
-    load_snapshot(snap, p2.driver)
-    p2.driver.fit()
-
-    resumed = p2.model.state_dict()
-    for k, v in ref.model.state_dict().items():
-        assert torch.equal(v, resumed[k]), f"resume diverged at {k}"
-
-
-def test_stream_tail_trains_when_ending_mid_quantum(tmp_path):
-    # the toy stream has 160 observations and warmup consumes 20; with an
-    # advance quantum larger than the rest of the stream, the final partial
-    # quantum must still get its training steps
-    cfg = _toy_cfg(tmp_path)
-    cfg["driver"]["advance"] = {"kind": "observations", "n": 100000}
-    cfg["driver"]["max_steps"] = None
-    pipe = egolearn.build(cfg)
-    pipe.driver.fit()
-    assert pipe.ctx.clock.step >= 1  # the tail trained
-    assert pipe.driver._exhausted  # and the whole stream was consumed
+    resumed = egolearn.build(cfg)
+    load_snapshot(snapshot, resumed.driver)
+    assert resumed.ctx.clock.step == cut
+    assert resumed.ctx.clock.admitted == first.ctx.clock.admitted
+    for name, memory in first.memories.items():
+        assert {tier: len(table) for tier, table in memory.tiers.items()} == {
+            tier: len(table) for tier, table in resumed.memories[name].tiers.items()
+        }
+    resumed.driver.fit()
+    assert resumed.ctx.clock.step == ref.ctx.clock.step == cfg["driver"]["max_steps"]
+    for key, value in ref.model.state_dict().items():
+        assert torch.equal(value, resumed.model.state_dict()[key]), key
 
 
 def test_same_timestamp_observations_keep_channel_order():
@@ -860,12 +645,12 @@ def test_same_timestamp_observations_keep_channel_order():
     assert seq == [("video", 0.0), ("video", 1.0), ("transcript", 1.0)]
 
 
-def test_final_partial_grad_accumulation_is_applied(tmp_path):
+def test_final_partial_grad_accumulation_is_applied(toy_config, tmp_path):
     # the stream ends after an odd number of micro-steps with
     # grad_accumulation=2: the pending gradients must reach the optimizer
     # (counted through a recording wrapper -- asserting on p.grad alone
     # cannot tell "applied" from "silently zeroed")
-    cfg = _toy_cfg(tmp_path)
+    cfg = toy_config(tmp_path)
     cfg["driver"]["advance"] = {"kind": "observations", "n": 100000}
     cfg["driver"]["max_steps"] = None
     cfg["driver"]["grad_accumulation"] = 2
@@ -881,51 +666,18 @@ def test_final_partial_grad_accumulation_is_applied(tmp_path):
     pipe.driver.optimizer.step = counting_step
     pipe.driver.fit()
     assert pipe.driver._exhausted
+    assert pipe.ctx.clock.step >= 1
     assert pipe.ctx.clock.step % 2 == 1  # an odd tail was left pending...
     assert len(calls) == pipe.ctx.clock.step // 2 + 1  # ...and flushed
     assert all(p.grad is None for p in pipe.model.parameters())
 
 
-def test_mid_window_snapshot_resume_matches_uninterrupted(tmp_path):
-    # grad_accumulation=2, snapshot after 3 micro-steps (mid-window: one
-    # backward pending).  Pending gradients travel inside the snapshot and
-    # no phantom flush runs at the max_steps stop, so the continuation folds
-    # micro-steps 3+4 into one optimizer step exactly like the straight run.
-    from egolearn.utils.snapshot import load_snapshot, save_snapshot
-
-    cfg = _toy_cfg(tmp_path)
-    cfg["driver"]["max_steps"] = 4
-    cfg["driver"]["grad_accumulation"] = 2
-    ref = egolearn.build(cfg)
-    ref.driver.fit()
-
-    cfg1 = _toy_cfg(tmp_path)
-    cfg1["driver"]["max_steps"] = 3
-    cfg1["driver"]["grad_accumulation"] = 2
-    p1 = egolearn.build(cfg1)
-    p1.driver.fit()
-    assert any(p.grad is not None for p in p1.model.parameters())  # mid-window
-    snap = str(tmp_path / "ga_snap.pth")
-    save_snapshot(snap, p1.driver)
-
-    cfg2 = _toy_cfg(tmp_path)
-    cfg2["driver"]["max_steps"] = 4
-    cfg2["driver"]["grad_accumulation"] = 2
-    p2 = egolearn.build(cfg2)
-    load_snapshot(snap, p2.driver)
-    p2.driver.fit()
-
-    resumed = p2.model.state_dict()
-    for k, v in ref.model.state_dict().items():
-        assert torch.equal(v, resumed[k]), f"mid-window resume diverged at {k}"
-
-
-def test_resume_after_stream_end_adds_nothing(tmp_path):
+def test_resume_after_stream_end_adds_nothing(toy_config, tmp_path):
     # a snapshot taken after the stream ran dry: resuming must not re-admit
     # the final session-end flush or train an extra quantum
     from egolearn.utils.snapshot import load_snapshot, save_snapshot
 
-    cfg = _toy_cfg(tmp_path)
+    cfg = toy_config(tmp_path)
     cfg["driver"]["advance"] = {"kind": "observations", "n": 100000}
     cfg["driver"]["max_steps"] = None
     ref = egolearn.build(cfg)
@@ -935,7 +687,7 @@ def test_resume_after_stream_end_adds_nothing(tmp_path):
     snap = str(tmp_path / "end_snap.pth")
     save_snapshot(snap, ref.driver)
 
-    cfg2 = _toy_cfg(tmp_path)
+    cfg2 = toy_config(tmp_path)
     cfg2["driver"]["advance"] = {"kind": "observations", "n": 100000}
     cfg2["driver"]["max_steps"] = None
     p2 = egolearn.build(cfg2)
@@ -984,10 +736,10 @@ def test_snapshot_restores_rng_states_after_replay():
     assert ctx2.rng("admission.stub").getstate() == saved_state
 
 
-def test_first_step_uses_warmup_lr(tmp_path):
+def test_first_step_uses_warmup_lr(toy_config, tmp_path):
     # the schedule is applied before optimizer.step, so gradient step 1 runs
     # at the warmup multiplier instead of the full base LR
-    cfg = _toy_cfg(tmp_path)
+    cfg = toy_config(tmp_path)
     cfg["solver"]["schedule"] = {"warmup_min_steps": 100}
     cfg["driver"]["max_steps"] = 1
     pipe = egolearn.build(cfg)
@@ -1006,111 +758,55 @@ def test_first_step_uses_warmup_lr(tmp_path):
     assert seen[0] < base  # warmup multiplier, not full LR
 
 
-def test_an_chunk_covers_final_frame_at_tied_timestamp():
-    # SAYCam transcript timestamps are frame-aligned, so EVERY utterance ends
-    # exactly on a frame time.  The merge surfaces that frame before the
-    # utterance (channel order), so the chunk includes its final step --
-    # matching mcl, whose step2first is prebuilt over the whole video.
-    from egolearn.core.refs import ItemRef
-    from egolearn.data.sources.base import (
-        DenseFrameChannel,
-        Session,
-        SparseIntervalChannel,
-    )
+@pytest.mark.parametrize(
+    "timestamps, expected",
+    [([0.6, 0.8, 1.0], (3, 6)), ([0.31, 0.51], (2, 4))],
+    ids=["tied-final-frame", "rounded-up-final-frame"],
+)
+def test_an_chunk_includes_final_frame(timestamps, expected):
+    from egolearn.data.sources.base import DenseFrameChannel, Session, SparseIntervalChannel
     from egolearn.methods.babycl.an_chunks import ANChunkEmitter
 
-    times = [i * 0.2 for i in range(6)]  # 5 fps: steps 0..5
     video = DenseFrameChannel(
-        "video", "s", times=times, locators=[("d", i, i + 1) for i in range(6)]
+        "video",
+        "s",
+        times=[i * 0.2 for i in range(6)],
+        locators=[("d", i, i + 1) for i in range(6)],
     )
     text = SparseIntervalChannel(
         "transcript",
         "s",
         items=[
             {
-                "t0": 0.6,
-                "t1": 1.0,
+                "t0": timestamps[0],
+                "t1": timestamps[-1],
                 "payload": {
-                    K.TEXT_UTTERANCE: "look at the doggie",
-                    K.TEXT_TIMESTAMPS: [0.6, 0.8, 1.0],
+                    K.TEXT_UTTERANCE: "hello",
+                    K.TEXT_TIMESTAMPS: timestamps,
                     K.UTTERANCE_NUM: 1,
                 },
             }
         ],
     )
-    sess = Session("s", {"video": video, "transcript": text})
-
-    em = ANChunkEmitter(fps=5.0)
-    em.start_session("s")
+    emitter = ANChunkEmitter(fps=5.0)
+    emitter.start_session("s")
     events = []
-    for obs in sess.observations():
-        if obs.channel in em.subscribes:
-            em.ingest(obs)
-        events.extend(em.poll())
-    em.end_session()
-    events.extend(em.poll())
-
+    for observation in Session("s", {"video": video, "transcript": text}).observations():
+        if observation.channel in emitter.subscribes:
+            emitter.ingest(observation)
+        events.extend(emitter.poll())
+    emitter.end_session()
+    events.extend(emitter.poll())
     assert len(events) == 1
-    ref: ItemRef = events[0][K.VIDEO_REF]
-    # frames at steps 3..5 -> indices [3, 6): the tied final frame included
-    assert ref.locator[1:] == (3, 6)
-    assert ref.t1 == 1.0
+    assert events[0][K.VIDEO_REF].locator[1:] == expected
+    assert events[0][K.VIDEO_REF].t1 == pytest.approx((expected[1] - 1) * 0.2)
 
 
-def test_an_chunk_waits_for_rounded_up_final_frame():
-    # a final timestamp that rounds UP to a frame step the stream has not
-    # reached yet: the chunk must wait for that frame instead of dropping
-    # the step (mcl's step2first is prebuilt, so it never drops it)
-    from egolearn.core.refs import ItemRef
-    from egolearn.data.sources.base import (
-        DenseFrameChannel,
-        Session,
-        SparseIntervalChannel,
-    )
-    from egolearn.methods.babycl.an_chunks import ANChunkEmitter
-
-    times = [i * 0.2 for i in range(6)]  # steps 0..5
-    video = DenseFrameChannel(
-        "video", "s", times=times, locators=[("d", i, i + 1) for i in range(6)]
-    )
-    text = SparseIntervalChannel(
-        "transcript",
-        "s",
-        items=[
-            {
-                "t0": 0.31,
-                "t1": 0.51,  # surfaces between frames 0.4 and 0.6...
-                "payload": {
-                    K.TEXT_UTTERANCE: "hi",
-                    # ...but its last timestamp rounds to step 3 (frame 0.6)
-                    K.TEXT_TIMESTAMPS: [0.31, 0.51],
-                    K.UTTERANCE_NUM: 2,
-                },
-            }
-        ],
-    )
-    sess = Session("s", {"video": video, "transcript": text})
-    em = ANChunkEmitter(fps=5.0)
-    em.start_session("s")
-    events = []
-    for obs in sess.observations():
-        if obs.channel in em.subscribes:
-            em.ingest(obs)
-        events.extend(em.poll())
-    em.end_session()
-    events.extend(em.poll())
-
-    assert len(events) == 1
-    ref: ItemRef = events[0][K.VIDEO_REF]
-    # steps round(0.31*5)=2 and round(0.51*5)=3 -> frames [2, 4)
-    assert ref.locator[1:] == (2, 4)
-
-
-def test_worker_pool_matches_serial_loading(tmp_path):
+def test_worker_pool_matches_serial_loading(toy_config, tmp_path):
     # the worker count is a throughput knob only: same seed, same batches,
     # whether decode+augment ran in-process or in a spawn pool
     def first_batch(workers):
-        cfg = _toy_cfg(tmp_path / f"w{workers}")
+        cfg = toy_config(tmp_path / f"w{workers}")
         cfg["loader"] = {"workers": workers}
         pipe = egolearn.build(cfg)
         pipe.driver._run_warmup()
@@ -1120,6 +816,8 @@ def test_worker_pool_matches_serial_loading(tmp_path):
         return batch
 
     serial, pooled = first_batch(0), first_batch(2)
+    assert serial["curr"]["views"].shape == (4, 2, 3, 64, 64)
+    assert serial["curr"]["labels"].shape == (4,)
     assert sorted(serial) == sorted(pooled)
     for name in serial:
         assert torch.equal(serial[name]["views"], pooled[name]["views"]), name
@@ -1127,10 +825,10 @@ def test_worker_pool_matches_serial_loading(tmp_path):
             assert torch.equal(serial[name]["labels"], pooled[name]["labels"])
 
 
-def _prefetch_cfg(tmp_path, prefetch):
+def _prefetch_cfg(toy_config, tmp_path, prefetch):
     # quanta of 4 steps (prefetch only ever composes ahead WITHIN a quantum,
     # so steps_per_admit must be > 1 for it to engage at all)
-    cfg = _toy_cfg(tmp_path / f"p{int(prefetch)}")
+    cfg = toy_config(tmp_path / f"p{int(prefetch)}")
     cfg["loader"] = {"workers": 2}
     cfg["driver"]["rate"] = {"steps_per_admit": 4, "resample": True}
     cfg["driver"]["max_steps"] = 8
@@ -1138,12 +836,12 @@ def _prefetch_cfg(tmp_path, prefetch):
     return cfg
 
 
-def test_prefetch_matches_serial_streaming(tmp_path):
+def test_prefetch_matches_serial_streaming(toy_config, tmp_path):
     # prefetch is a pure throughput knob: batches derive from (seed,
     # compose_seq, memory contents), so composing ahead changes nothing
     states = []
     for prefetch in (False, True):
-        pipe = egolearn.build(_prefetch_cfg(tmp_path, prefetch))
+        pipe = egolearn.build(_prefetch_cfg(toy_config, tmp_path, prefetch))
         pipe.driver.fit()
         assert pipe.ctx.clock.step == 8
         states.append({k: v.clone() for k, v in pipe.model.state_dict().items()})
@@ -1151,10 +849,10 @@ def test_prefetch_matches_serial_streaming(tmp_path):
         assert torch.equal(states[0][k], states[1][k]), f"prefetch diverged at {k}"
 
 
-def test_prefetch_matches_serial_offline(tmp_path):
+def test_prefetch_matches_serial_offline(toy_config, tmp_path):
     states = []
     for prefetch in (False, True):
-        cfg = _offline_cfg(tmp_path / f"o{int(prefetch)}")
+        cfg = _offline_cfg(toy_config, tmp_path / f"o{int(prefetch)}")
         cfg["loader"] = {"workers": 2}
         cfg["driver"]["prefetch"] = prefetch
         cfg["driver"]["max_steps"] = 4
@@ -1166,40 +864,14 @@ def test_prefetch_matches_serial_offline(tmp_path):
         assert torch.equal(states[0][k], states[1][k]), f"prefetch diverged at {k}"
 
 
-def test_prefetch_resume_matches_uninterrupted(tmp_path):
-    # a snapshot can land while a prefetched batch is in flight; the sequence
-    # number is committed only on consumption, so the resumed run recomposes
-    # the identical batch and ends bit-identical to the uninterrupted run
-    from egolearn.utils.snapshot import load_snapshot, save_snapshot
-
-    ref = egolearn.build(_prefetch_cfg(tmp_path / "ref", True))
-    ref.driver.fit()  # straight to 8
-
-    cfg1 = _prefetch_cfg(tmp_path / "cut", True)
-    cfg1["driver"]["max_steps"] = 4
-    p1 = egolearn.build(cfg1)
-    p1.driver.fit()
-    snap = str(tmp_path / "prefetch_snap.pth")
-    save_snapshot(snap, p1.driver)
-
-    cfg2 = _prefetch_cfg(tmp_path / "res", True)
-    p2 = egolearn.build(cfg2)
-    load_snapshot(snap, p2.driver)
-    p2.driver.fit()
-
-    resumed = p2.model.state_dict()
-    for k, v in ref.model.state_dict().items():
-        assert torch.equal(v, resumed[k]), f"prefetch resume diverged at {k}"
-
-
-def test_prefetch_requires_workers(tmp_path):
-    cfg = _prefetch_cfg(tmp_path, True)
+def test_prefetch_requires_workers(toy_config, tmp_path):
+    cfg = _prefetch_cfg(toy_config, tmp_path, True)
     cfg["loader"] = {"workers": 0}
     with pytest.raises(egolearn.PipelineError, match=r"loader\.workers"):
         egolearn.build(cfg)
 
 
-def test_prefetch_refused_when_a_loss_mutates_sampling(tmp_path):
+def test_prefetch_refused_when_a_loss_mutates_sampling(toy_config, tmp_path):
     from egolearn.config.registry import LOSSES
     from egolearn.model.losses.base import Loss
 
@@ -1217,17 +889,17 @@ def test_prefetch_refused_when_a_loss_mutates_sampling(tmp_path):
             def compute(self, batch, model, ctx):
                 return {}
 
-    cfg = _prefetch_cfg(tmp_path, True)
+    cfg = _prefetch_cfg(toy_config, tmp_path, True)
     cfg["losses"].append({"_target_": "loss:mutating_test_loss"})
     with pytest.raises(egolearn.PipelineError, match="mutates_sampling_state"):
         egolearn.build(cfg)
 
 
-def test_worker_pool_registers_project_views(tmp_path):
+def test_worker_pool_registers_project_views(toy_config, tmp_path):
     # a spawned worker starts from a bare interpreter, so the config's
     # `_imports_` (which register project-owned views) must run in the
     # worker too before it can rebuild the view pipelines
-    cfg = _toy_cfg(tmp_path)
+    cfg = toy_config(tmp_path)
     cfg["_imports_"] = ["egolearn.methods.babycl"]
     cfg["views"] = {
         "v1": {"name": "babycl_ms_aug", "size": 64, "view_idx": 0},

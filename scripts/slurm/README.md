@@ -1,48 +1,22 @@
-# scripts/slurm/
+# Slurm launchers
 
-Cluster-independent Slurm launchers. Anything cluster-specific — account,
-partition, GPU type, data locations — is supplied at submit time, never
-committed:
+See [cluster setup and submission](../../docs/cluster.md). On the login node, use:
 
 ```bash
-sbatch --account=<account> --gres=gpu:<type>:1 scripts/slurm/train.sbatch \
-    projects/babycl/configs saycam_default \
-    stream.root_dir=$DATA_ROOT stream.transcript_json=$TRANSCRIPT_JSON \
-    tokenizer.vocab_json=$VOCAB_JSON
+source env.sh
+scripts/slurm/submit [sbatch options] -- egl train CONFIG [Hydra options]
 ```
 
-## Minimal cluster setup
+`submit` snapshots a clean commit, prepares the pinned container/environment in a
+CPU job when needed, and submits the requested command with a dependency.
+The command after `--` runs on a compute node. Keep Python off login nodes:
+`egl submit`, `egl doctor` and `egl bench` require a workstation or compute allocation.
+See [CPU benchmark planning](../../docs/benchmark_suites.md#cluster-planning-in-a-cpu-job).
+`--sweep` and `--commands` create one array. `--dry-run` prints the planned calls.
+`train.sbatch` and `bench.sbatch` are compatibility wrappers to run on the login node without sbatch (one GPU by default);
+`prep.sbatch`, `run.sbatch` and `run_array.sbatch` are internal entry points.
 
-On a login node, once:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh   # if uv is not installed
-git clone git@github.com:agentic-learning-ai-lab/egolearn.git && cd egolearn
-uv sync --extra train
-uv run pytest            # sanity: unit tests pass on CPU
-```
-
-The venv lives inside the repo on the shared filesystem, so compute nodes
-use it directly (`uv run --no-sync` in the templates skips re-resolving on
-nodes without internet). PyPI's Linux torch wheels bundle the CUDA runtime;
-the compute node only needs a recent NVIDIA driver.
-
-Home directories often have small quotas — if the torch download blows it,
-point the cache at scratch first: `export UV_CACHE_DIR=$SCRATCH/.cache/uv`.
-
-W&B on air-gapped compute nodes: `export WANDB_MODE=offline` before sbatch
-(or set `wandb.mode=offline` in the config) and `wandb sync` afterwards.
-
-## Apptainer route (fallback)
-
-If the bare-venv route fails on your cluster (old glibc, driver/toolkit
-mismatch), run the same commands inside any recent CUDA container:
-
-```bash
-apptainer exec --nv <cuda-image.sif> \
-    uv run --no-sync python -m egolearn.train --config-dir ... --config-name ...
-```
-
-Mount data with `--overlay <data.sqf>:ro` or `--bind` as your site requires.
-Keep site-specific image/overlay paths in your submit command or a private
-wrapper — not in this repo.
+The scripts are adapted from the MIT-licensed jepa-agent cluster stack at commit
+`a7124e81efc81eae88efdb889da0a52c33f562a8`; the shared lab copyright and MIT license
+are retained in the repository's LICENSE. EgoLearn adds immutable per-run code
+archives, commit-keyed wheel environments and per-task working directories.
