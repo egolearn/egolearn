@@ -111,6 +111,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Changed
 
+- Trim redundant training smoke tests and validation matrices; share resume and
+  synthetic-config setup, and document how to keep new tests focused.
+
 - `egl doctor --submit` checks submission tools and cluster storage on planning
   hosts, including CPU allocations. The documented benchmark workflow stops
   before creating a plan if diagnostics fail.

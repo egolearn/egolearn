@@ -119,20 +119,21 @@ def test_missing_baseline_run_produces_no_delta(tmp_path, capsys):
     assert result["baseline_problems"]
 
 
-@pytest.mark.parametrize("format", ["md", "csv", "json"])
 @pytest.mark.parametrize("seeds", [(0, 2), (0,), (0, 1, 2)])
-def test_baseline_rejects_different_seed_sets(tmp_path, capsys, format, seeds):
+def test_baseline_rejects_different_seed_sets(tmp_path, capsys, seeds):
     baseline = manifest_fixture(tmp_path / "baseline")
     current = manifest_fixture(tmp_path / "current", (3.0,) * len(seeds), seeds=seeds)
     with pytest.raises(ValueError, match="baseline seed sets must match"):
-        print_table(current, format, baseline, False)
+        print_table(current, "json", baseline, False)
     assert not capsys.readouterr().out
 
 
-@pytest.mark.parametrize("format", ["md", "csv", "json"])
-@pytest.mark.parametrize("change", ["hash", "key", "added", "removed"])
-@pytest.mark.parametrize("allow_unverified", [False, True])
-def test_baseline_rejects_different_input_pins(tmp_path, capsys, format, change, allow_unverified):
+# Pin comparison precedes rendering; output formats are covered above.
+@pytest.mark.parametrize(
+    "change, allow_unverified",
+    [("hash", False), ("hash", True), ("key", False), ("added", False), ("removed", False)],
+)
+def test_baseline_rejects_different_input_pins(tmp_path, capsys, change, allow_unverified):
     inputs = {"benchmarks.0.manifest": {"path": "/private/trials.json", "sha256": "d" * 64}}
     baseline = manifest_fixture(tmp_path / "baseline", inputs=inputs, dirty=allow_unverified)
     if change == "hash":
@@ -145,7 +146,7 @@ def test_baseline_rejects_different_input_pins(tmp_path, capsys, format, change,
         inputs.clear()
     current = manifest_fixture(tmp_path / "current", inputs=inputs, dirty=allow_unverified)
     with pytest.raises(ValueError, match="baseline input pins must match"):
-        print_table(current, format, baseline, allow_unverified)
+        print_table(current, "json", baseline, allow_unverified)
     assert not capsys.readouterr().out
 
 

@@ -36,6 +36,12 @@ def checkpoint(tmp_path, monkeypatch):
             },
         }
     )
+    assert model.construction_config is not None
+    model.construction_config["init_from"] = {
+        "checkpoint": str(tmp_path / "private-source" / "previous.pth"),
+        "sha256": "d" * 64,
+        "step": 5,
+    }
     state = {
         "model": model.state_dict(),
         "model_config": model.construction_config,
@@ -53,8 +59,7 @@ def checkpoint(tmp_path, monkeypatch):
     return path, model
 
 
-@pytest.mark.parametrize("file_input", [False, True])
-def test_export_load_and_initialize_without_pickle(checkpoint, tmp_path, monkeypatch, file_input):
+def test_export_load_and_initialize_without_pickle(checkpoint, tmp_path, monkeypatch):
     source, model = checkpoint
     exported = export_checkpoint(source, tmp_path / "export")
     assert sorted(p.name for p in exported.iterdir()) == ["model.json", "model.safetensors"]
@@ -65,7 +70,10 @@ def test_export_load_and_initialize_without_pickle(checkpoint, tmp_path, monkeyp
         "step": 17,
         "code_revision": {"commit": "c" * 40, "dirty": False},
     }
-    assert document["model_config"] == model.construction_config
+    assert document["model_config"] == {
+        **model.construction_config,
+        "init_from": {"checkpoint": "previous.pth", "sha256": "d" * 64, "step": 5},
+    }
     assert document["export_contract"] == model.export_contract()
     assert str(tmp_path) not in (exported / "model.json").read_text()
     assert "optimizer" not in document and "run_dir" not in document
@@ -74,18 +82,17 @@ def test_export_load_and_initialize_without_pickle(checkpoint, tmp_path, monkeyp
         raise AssertionError("exported weights were read with pickle")
 
     monkeypatch.setattr(torch, "load", forbidden)
-    path = exported / "model.safetensors" if file_input else exported
-    loaded = load_model(path)
+    loaded = load_model(exported)
     for name, tensor in model.state_dict().items():
         assert torch.equal(tensor, loaded.state_dict()[name]), name
     with torch.no_grad():
         for parameter in loaded.parameters():
             parameter.zero_()
-    summary = load_pretrained_weights(loaded, str(path))
+    summary = load_pretrained_weights(loaded, str(exported / "model.safetensors"))
     assert summary["checkpoint"] == "model.safetensors" and summary["step"] == 17
     assert summary["source"] == document["provenance"]
     assert all(torch.equal(t, loaded.state_dict()[n]) for n, t in model.state_dict().items())
-    result = evaluate_checkpoint(path, benchmarks=[WeightBenchmark()])
+    result = evaluate_checkpoint(exported, benchmarks=[WeightBenchmark()])
     assert result.checkpoint is not None
     assert result.checkpoint["sha256"] == summary["sha256"]
     assert result.checkpoint["source"] == document["provenance"]
@@ -102,22 +109,6 @@ def test_exported_metadata_changes_artifact_identity(checkpoint, tmp_path):
     _, after = read_checkpoint(exported)
     assert before["sha256"] != after["sha256"]
     assert before["weights_sha256"] == after["weights_sha256"]
-
-
-def test_export_keeps_portable_initialization_lineage(checkpoint, tmp_path):
-    source, _ = checkpoint
-    state = torch.load(source, weights_only=True)
-    state["model_config"]["init_from"] = {
-        "checkpoint": str(tmp_path / "private-source" / "previous.pth"),
-        "sha256": "d" * 64,
-        "step": 5,
-    }
-    torch.save(state, source)
-    exported = export_checkpoint(source, tmp_path / "export")
-    serialized = (exported / "model.json").read_text()
-    lineage = json.loads(serialized)["model_config"]["init_from"]
-    assert lineage == {"checkpoint": "previous.pth", "sha256": "d" * 64, "step": 5}
-    assert str(tmp_path) not in serialized
 
 
 def test_export_handles_shared_storage_and_noncontiguous_views(checkpoint, tmp_path):

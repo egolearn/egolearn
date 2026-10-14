@@ -44,26 +44,54 @@ def errors(title: str, body: str) -> list[str]:
     return check(title, body)[0]
 
 
-def test_good_message_passes() -> None:
-    assert check("Add a thing", GOOD) == ([], [])
+@pytest.mark.parametrize(
+    "before, after",
+    [
+        ("## Test plan", "## Results\n\nNot run yet.\n\n## Test plan"),
+        ("\n", "\r\n"),
+        ("- `a.py`", "### Detail\n\n- `a.py`"),
+        ("## Summary", "## Summary \t"),
+        ("- [x]", "- [X]"),
+        (">500 KB", ">500KB"),
+    ],
+    ids=["results", "crlf", "subheading", "heading-space", "uppercase-box", "compact-size"],
+)
+def test_valid_markdown_variations(before: str, after: str) -> None:
+    assert check("Add a thing", GOOD.replace(before, after)) == ([], [])
 
 
-def test_extra_section_between_summary_and_test_plan_passes() -> None:
-    body = GOOD.replace("## Test plan", "## Results\n\n| a | b |\n\n## Test plan")
-    assert errors("Add a thing", body) == []
-
-
-def test_section_after_checklist_fails() -> None:
-    assert "Checklist must be the last section" in errors("t", GOOD + "\n## Notes\n\nx\n")
-
-
-def test_crlf_body_passes() -> None:
-    assert errors("t", GOOD.replace("\n", "\r\n")) == []
-
-
-def test_subheading_inside_summary_is_not_a_section() -> None:
-    body = GOOD.replace("- `a.py`", "### Detail\n\n- `a.py`")
-    assert errors("t", body) == []
+@pytest.mark.parametrize(
+    "body, expected",
+    [
+        (GOOD + "\n## Notes\n\nx\n", "Checklist must be the last section"),
+        ("intro\n\n" + GOOD, "body must start with '## Summary', nothing before it"),
+        (
+            GOOD.replace("## Test plan", "## Decisions\n\n## Test plan"),
+            "section '## Decisions' is empty; fill it or drop it",
+        ),
+        (GOOD + "\n## Checklist\n\n- [x] again\n", "section '## Checklist' appears more than once"),
+        (
+            GOOD.replace("## Checklist", "## Notes\n\nMore context.\n\n## Checklist"),
+            "nothing goes between Test plan and Checklist",
+        ),
+        (
+            GOOD.replace("## Test plan", "## Review history\n\nr1\n\n## Test plan"),
+            "section '## Review history' does not belong in a PR message",
+        ),
+        (GOOD + "<!-- x -->\n", "HTML comments left in the body (the template's, or any other)"),
+    ],
+    ids=[
+        "trailing-section",
+        "preface",
+        "empty-section",
+        "duplicate-section",
+        "interrupted-footer",
+        "review-history",
+        "template-comment",
+    ],
+)
+def test_invalid_sections(body: str, expected: str) -> None:
+    assert expected in errors("t", body)
 
 
 def test_extra_unticked_box_fails() -> None:
@@ -73,11 +101,6 @@ def test_extra_unticked_box_fails() -> None:
 
 def test_empty_body_fails_without_crashing() -> None:
     assert "missing section '## Summary'" in errors("t", "")
-
-
-def test_empty_optional_section_fails() -> None:
-    body = GOOD.replace("## Test plan", "## Decisions\n\n## Test plan")
-    assert "section '## Decisions' is empty; fill it or drop it" in errors("t", body)
 
 
 def test_title_length_boundary() -> None:
@@ -105,11 +128,6 @@ def test_version_in_title_passes() -> None:
     assert errors("Bump to v0.1 defaults", GOOD) == []
 
 
-def test_duplicate_sections_fail_before_order_checks() -> None:
-    body = GOOD + "\n## Checklist\n\n- [x] again\n"
-    assert errors("t", body) == ["section '## Checklist' appears more than once"]
-
-
 @pytest.mark.parametrize(
     "topic, text",
     [
@@ -120,27 +138,10 @@ def test_duplicate_sections_fail_before_order_checks() -> None:
         ("attribution", "Ported third-party-derived code keeps its attribution header"),
     ],
 )
-@pytest.mark.parametrize("replacement", ["", "- [ ] {text}\n"])
-def test_each_template_box_must_be_present_and_ticked(
-    topic: str, text: str, replacement: str
-) -> None:
-    body = GOOD.replace(f"- [x] {text}\n", replacement.format(text=text))
+def test_each_template_topic_must_be_present(topic: str, text: str) -> None:
+    body = GOOD.replace(f"- [x] {text}\n", "")
     expected = [f"Checklist lacks a ticked box about {topic}"]
-    if replacement:
-        expected.insert(0, "1 checklist box(es) unticked")
     assert errors("t", body) == expected
-
-
-@pytest.mark.parametrize(
-    "before, after",
-    [
-        ("- [x]", "- [X]"),
-        ("personal paths", "personal paths (also checked uv.lock)"),
-        (">500 KB", ">500KB"),
-    ],
-)
-def test_checklist_notes_and_spelling_variations_pass(before: str, after: str) -> None:
-    assert errors("t", GOOD.replace(before, after)) == []
 
 
 def test_mentioning_another_topic_does_not_replace_its_box() -> None:
@@ -154,12 +155,6 @@ def test_filled_template_checklist_passes() -> None:
     checklist = template.read_text(encoding="utf-8").split("## Checklist")[1]
     body = GOOD.split("## Checklist")[0] + "## Checklist" + checklist.replace("[ ]", "[x]")
     assert check("t", body) == ([], [])
-
-
-def test_fenced_code_is_not_a_paragraph() -> None:
-    body = GOOD.replace("The problem and the outcome.", "```python\nprint(42)\n```")
-    body = body.replace("Part of #1.\n", "")
-    assert "Summary needs a paragraph and at least one bullet" in errors("t", body)
 
 
 def test_fence_closes_only_on_a_compatible_delimiter() -> None:
@@ -216,8 +211,7 @@ def test_issue_reference_alone_is_not_a_paragraph() -> None:
     assert errors("t", GOOD.replace("Part of #1.", "Part of #1 and #2, closes #3.")) == []
 
 
-@pytest.mark.parametrize("indent", ["  ", "    ", "\t"])
-@pytest.mark.parametrize("delimiter", ["```", "~~~"])
+@pytest.mark.parametrize("indent, delimiter", [("  ", "```"), ("    ", "~~~"), ("\t", "```")])
 def test_fenced_example_inside_checklist_item_is_not_a_box(indent: str, delimiter: str) -> None:
     example = f"{indent}{delimiter}markdown\n{indent}- [ ] example\n{indent}{delimiter}\n"
     body = GOOD + example
@@ -235,15 +229,6 @@ def test_a_comment_shown_inside_a_fence_is_content() -> None:
     assert check("t", GOOD.replace("The problem and the outcome.", example)) == ([], [])
 
 
-@pytest.mark.parametrize("whitespace", [" ", "   ", "\t"])
-def test_summary_heading_accepts_trailing_whitespace(whitespace: str) -> None:
-    assert check("t", GOOD.replace("## Summary", "## Summary" + whitespace)) == ([], [])
-
-
-def test_body_starts_with_summary() -> None:
-    assert "body must start with '## Summary', nothing before it" in errors("t", "intro\n\n" + GOOD)
-
-
 def test_summary_needs_a_paragraph_and_a_bullet() -> None:
     assert "Summary needs a paragraph and at least one bullet" in errors(
         "t", GOOD.replace("- `a.py`: does this now.\n", "Another sentence.\n")
@@ -254,8 +239,7 @@ def test_summary_needs_a_paragraph_and_a_bullet() -> None:
     assert errors("t", GOOD.replace("- `a.py`", "+ `a.py`")) == []
 
 
-@pytest.mark.parametrize("marker", ["1.", "1)", "12.", "12)"])
-@pytest.mark.parametrize("indent", ["", "   "])
+@pytest.mark.parametrize("marker, indent", [("1.", ""), ("12)", "   ")])
 def test_numbered_summary_items_are_bullets_not_prose(marker: str, indent: str) -> None:
     body = GOOD.replace("The problem and the outcome.", f"{indent}{marker} First change.")
     assert errors("t", body) == ["Summary needs a paragraph and at least one bullet"]
@@ -281,13 +265,6 @@ def test_title_repeated_as_a_heading_fails() -> None:
     assert "title repeated as a heading" in errors("Add a thing", "## Add a thing\n\n" + GOOD)
 
 
-def test_history_section_and_template_comment_fail() -> None:
-    body = GOOD.replace("## Test plan", "## Review history\n\nr1\n\n## Test plan")
-    assert "section '## Review history' does not belong in a PR message" in errors("t", body)
-    comment = "HTML comments left in the body (the template's, or any other)"
-    assert comment in errors("t", GOOD + "<!-- x -->\n")
-
-
 def test_missing_issue_reference_is_a_warning() -> None:
     warning = "no issue reference in Summary (Closes #N or Part of #N, when there is one)"
     assert check("t", GOOD.replace("Part of #1.", "Done."))[1] == [warning]
@@ -300,11 +277,6 @@ def test_missing_issue_reference_is_a_warning() -> None:
 @pytest.mark.parametrize("section", ["Summary", "Test plan", "Checklist"])
 def test_required_sections_cannot_be_omitted(section: str) -> None:
     assert f"missing section '## {section}'" in errors("t", GOOD.replace(f"## {section}", ""))
-
-
-def test_sections_cannot_interrupt_test_plan_and_checklist() -> None:
-    body = GOOD.replace("## Checklist", "## Notes\n\nMore context.\n\n## Checklist")
-    assert "nothing goes between Test plan and Checklist" in errors("t", body)
 
 
 def test_leading_blanks_do_not_hide_repeated_title() -> None:
@@ -341,23 +313,23 @@ def test_local_cli_accepts_an_empty_file_list(tmp_path: Path) -> None:
     assert "warning:" not in result.stdout
 
 
-@pytest.mark.parametrize(
-    "filename",
-    ["-notes.md", "--help", "--pr", "--title", "--body-file", "--files", "--", "-"],
-)
-def test_cli_treats_option_like_filenames_as_paths(tmp_path: Path, filename: str) -> None:
-    result = run_draft(tmp_path, GOOD, "--files", filename, "configs/my config.yaml")
-    assert result.returncode == 0, result.stderr
-    assert "PR message: ok" in result.stdout
-    assert f"warning: {check_pr_message.NO_RESULTS}" in result.stdout
-
-
 def test_cli_preserves_all_filenames_after_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     body_file = tmp_path / "body.md"
     body_file.write_text(GOOD, encoding="utf-8")
-    filenames = ["-notes.md", "--", "--pr", "26", "--help", "--files", "configs/a\nb.yaml"]
+    filenames = [
+        "-notes.md",
+        "--",
+        "-",
+        "--pr",
+        "26",
+        "--help",
+        "--title",
+        "--body-file",
+        "--files",
+        "configs/a\nb.yaml",
+    ]
 
     def check_files(title: str, body: str, files: list[str]) -> tuple[list[str], list[str]]:
         assert title == "check PR messages"
