@@ -4,6 +4,9 @@ The standalone evaluator runs benchmarks on a loaded `ComposedModel` or an
 EgoLearn checkpoint or exported model directory. It constructs no training stream, replay memory, training
 optimizer, or driver. Install the `train` extra for the PyTorch dependencies.
 
+Use `egl data prepare <name>` for benchmark preparation; the
+[CLI guide](cli.md#data) lists the equivalent installed Python module commands.
+
 ## Python API
 
 ```python
@@ -329,8 +332,8 @@ with the authors' permission. Cite the papers when using them.
 
 | Repo | Contents | Packaged config |
 | --- | --- | --- |
-| `agentic-learning-ai-lab/egolearn-shape-bias` | Prepared stimuli (Tartaglini, Vong & Lake, 2022) | `shape_bias_eval` |
-| `agentic-learning-ai-lab/egolearn-spatial-relation-categorization` | `monitoring/` subsets (Davidson, Orhan & Lake, 2024) | `spatial_relations_eval` |
+| [agentic-learning-ai-lab/egolearn-shape-bias](https://huggingface.co/datasets/agentic-learning-ai-lab/egolearn-shape-bias/tree/v1) | Prepared stimuli (Tartaglini, Vong & Lake, 2022) | `shape_bias_eval` |
+| [agentic-learning-ai-lab/egolearn-spatial-relation-categorization](https://huggingface.co/datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization/tree/v1) | `monitoring/` subsets (Davidson, Orhan & Lake, 2024) | `spatial_relations_eval` |
 
 Both are tagged `v1`; fetch them with `egl data fetch shape-bias --revision v1` or
 `egl data fetch spatial-relation-categorization --revision v1`. The other rows are

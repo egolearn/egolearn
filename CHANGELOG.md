@@ -128,6 +128,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Changed
 
+- Remove the `scripts/prepare_shape_bias.py`, `scripts/prepare_spatial_relations.py`,
+  and `scripts/prepare_spatial_monitoring.py` wrappers. Use `egl data prepare`
+  with `shape-bias`, `spatial-relations`, or `spatial-monitoring`, or the installed
+  module commands listed in the CLI guide.
 - Trim redundant training smoke tests and validation matrices; share resume and
   synthetic-config setup, and document how to keep new tests focused.
 

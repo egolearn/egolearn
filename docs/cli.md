@@ -96,12 +96,25 @@ options; this help works in a base installation without training extras.
 Preparation still needs the dependencies and source assets documented
 in the [evaluation guide](evaluation.md). It does not bypass data access requirements.
 
+Each preparer also runs directly as an installed Python module:
+
+| `egl data prepare` name | Module command |
+| --- | --- |
+| `labeled-s-4afc` | `python -m egolearn.evaluation.benchmarks.labeled_s_4afc.prepare` |
+| `babyview-4afc` | `python -m egolearn.evaluation.benchmarks.babyview_4afc.prepare` |
+| `shape-bias` | `python -m egolearn.evaluation.benchmarks.shape_bias.prepare` |
+| `spatial-relations` | `python -m egolearn.evaluation.benchmarks.spatial_relations.prepare` |
+| `spatial-monitoring` | `python -m egolearn.evaluation.benchmarks.spatial_relations.subset` |
+
+Append the same preparation flags shown in the evaluation guides. Direct module
+commands use their own path defaults; pass explicit source/output paths to match
+the shared-root layout of `egl data prepare`.
+
 `data verify DIR` checks the collection's `checksums.sha256` without writing files.
 It reports missing, altered, or unlisted payloads. Legacy preparation outputs have
 their own benchmark validators and may not contain collection checksums; a missing
 checksum file fails verification. The existing `python -m egolearn.hub checksum DIR`
-command can create collection checksums after preparation. Existing module and
-script entry points retain their original defaults.
+command can create collection checksums after preparation.
 
 ## Diagnostics and cluster submission
 
