@@ -1,0 +1,17 @@
+# Spatial relation categorization (Davidson, Orhan & Lake, 2024) on the hosted
+# monitoring subsets. CC BY 4.0; cite the paper. Private until release:
+# authenticate with HF_TOKEN.
+#   egl eval spatial_relations_eval checkpoint=<checkpoint or export>
+defaults:
+  - evaluate
+  - _self_
+
+_imports_:
+  - egolearn.evaluation.benchmarks.spatial_relations
+benchmarks:
+  - _target_: "probe:spatial_relations"
+    name: spatial_relations_monitoring
+    abstract_2d_manifest: "hf://datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization@v1/monitoring/2d-stimuli/manifest.json"
+    rendered_3d_manifest: "hf://datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization@v1/monitoring/3d-stimuli/manifest.json"
+    batch_size: 32
+    tie_tolerance: 1.0e-6
