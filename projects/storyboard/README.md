@@ -38,4 +38,3 @@ recluster trigger is checked per frame instead of per training step (fires
 at the same threshold crossing).
 
 KrishnaCam: swap `stream:` for a frames-directory adapter at 10 fps.
- 
