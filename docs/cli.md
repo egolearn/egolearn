@@ -106,7 +106,7 @@ Each preparer also runs directly as an installed Python module:
 | `spatial-relations` | `python -m egolearn.evaluation.benchmarks.spatial_relations.prepare` |
 | `spatial-monitoring` | `python -m egolearn.evaluation.benchmarks.spatial_relations.subset` |
 
-Append `--help` to a module command to see its required arguments and defaults.
+Append `--help` to a module command to see its arguments and options.
 Direct module calls do not apply the CLI's shared-root defaults or its
 existing-output check. Choose a new output path when preparing data; shape-bias
 and BabyView can overwrite files in an existing output directory.
