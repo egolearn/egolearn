@@ -3,13 +3,15 @@
 # `hydra.searchpath: [pkg://egolearn.configs]`.
 # Dataset roots always come from the config or the environment — never hardcoded in code.
 seed: 0
+record_json: null  # optional local run record; benchmark suites always set this
 wandb:
   entity: nyu-mengye-group
   project: null
   mode: disabled
 dry_run: false     # build and validate the whole pipeline, then exit without training
 resume: null       # path to a snapshot (saved run state), or "auto" for the newest in run_dir
-init_from: null    # {checkpoint, include?, exclude?, strict?}: initialize model weights
+# Initialize model weights; full snapshots also need trusted_snapshot: true.
+init_from: null    # {checkpoint, include?, exclude?, strict?, trusted_snapshot?}
 loader:
   workers: 0       # decode+augment worker processes; 0 = load in-process
   flush_denormal: true  # workers flush denormal floats (faster blur, same pixels); trainer untouched

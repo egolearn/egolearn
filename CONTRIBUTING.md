@@ -82,6 +82,29 @@ Without `--files`, the Results warning is skipped. The path heuristic includes
 `.yaml` and `.yml`; reported numbers elsewhere are the author's responsibility.
 Fenced examples count as content, never headings, checklist boxes, or comments.
 
+## Docs site
+
+The landing page is `landing/index.html`, served at the site root; the MkDocs
+site from `docs/` (`mkdocs.yml`) is served under `/docs/`. Pages outside `docs/`
+(the root README, CHANGELOG, CONTRIBUTING, SECURITY, and the project READMEs) are
+added at build time by `scripts/docs/hooks.py`, which also points links to files
+outside the site at GitHub. Preview locally:
+
+```bash
+uv run --group docs mkdocs serve
+```
+
+Cloudflare Pages builds both with `scripts/docs/build.sh`:
+
+- Build command: `bash scripts/docs/build.sh`
+- Output directory: `dist`
+- Environment: `PYTHON_VERSION=3.12`; `EGOLEARN_SITE_STAGING=false` only for the public
+  production build (staging adds `noindex` and a `robots.txt` that blocks crawlers)
+
+Images in `landing/media/` are either drawn or generated for the page, or come
+from published, openly licensed sources and the datasets' own project pages; the
+page credits each one.
+
 ## Porting policy
 
 Code from the source repos (memory-storyboard, lifelong-memory, poodle,
@@ -111,6 +134,12 @@ files.
 | llm | `@pytest.mark.llm` | manual only (paid APIs), never CI | `uv run pytest -m llm` |
 
 Every ported or new library component lands with tests in the appropriate tier.
+Prefer a small set of behavior tests over a test for every function or input
+spelling. Extend an existing test when it already exercises the behavior; keep
+separate cases for known regressions and distinct failure modes. Share setup for
+the same contract, and avoid Cartesian products of independent options unless
+their interaction matters. Keep numerical correctness, reproducibility, checkpoint
+safety, and data-integrity checks when trimming redundant smoke tests.
 
 ## Dependencies
 

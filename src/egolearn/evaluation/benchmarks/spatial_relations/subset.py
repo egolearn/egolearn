@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import shutil
 import tempfile
@@ -10,6 +9,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from egolearn.commands.prepare_parsers import preparation_parser
 from egolearn.evaluation.benchmarks.shape_bias.stimuli import sha256_file
 from egolearn.evaluation.benchmarks.spatial_relations.prepare import (
     _finish,
@@ -136,14 +136,7 @@ def prepare_subset(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--full-root", type=Path, default=Path("data/spatial_relations/v1"))
-    parser.add_argument(
-        "--output-dir", type=Path, default=Path("data/spatial_relations/monitoring_v1")
-    )
-    parser.add_argument("--seed", type=int, default=33)
-    parser.add_argument("--exp1-per-condition", type=int, default=64)
-    parser.add_argument("--exp3-configurations", type=int, default=16)
+    parser = preparation_parser("spatial-monitoring", description=__doc__)
     args = parser.parse_args()
     manifests = prepare_subset(
         args.full_root,

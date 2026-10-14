@@ -7,11 +7,17 @@ from egolearn.evaluation.probe import Probe
 
 if TYPE_CHECKING:
     from egolearn.evaluation.checkpoint import evaluate_checkpoint, load_model
-    from egolearn.evaluation.evaluator import EvaluationContext, EvaluationResult, evaluate
+    from egolearn.evaluation.evaluator import (
+        EvaluationContext,
+        EvaluationError,
+        EvaluationResult,
+        evaluate,
+    )
 
 __all__ = [
     "Benchmark",
     "EvaluationContext",
+    "EvaluationError",
     "EvaluationResult",
     "Probe",
     "evaluate",
@@ -21,7 +27,7 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name in {"EvaluationContext", "EvaluationResult", "evaluate"}:
+    if name in {"EvaluationContext", "EvaluationError", "EvaluationResult", "evaluate"}:
         from egolearn.evaluation import evaluator
 
         return getattr(evaluator, name)

@@ -1,0 +1,127 @@
+site_name: egolearn
+site_url: https://egolearn.org/docs/
+site_description: Learning from first-person video streams.
+
+repo_url: https://github.com/agentic-learning-ai-lab/egolearn
+repo_name: egolearn
+edit_uri: edit/main/docs/
+
+copyright: egolearn
+
+hooks:
+  - scripts/docs/hooks.py
+
+# Pages the hook imports from outside docs/: rebuild `mkdocs serve` when they change.
+watch:
+  - README.md
+  - CHANGELOG.md
+  - CONTRIBUTING.md
+  - SECURITY.md
+  - projects/babycl/README.md
+  - projects/storyboard/README.md
+  - scripts/docs/hooks.py
+
+theme:
+  name: material
+  custom_dir: overrides
+  font: false
+  logo: assets/icon-light.svg
+  favicon: assets/favicon.svg
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - navigation.tracking
+    - toc.integrate
+    - search.suggest
+    - search.highlight
+    - content.action.edit
+    - content.action.view
+    - content.code.copy
+  icon:
+    search: bi/search
+  # Same three-state theme cycle as agenticlearning.ai: system, light, dark.
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: bi/circle-half
+        name: "Theme: system (switch to light)"
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: white
+      accent: blue
+      toggle:
+        icon: bi/sun
+        name: "Theme: light (switch to dark)"
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: blue
+      toggle:
+        icon: bi/moon
+        name: "Theme: dark (switch to system)"
+
+extra_css:
+  - https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap
+  - https://agenticlearning.ai/css/lab-tokens.css
+  - stylesheets/lab.css
+
+extra:
+  generator: false
+  # Staging adds noindex and a blocking robots.txt; set
+  # EGOLEARN_SITE_STAGING=false for the public production build.
+  staging: !ENV [EGOLEARN_SITE_STAGING, true]
+  social:
+    - icon: lab/github
+      link: https://github.com/agentic-learning-ai-lab/egolearn
+      name: GitHub
+
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+nav:
+  - Home: index.md
+  - Get started:
+    - Overview: overview.md
+    - Command line: cli.md
+    - Cluster jobs: cluster.md
+    - Start from a checkpoint: initialization.md
+  - Evaluation:
+    - Evaluate a model: evaluation.md
+    - Benchmark suites: benchmark_suites.md
+    - Spatial relations: evaluation/spatial_relations.md
+  - Methods:
+    - BabyCL: projects/babycl.md
+    - Memory Storyboard: projects/storyboard.md
+  - Design:
+    - Architecture: design/architecture.md
+    - Streaming: design/streaming.md
+  - Project:
+    - Roadmap: roadmap.md
+    - Changelog: changelog.md
+    - Contributing: contributing.md
+    - Security: security.md

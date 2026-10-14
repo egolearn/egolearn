@@ -1,9 +1,13 @@
 # Cluster jobs
 
-Use `scripts/slurm/submit [sbatch options] -- <command>` from a clean checkout.
-The login node needs Bash 4.4+, Git, coreutils, findutils, tar, iconv and `sbatch`;
-compute nodes need Bash 4.4+, Apptainer and `flock`. There is no login-node
-environment build or image pull.
+Use `scripts/slurm/submit [sbatch options] -- <command>` from a clean checkout
+on the login node. **Do not run Python on login nodes**, including any `egl`
+command, environment installation, diagnostics or benchmark planning. The shell
+launcher needs Bash 4.4+, Git, coreutils, findutils, tar, iconv and `sbatch`;
+compute nodes need Bash 4.4+, Apptainer and `flock`. Environment builds and image
+pulls run in CPU jobs. A compute node used for benchmark planning also needs the
+shell launcher's tools listed above and uv, with `sbatch` available on `PATH` to
+submit the worker array. Load the site's required modules in the planning shell.
 
 ## Setup and submission
 
@@ -77,9 +81,13 @@ Every submit archives exactly one clean Git commit. Staged, unstaged and
 untracked changes are refused; ignored data, `env.sh`, environments and outputs
 are excluded. Commit the intended code before submitting. Git submodules and
 tracked symlinks are refused because they could escape the archived tree.
-Submission uses Bash, Git and standard Unix tools to archive code and write
-`run.json`; it does not invoke Python on the login node. Python setup and job
-commands run only in scheduled jobs.
+`scripts/slurm/submit` uses Bash, Git and standard Unix tools to archive code and
+write `run.json`, without Python on the login node. The installed `egl submit`
+alias dispatches to that script and is for workstations or compute allocations.
+Run `egl bench run --submit` in a CPU allocation: config composition and hashing
+every pinned input happen before submission. Follow the
+[benchmark planning steps](benchmark_suites.md#cluster-planning-in-a-cpu-job).
+Training dependencies and the container are prepared in CPU jobs.
 Command arguments must be UTF-8; submission checks them with `iconv` before
 creating a snapshot so `run.json` remains valid JSON.
 
@@ -136,6 +144,29 @@ nonblank, noncomment shell commands into one array; use trusted command files.
 `--max-parallel` caps concurrent tasks. `--dry-run` writes the local snapshot and
 record and prints the sbatch calls, but submits no jobs. `--chdir`, `--export`,
 `--wrap` and raw `--array` are managed by the launcher and cannot be overridden.
+
+## Diagnostics
+
+On the login node, the shell launcher checks required storage settings and the
+checkout before submitting. Its `--dry-run` performs those checks and writes a
+snapshot without executing Python or submitting jobs.
+
+Run `egl doctor` in an allocation. To check the prepared CPU environment, replace
+`CPU_PARTITION` with your site's CPU partition and submit from the login node:
+
+```bash
+scripts/slurm/submit --partition=CPU_PARTITION --cpus-per-task=2 --mem=8G \
+  --time=00:10:00 -- egl doctor --cluster --skip-cuda
+```
+
+For a CUDA check, request a GPU job and pass `--require-cuda` instead of
+`--skip-cuda`. Doctor's CUDA probe imports torch in a child process. Even with
+`--skip-cuda`, doctor itself runs Python and belongs in an allocation.
+
+In a CPU planning shell, use `egl doctor --submit --skip-cuda` to check submission
+tools and cluster storage before planning an array. This checks Bash, Git,
+`sbatch`, `iconv`, `tar`, and uv on that host, including inside a Slurm allocation.
+See the [benchmark planning workflow](benchmark_suites.md#cluster-planning-in-a-cpu-job).
 
 ## Caches and credentials
 

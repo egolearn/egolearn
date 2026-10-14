@@ -18,6 +18,9 @@ memory retrieval, and egocentric video question answering.
 
 ## Quickstart
 
+Run Python setup and commands on a workstation or compute node. For cluster
+login-node submission, start with the [shell launcher](docs/cluster.md).
+
 ```bash
 git clone git@github.com:agentic-learning-ai-lab/egolearn.git
 cd egolearn
@@ -39,12 +42,15 @@ After `uv sync`, use `uv run egl` (also available as `egolearn`), or `egl` in an
 
 ```bash
 egl --help
+egl data list
+egl doctor
 egl train toy_streaming dry_run=true
 egl train projects/babycl/configs/saycam_default.yaml seed=42
 egl eval imagenet_linear_eval checkpoint=runs/example/final.pth data_root=/path/to/imagenet
 ```
 
-See the [CLI guide](docs/cli.md) for configuration paths, overrides, and multirun.
+See the [CLI guide](docs/cli.md) for data preparation, diagnostics, submission,
+benchmark suites, configuration paths, and multirun.
 
 ## SAYCam dataset access
 
@@ -115,6 +121,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) (branching, gates, style, tests) and
 
 ## Cluster jobs
 
-Use `scripts/slurm/submit [sbatch options] -- <command>` for containerized jobs,
+On login nodes, use `scripts/slurm/submit [sbatch options] -- <command>` for containerized jobs,
 CPU environment preparation and immutable code snapshots. See [cluster setup](docs/cluster.md)
-for the scratch cache environment, pinned image and Hydra sweep arrays.
+for the scratch cache environment, pinned image and Hydra sweep arrays. Run all
+Python commands, including `egl doctor` and benchmark planning, in compute allocations.

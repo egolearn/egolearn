@@ -261,40 +261,23 @@ def test_vjepa_target_must_be_frozen(tmp_path):
 
 
 def _offline_vjepa_cfg(tmp_path):
-    return {
-        "run_dir": str(tmp_path / "run"),
-        "seed": 7,
-        "device": "cpu",
-        "stream": {
-            "_target_": "stream:toy",
-            "n_sessions": 1,
-            "blocks_per_session": 4,
-            "block_len": 40,
-            "img_size": 64,
+    cfg = _vjepa_cfg(tmp_path)
+    for key in ("admission", "memories", "routes", "recipe"):
+        del cfg[key]
+    cfg["driver"] = {
+        "mode": "offline",
+        "batch": {
+            "slot": "clips",
+            "n": 2,
+            "views": ["cv"],
+            "unit": "clip",
+            "clip_len": 4,
+            "clip_stride": 1,
         },
-        "views": {"cv": {"name": "clip_rrc", "size": 48, "scale_min": 0.5}},
-        "model": _vjepa_model(),
-        "losses": _vjepa_losses(),
-        "solver": {
-            "opt": "sgd",
-            "groups": [{"match": ".*", "lr": 0.05, "weight_decay": 0.0}],
-            "schedule": {"constant": True},
-        },
-        "driver": {
-            "mode": "offline",
-            "batch": {
-                "slot": "clips",
-                "n": 2,
-                "views": ["cv"],
-                "unit": "clip",
-                "clip_len": 4,
-                "clip_stride": 1,
-            },
-            "epochs": 1,
-            "max_steps": 2,
-        },
-        "hooks": {"log_every": 1},
+        "epochs": 1,
+        "max_steps": 2,
     }
+    return cfg
 
 
 def test_offline_clip_unit_indexes_windows_and_trains(tmp_path):

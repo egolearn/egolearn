@@ -29,7 +29,8 @@ uv run pre-commit run --all-files
 - **Merge commits only** — never rebase, squash, or force-push. History must stay
   identical with the private `-dev` mirror (RELEASING.md).
 - Never commit secrets, personal cluster paths, dataset frames (SAYCam/BabyView are
-  IRB-controlled), or files >500 KB (SECURITY.md has the full list). This private
+  IRB-controlled; the only exception is credited, already-public images in
+  `landing/media/`), or files >500 KB (SECURITY.md has the full list). This private
   repo's history goes public at first release.
 - LLM API keys: environment variables only, never CLI flags or configs.
 - Imports are absolute (`from egolearn...`); code must work from an installed

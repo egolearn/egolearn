@@ -49,17 +49,14 @@ sif_path() {
   name=${name%%:*}
   printf '%s\n' "${SIF_DIR:?}/$name@sha256-${1##*:}.sif"
 }
-# Optional storage paths from env.sh: checked against $HOME and bound into the container.
-STORAGE_VARS=(CACHE_ROOT UV_CACHE_DIR HF_HOME TORCH_HOME TRITON_CACHE_DIR
-  TORCHINDUCTOR_CACHE_DIR CUDA_CACHE_PATH XDG_CACHE_HOME MPLCONFIGDIR MAMBA_ROOT_PREFIX
-  HF_HUB_CACHE HUGGINGFACE_HUB_CACHE TRANSFORMERS_CACHE PIP_CACHE_DIR
-  WANDB_DIR WANDB_CACHE_DIR WANDB_CONFIG_DIR WANDB_DATA_DIR EGOLEARN_DATA BENCH_DIR
-  EGOLEARN_ARTIFACTS EGOLEARN_JOB_ROOT EGOLEARN_ENV_ROOT EGOLEARN_VENV)
-# Required in the environment (env.sh) before any launcher runs.
-REQUIRED_VARS=(SIF_DIR APPTAINER_HOME APPTAINER_CACHEDIR APPTAINER_CONFIGDIR
-  UV_PYTHON_INSTALL_DIR EGOLEARN_JOB_ROOT EGOLEARN_ENV_ROOT CACHE_ROOT UV_CACHE_DIR
-  HF_HOME TORCH_HOME TRITON_CACHE_DIR TORCHINDUCTOR_CACHE_DIR CUDA_CACHE_PATH
-  XDG_CACHE_HOME MPLCONFIGDIR WANDB_DIR WANDB_CACHE_DIR WANDB_CONFIG_DIR WANDB_DATA_DIR)
+# Required/optional storage names are also consumed by the installed doctor command.
+REQUIRED_VARS=() STORAGE_VARS=()
+while read -r kind name; do
+  case "$kind" in
+    required) REQUIRED_VARS+=("$name"); STORAGE_VARS+=("$name");;
+    storage) STORAGE_VARS+=("$name");;
+  esac
+done < "$(dirname "${BASH_SOURCE[0]}")/../../src/egolearn/commands/cluster_paths.txt"
 # The venv sync arguments every prep job uses; env.sh may override them (EGOLEARN_SYNC_ARGS).
 DEFAULT_SYNC_ARGS='--extra train --extra video'
 outside_home() {
