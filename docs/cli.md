@@ -106,9 +106,10 @@ Each preparer also runs directly as an installed Python module:
 | `spatial-relations` | `python -m egolearn.evaluation.benchmarks.spatial_relations.prepare` |
 | `spatial-monitoring` | `python -m egolearn.evaluation.benchmarks.spatial_relations.subset` |
 
-Append the same preparation flags shown in the evaluation guides. Direct module
-commands use their own path defaults; pass explicit source/output paths to match
-the shared-root layout of `egl data prepare`.
+Append `--help` to a module command to see its required arguments and defaults.
+Direct module calls do not apply the CLI's shared-root defaults or its
+existing-output check. Choose a new output path when preparing data; shape-bias
+and BabyView can overwrite files in an existing output directory.
 
 `data verify DIR` checks the collection's `checksums.sha256` without writing files.
 It reports missing, altered, or unlisted payloads. Legacy preparation outputs have
