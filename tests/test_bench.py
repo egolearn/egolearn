@@ -44,6 +44,7 @@ def suite_file(tmp_path, **changes):
         "--multirun",
         "resume=auto",
         "dry_run=true",
+        "record_fail_on_nonfinite=false",
         "model={}",
         "model.weights=elsewhere",
         "model.weights.child=elsewhere",

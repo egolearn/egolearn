@@ -18,7 +18,16 @@ from egolearn.hub import resolve, sha256_file, verify_checksums
 from egolearn.run_record import atomic_json, source_checkout, source_identity
 from egolearn.utils.model_artifact import METADATA, export_sha256, resolve_model_files
 
-_RESERVED = {"seed", "record_json", "run_dir", "output_json", "hydra", "resume", "dry_run"}
+_RESERVED = {
+    "seed",
+    "record_json",
+    "record_fail_on_nonfinite",
+    "run_dir",
+    "output_json",
+    "hydra",
+    "resume",
+    "dry_run",
+}
 
 
 def hydra_quote(value: str) -> str:
@@ -217,6 +226,7 @@ def _compose(suite: dict, run_dir: Path, seed: int) -> dict:
     config.record_json = str(run_dir / "record.json")
     if suite["entry"] == "train":
         config.run_dir = str(run_dir / "artifacts")
+        config.record_fail_on_nonfinite = True
     else:
         config.output_json = str(run_dir / "evaluation.json")
     plain = OmegaConf.to_container(config, resolve=False)

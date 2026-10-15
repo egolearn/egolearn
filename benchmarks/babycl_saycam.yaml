@@ -1,0 +1,35 @@
+# Populate artifact locations and hashes through the environment before planning.
+# A directory's digest is the SHA-256 of its verified checksums.sha256 inventory.
+# No datasets, credentials, local paths, or experiment results belong in this file.
+version: 1
+name: babycl-saycam-labeled-s
+entry: train
+config: ../projects/babycl/configs/saycam_default.yaml
+overrides:
+  - +benchmark=labeled_s
+seeds: [1337, 1338, 1339]
+inputs:
+  stream.root_dir:
+    path: ${oc.env:SAYCAM_ROOT}
+    sha256: ${oc.env:SAYCAM_SHA256}
+  stream.transcript_json:
+    path: ${oc.env:SAYCAM_TRANSCRIPTS}
+    sha256: ${oc.env:SAYCAM_TRANSCRIPTS_SHA256}
+  tokenizer.vocab_json:
+    path: ${oc.env:BABYCL_VOCAB}
+    sha256: ${oc.env:BABYCL_VOCAB_SHA256}
+  probes.0.vocab_json:
+    path: ${oc.env:BABYCL_VOCAB}
+    sha256: ${oc.env:BABYCL_VOCAB_SHA256}
+  probes.0.manifest:
+    path: ${oc.env:LABELED_S_MANIFEST}
+    sha256: ${oc.env:LABELED_S_MANIFEST_SHA256}
+  probes.1.data_root:
+    path: ${oc.env:LABELED_S_ROOT}
+    sha256: ${oc.env:LABELED_S_SHA256}
+  probes.1.split_file:
+    path: ${oc.env:LABELED_S_SPLIT}
+    sha256: 5e795939ba980779bb8e918847cd7df8f8d1310aac3a0dfa2ba0d6e1232cc349
+metrics:
+  probe/labeled_s_4afc/four_afc_acc: max
+  probe/labeled_s_linear/top1: max

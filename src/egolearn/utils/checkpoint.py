@@ -44,6 +44,7 @@ def read_checkpoint(
             "model_config": document["model_config"],
             "export_contract": document["export_contract"],
             "step": document["provenance"]["step"],
+            "run_provenance": document["provenance"].get("training_provenance"),
         }
         # The artifact identity covers construction metadata as well as tensor bytes.
         metadata_sha = file_digest(metadata)
@@ -56,6 +57,7 @@ def read_checkpoint(
             "weights_sha256": document["weights_sha256"],
             "metadata_sha256": metadata_sha,
             "source": document["provenance"],
+            "training_provenance": state["run_provenance"] or "unavailable",
         }
     with path.open("rb") as file:
         digest = hashlib.file_digest(file, "sha256").hexdigest()
@@ -81,4 +83,10 @@ def read_checkpoint(
     step = state.get("step")
     if step is None:
         step = ((state.get("context") or {}).get("clock") or {}).get("step")
-    return state, {**hub, "filename": path.name, "sha256": digest, "step": step}
+    return state, {
+        **hub,
+        "filename": path.name,
+        "sha256": digest,
+        "step": step,
+        "training_provenance": state.get("run_provenance") or "unavailable",
+    }

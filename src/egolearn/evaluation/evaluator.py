@@ -10,7 +10,7 @@ import random
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +22,7 @@ from egolearn.config.instantiate import instantiate
 from egolearn.core.context import _stable_seed
 from egolearn.evaluation.benchmark import Benchmark
 from egolearn.model.model import ComposedModel
+from egolearn.run_record import RunRecord, record_run
 from egolearn.utils.provenance import code_revision
 
 
@@ -158,6 +159,91 @@ def evaluate(
     device: str | torch.device | None = None,
     seed: int = 0,
     imports: Sequence[str] = (),
+    record_json: str | Path | None = "auto",
+) -> EvaluationResult:
+    """Evaluate a model with an automatic run record; ``None`` disables recording.
+
+    Modes, gradient flags and RNGs are preserved. Automatic records use distinct
+    directories under ``runs/eval/records``; an explicit file must not exist yet.
+    """
+    config = {
+        "seed": int(seed),
+        "device": str(device) if device is not None else None,
+        "model_config": deepcopy(model.construction_config),
+        "_imports_": list(imports),
+        "benchmarks": benchmark_configs(benchmarks),
+        "record_json": record_json,
+    }
+    with record_run(
+        config, "eval", reuse=True, descriptive_sections=descriptive_benchmarks(benchmarks)
+    ) as record:
+        specs = prepared_benchmarks(benchmarks, record)
+        return _evaluate(
+            model, benchmarks=specs, device=device, seed=seed, imports=imports, record=record
+        )
+
+
+def benchmark_configs(benchmarks: Sequence[Benchmark | Mapping]) -> list[dict]:
+    return [
+        dict(spec)
+        if isinstance(spec, Mapping)
+        else {
+            "_target_": f"{type(spec).__module__}.{type(spec).__qualname__}",
+            **spec.configuration(),
+        }
+        for spec in benchmarks
+    ]
+
+
+def descriptive_benchmarks(benchmarks: Sequence[Benchmark | Mapping]) -> frozenset[str]:
+    # An instance may already have cached data. Its configuration cannot prove
+    # which bytes it consumed, and resolving a moving Hub tag again is misleading.
+    return frozenset(
+        f"benchmarks.{index}"
+        for index, spec in enumerate(benchmarks)
+        if isinstance(spec, Benchmark)
+    )
+
+
+def prepared_benchmarks(
+    benchmarks: Sequence[Benchmark | Mapping], record: RunRecord | None
+) -> Sequence[Benchmark | Mapping]:
+    if record is None:
+        return benchmarks
+
+    def preserve_objects(original, recorded):
+        # Recording converts dataclasses to data, but constructors still need
+        # the original objects. Keep resolved Hub paths from the record too.
+        if is_dataclass(original) and not isinstance(original, type):
+            return original
+        if isinstance(original, Mapping):
+            return {key: preserve_objects(value, recorded[key]) for key, value in original.items()}
+        if isinstance(original, (list, tuple)):
+            items = [
+                preserve_objects(value, plain)
+                for value, plain in zip(original, recorded, strict=True)
+            ]
+            if isinstance(original, tuple) and hasattr(original, "_fields"):
+                return type(original)(*items)
+            return type(original)(items)
+        return recorded
+
+    return [
+        preserve_objects(spec, record.config["benchmarks"][index])
+        if isinstance(spec, Mapping)
+        else spec
+        for index, spec in enumerate(benchmarks)
+    ]
+
+
+def _evaluate(
+    model: ComposedModel,
+    *,
+    benchmarks: Sequence[Benchmark | Mapping],
+    device: str | torch.device | None = None,
+    seed: int = 0,
+    imports: Sequence[str] = (),
+    record: RunRecord | None = None,
 ) -> EvaluationResult:
     """Evaluate a loaded model, preserving its modes, gradient flags, and RNGs.
 
@@ -192,6 +278,12 @@ def evaluate(
         for module in imports:
             importlib.import_module(module)
         configured = [_configured_benchmark(spec) for spec in benchmarks]
+        if record is not None:
+            for index, (_, config) in enumerate(configured):
+                for key in config:
+                    identity = record.value["input_provenance"].get(f"benchmarks.{index}.{key}", {})
+                    if "reference" in identity:
+                        config[key] = identity["reference"]
         names = [benchmark.name for benchmark, _ in configured]
         if len(names) != len(set(names)):
             raise ValueError("evaluation benchmark names must be unique")
@@ -221,8 +313,12 @@ def evaluate(
                 result.configs[benchmark.name] = config
                 result.versions[benchmark.name] = str(benchmark.version)
                 result.metadata[benchmark.name] = metadata
+                if record is not None:
+                    record.evaluation(result)
             except Exception as exc:
                 result.status = "partial"
                 result.failed_benchmark = benchmark.name
+                if record is not None:
+                    record.evaluation(result)
                 raise EvaluationError(benchmark.name, result) from exc
     return result

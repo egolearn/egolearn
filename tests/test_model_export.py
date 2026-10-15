@@ -69,6 +69,7 @@ def test_export_load_and_initialize_without_pickle(checkpoint, tmp_path, monkeyp
         "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
         "step": 17,
         "code_revision": {"commit": "c" * 40, "dirty": False},
+        "training_provenance": "unavailable",
     }
     assert document["model_config"] == {
         **model.construction_config,
@@ -92,10 +93,13 @@ def test_export_load_and_initialize_without_pickle(checkpoint, tmp_path, monkeyp
     assert summary["checkpoint"] == "model.safetensors" and summary["step"] == 17
     assert summary["source"] == document["provenance"]
     assert all(torch.equal(t, loaded.state_dict()[n]) for n, t in model.state_dict().items())
-    result = evaluate_checkpoint(exported, benchmarks=[WeightBenchmark()])
+    record_path = tmp_path / "record.json"
+    result = evaluate_checkpoint(exported, benchmarks=[WeightBenchmark()], record_json=record_path)
     assert result.checkpoint is not None
     assert result.checkpoint["sha256"] == summary["sha256"]
     assert result.checkpoint["source"] == document["provenance"]
+    record = json.loads(record_path.read_text())
+    assert record["input_provenance"]["checkpoint"]["sha256"] == summary["sha256"]
 
 
 def test_exported_metadata_changes_artifact_identity(checkpoint, tmp_path):
@@ -138,7 +142,9 @@ def test_export_snapshot_requires_explicit_trust(toy_config, tmp_path):
     exported = export_checkpoint(snapshot, output, trusted_snapshot=True)
     state, metadata = read_checkpoint(exported)
     assert metadata["step"] == 23
-    assert set(state) == {"model", "model_config", "export_contract", "step"}
+    assert set(state) == {"model", "model_config", "export_contract", "step", "run_provenance"}
+    assert state["run_provenance"] == pipe.driver.run_provenance
+    assert metadata["training_provenance"] == pipe.driver.run_provenance
     loaded = load_model(exported)
     assert all(torch.equal(t, loaded.state_dict()[n]) for n, t in pipe.model.state_dict().items())
 

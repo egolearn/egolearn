@@ -37,9 +37,17 @@ from egolearn.hub import resolve
 
 
 def save_snapshot(path: str, driver) -> str:
+    from egolearn.run_record import active_record
+
+    record = active_record("train")
     composer = getattr(driver, "composer", None)
     label_stores = getattr(composer, "label_stores", None) or {}
     state = {
+        "run_provenance": (
+            record.training_provenance()
+            if record is not None
+            else getattr(driver, "run_provenance", None)
+        ),
         "model": driver.model.state_dict(),
         "model_config": getattr(driver.model, "construction_config", None),
         "export_contract": (
@@ -54,7 +62,11 @@ def save_snapshot(path: str, driver) -> str:
             for n, p in driver.model.named_parameters()
             if p.grad is not None
         },
-        "driver": {"exhausted": bool(getattr(driver, "_exhausted", False))},
+        "driver": {
+            "exhausted": bool(getattr(driver, "_exhausted", False)),
+            "skipped_steps": getattr(driver, "skipped_steps", 0),
+            "nonfinite_steps": getattr(driver, "nonfinite_steps", 0),
+        },
         "context": driver.ctx.state_dict(),
         "memories": {
             name: mem.state_dict() for name, mem in getattr(driver, "memories", {}).items()
@@ -66,15 +78,40 @@ def save_snapshot(path: str, driver) -> str:
     }
     torch.save(state, path + ".tmp")
     os.replace(path + ".tmp", path)
+    if record is not None:
+        record.capture_output(os.path.basename(path), path)
     print(f"[snapshot] saved {path}", flush=True)
     return path
 
 
 def load_snapshot(path: str, driver) -> None:
     """Restore a snapshot and prepare `driver` to continue training."""
+    from egolearn.run_record import active_record
+    from egolearn.utils.input_provenance import input_identity
+
     # weights_only=False: snapshots are our own files and hold more than
     # tensors (refs, RNG states, label stores)
+    identity = None
+    if getattr(driver, "run_config", None) is not None and driver.run_config.get(
+        "record_json", "auto"
+    ):
+        record = active_record("train")
+        if (
+            record is not None
+            and str(path) == record.config.get("resume")
+            and "resume" in record.value["input_provenance"]
+        ):
+            # The CLI already froze this input. Retain its original Hub revision
+            # instead of replacing it with the resolved local file's identity.
+            identity = record.value["input_provenance"]["resume"]
+        else:
+            path, identity = input_identity(path, repo_type="model")
+        driver.run_inputs = {**(driver.run_inputs or {}), "resume": identity}
+        if record is not None:
+            record.value["input_provenance"]["resume"] = identity
     state = torch.load(resolve(path, repo_type="model"), map_location="cpu", weights_only=False)
+    if identity is not None:
+        identity["training_provenance"] = state.get("run_provenance") or "unavailable"
 
     # model to its device BEFORE the optimizer loads, so optimizer state is
     # cast onto the parameters' device by torch
@@ -119,6 +156,9 @@ def load_snapshot(path: str, driver) -> None:
     stores = getattr(composer, "label_stores", None) or {}
     for name, st in state.get("label_stores", {}).items():
         stores[name].load_state_dict(st)
+    driver.skipped_steps = state.get("driver", {}).get("skipped_steps", 0)
+    driver.nonfinite_steps = state.get("driver", {}).get("nonfinite_steps", 0)
+    driver.run_provenance = state.get("run_provenance")
     print(
         f"[snapshot] resumed from {path} (step={driver.ctx.clock.step} "
         f"admitted={driver.ctx.clock.admitted})",

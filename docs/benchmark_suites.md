@@ -4,8 +4,10 @@
 records. A suite is a versioned YAML file; [the toy suite](../benchmarks/toy.yaml)
 is a runnable CPU example. It reports the last training step's loss and step count,
 not an evaluation score or an average over training. Records retain skipped-step
-counts; a nonfinite training loss stops a recorded run immediately and marks it nonfinite.
-Ordinary training without a record retains its existing skip behavior. Final configured probe results are recorded separately.
+counts. Ordinary training retains its nonfinite-step skip behavior and marks the
+final record `nonfinite`; these runs cannot enter a normal table. Suites set the
+managed `record_fail_on_nonfinite=true` option to stop immediately on divergence.
+Final configured probe results are recorded separately.
 
 ```yaml
 version: 1
@@ -176,17 +178,106 @@ their contents for private paths and settings.
 ## Run records and scope
 
 Suites always request an atomic `record.json`. Ordinary `egl train` and `egl eval`
-can opt in with `record_json=/path/to/record.json`; the default remains disabled.
+now default to `record_json=auto`. Each attempt gets its own
+`<run_dir>/records/<id>/record.json` (training) or
+`runs/eval/records/<id>/record.json` (evaluation). Resume and repeated calls retain
+the earlier attempt. An explicit `record_json=/path/to/record.json` must name a new
+file; `record_json=null` disables recording. Defaults apply to configs without a
+`record_json` key as well.
+Automatic destinations must be writable; recording errors are reported rather
+than silently dropping a run. Choose an explicit writable path or disable records
+when evaluating in a read-only working directory. With no `run_dir`, training uses
+`runs/default`, matching the checkpoint directory.
+
+The same behavior applies to `egolearn.build(config).driver.fit()` and to
+`evaluate()` / `evaluate_checkpoint()`. The evaluation APIs accept the keyword
+`record_json="auto"`, an explicit file, or `None` to disable recording. CLI calls
+and their underlying APIs share one record. Manually assembled low-level drivers
+without a construction config can use the `record_run(config, "train")` context
+manager and append its recorder to their hooks.
+
 Records contain status, seed, resolved config, wall time, metrics, package version,
 code revision/dirty state, lockfile hash and container image when available.
 The runner adds verified input identities and hashes tying records to the suite
 and frozen config. Missing provenance is recorded as `unavailable`, never guessed
 from an unrelated checkout in the caller's working directory.
 
-These commands implement suite execution and tables from issue #25's proposal.
-They do not yet make run records automatic for every training/evaluation API,
-infer dataset revisions from arbitrary components, publish artifacts, or replace
-the evaluator's benchmark-specific provenance. Those remain separate work in #25.
+`input_provenance` captures known input arguments in streams, tokenizers, probes,
+benchmarks, initialization and resume. Local files carry their SHA-256; this
+identifies the file, not every image referenced by a manifest. Ordinary records
+hash a directory's inventory only: `inventory_sha256` identifies `checksums.sha256`,
+while the collection's `sha256` remains `unavailable` with reason
+`inventory_not_verified`. Invalid inventories also remain unavailable and do not
+abort ordinary runs. Automatic capture does not enumerate or hash the collection.
+Suites fully verify their pinned collections once during planning, then before
+and after each task, and
+retain those verified pins in `inputs`; this costs reads proportional to data size.
+Dry-run provenance capture skips input hashing and Hub resolution. Custom component
+inputs with unknown argument names remain in the config without inferred hashes.
+
+Hub inputs retain the requested reference and resolved immutable commit. The run
+uses that resolved local artifact for config-driven inputs, so a moving tag cannot
+select different bytes between capture and loading. Preconstructed benchmark
+instances may already have cached data; their configuration is descriptive, and
+automatic input identities remain unavailable instead of resolving their inputs
+again. Benchmarks can report actual consumed-data provenance in `metadata()`.
+Evaluation records also retain benchmark
+settings, versions and metadata. A later benchmark failure keeps earlier scores
+in a record marked `failed`, which cannot enter a normal suite table.
+
+Training checkpoints and snapshots include their producing run's code/environment
+identity, record ID, seed and input provenance. Resume and initialization retain
+the parent checkpoint's embedded training provenance, including across code revisions.
+Snapshots preserve skipped/nonfinite-step counters so resume retains the run's
+nonfinite status. A later unrelated exception is recorded as `failed` with its
+error type.
+Evaluation of those checkpoints preserves
+that training identity separately from the evaluation run's identity. Older
+checkpoints report unavailable training provenance. In-memory model evaluations
+do not claim a checkpoint digest.
+
+Records are written before execution and finalized atomically on success or a
+Python exception. A forcibly killed process leaves a `running` record, never a
+completed result. Checkpoint/snapshot output hashes are persisted immediately,
+separately from input identities, so interrupted attempts can be linked to saved
+weights by digest and record ID. Records contain local resolved configuration;
+generated tables contain metrics and diagnostics suitable for a README after review.
+
+## BabyCL SAYCam suite
+
+[`benchmarks/babycl_saycam.yaml`](../benchmarks/babycl_saycam.yaml) plans fresh
+training with seeds 1337, 1338 and 1339. It uses the default BabyCL training config
+with `+benchmark=labeled_s` to select Labeled-S 4AFC plus canonical 26-class
+fixed-feature linear decoding. Tables use final-model probe scores as fractions,
+with mean and sample SD. The linear protocol differs from the paper's 24-class
+split and embedding representation; this suite does not assert numerical parity.
+
+Set these artifact paths and digests in your local environment:
+
+| Input | Path variable | SHA-256 variable |
+| --- | --- | --- |
+| SAYCam frame collection | `SAYCAM_ROOT` | `SAYCAM_SHA256` |
+| Transcripts | `SAYCAM_TRANSCRIPTS` | `SAYCAM_TRANSCRIPTS_SHA256` |
+| Training vocabulary | `BABYCL_VOCAB` | `BABYCL_VOCAB_SHA256` |
+| Prepared 4AFC manifest | `LABELED_S_MANIFEST` | `LABELED_S_MANIFEST_SHA256` |
+| Labeled-S image collection | `LABELED_S_ROOT` | `LABELED_S_SHA256` |
+| Canonical linear split metadata | `LABELED_S_SPLIT` | Pinned in the suite |
+
+Directory digests identify `checksums.sha256`; create and verify inventories with
+`python -m egolearn.hub checksum DIR` and `egl data verify DIR`. The 4AFC manifest
+must reference images in the pinned Labeled-S collection. Keep all restricted
+data and local environment files outside Git. Missing variables or mismatched
+digests fail before jobs are launched. No data or reference scores ship with this
+suite; its first real run requires the approved artifacts and compute allocation.
+
+```bash
+egl bench run benchmarks/babycl_saycam.yaml --output runs/babycl-reproduction --submit
+egl bench table runs/babycl-reproduction/manifest.json --format md
+```
+
+Keep that manifest and its per-seed records as the baseline for later
+`egl bench table --baseline ...` comparisons. Dirty/unknown code remains excluded
+from normal tables; `--allow-unverified` is for explicitly exploratory summaries.
 
 `egl bench` measures declared training/evaluation metrics. The separate scripts
 under `scripts/bench/` remain throughput and data-loading tools.

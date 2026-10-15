@@ -14,6 +14,8 @@ from typing import Any
 
 import torch
 
+from egolearn.run_record import active_record
+
 
 class Hook:
     # True: this hook changes what the composer would sample between steps
@@ -68,6 +70,7 @@ class CheckpointHook(Hook):
     def _save(self, driver, fname: str):
         os.makedirs(self.run_dir, exist_ok=True)
         path = os.path.join(self.run_dir, fname)
+        record = active_record("train")
         torch.save(
             {
                 "model": driver.model.state_dict(),
@@ -75,10 +78,17 @@ class CheckpointHook(Hook):
                 "step": driver.ctx.clock.step,
                 "export_contract": driver.model.export_contract(),
                 "model_config": getattr(driver.model, "construction_config", None),
+                "run_provenance": (
+                    record.training_provenance()
+                    if record is not None
+                    else getattr(driver, "run_provenance", None)
+                ),
             },
             path + ".tmp",
         )
         os.replace(path + ".tmp", path)
+        if record is not None:
+            record.capture_output(fname, path)
 
 
 class ProbeHook(Hook):

@@ -513,6 +513,10 @@ def test_existing_probe_configs_work_in_standalone_runner(
     monkeypatch.setattr(
         sys.modules["egolearn.config.instantiate"], "resolve", lambda reference: manifest
     )
+    monkeypatch.setattr(
+        "egolearn.utils.input_provenance.resolve_with_metadata",
+        lambda reference, repo_type: (manifest, {"reference": reference, "commit": "a" * 40}),
+    )
     result = evaluate(
         build_model(model_config),
         benchmarks=[

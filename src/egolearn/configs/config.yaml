@@ -3,7 +3,8 @@
 # `hydra.searchpath: [pkg://egolearn.configs]`.
 # Dataset roots always come from the config or the environment — never hardcoded in code.
 seed: 0
-record_json: null  # optional local run record; benchmark suites always set this
+record_json: auto  # unique run_dir/records/<id>/record.json; null disables recording
+record_fail_on_nonfinite: false  # suites opt into immediate failure; ordinary runs skip
 wandb:
   entity: nyu-mengye-group
   project: null

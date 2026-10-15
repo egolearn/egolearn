@@ -45,6 +45,7 @@ from egolearn.data.sources.base import Observation, Stream
 from egolearn.memory.admission.base import EventBuilder
 from egolearn.memory.table import TieredMemory
 from egolearn.model.losses.base import own_forward_slots
+from egolearn.run_record import recorded_fit
 
 from .profiling import StageTimer
 from .solver import ProgressCosine, apply_lr
@@ -73,6 +74,8 @@ class LockstepDriver:
         stream_head_size: int = 512,
         prefetch: bool = False,
     ):
+        self.run_config: dict | None = None
+        self.run_inputs: dict | None = None
         self.stream = stream
         self.admission = admission
         self.memories = memories
@@ -384,6 +387,7 @@ class LockstepDriver:
         self.optimizer.zero_grad(set_to_none=True)
 
     # ------------------------------------------------------------------
+    @recorded_fit
     def fit(self) -> None:
         self.model.to(self.ctx.device)
         self.model.train()
