@@ -28,9 +28,12 @@ def test_catalog_is_unique_and_distinguishes_metadata_from_pixels(capsys):
     assert rows["labeled-s"]["access"] == "IRB"
     assert rows["labeled-s-splits"]["access"] == "public"
     assert rows["imagenet"]["access"] == "upstream-licensed"
+    assert rows["intphys2"]["access"] == "upstream-licensed"
 
 
-@pytest.mark.parametrize("name", ["saycam", "babyview", "labeled-s", "imagenet", "unknown"])
+@pytest.mark.parametrize(
+    "name", ["saycam", "babyview", "labeled-s", "imagenet", "intphys2", "unknown"]
+)
 def test_unavailable_fetch_fails_without_contacting_hub(monkeypatch, name):
     def unexpected(*args, **kwargs):
         pytest.fail("restricted/unknown dataset must not contact Hub")

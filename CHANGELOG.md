@@ -8,6 +8,14 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- IntPhys 2 violation-of-expectation probe (`probe:intphys2`) on a generic VoE
+  scorer (`evaluation/voe.py`): V-JEPA prediction error on the 506 matched
+  (possible, impossible) pairs of the Main split. By default each video is sampled
+  uniformly to 64 frames and context lengths 2, 4, ..., 16 are scored one by one
+  (`voe_acc_ctx<C>`) and pooled (`voe_acc`) from a single decode; L2 surprise is
+  optional. Videos decode with PyAV (`av`, added to the `video` and `train`
+  extras). `metadata.csv` is pinned by SHA-256, and docs/evaluation/intphys2.md
+  documents the pinned download.
 - Hosted shape-bias and spatial-relation evaluation data: the prepared shape-bias
   stimuli (`agentic-learning-ai-lab/egolearn-shape-bias`) and the spatial monitoring
   subsets (`agentic-learning-ai-lab/egolearn-spatial-relation-categorization`,

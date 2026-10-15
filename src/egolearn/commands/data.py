@@ -111,6 +111,12 @@ DATASETS = (
         "https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/baby_winoground",
     ),
     Dataset(
+        "intphys2",
+        "upstream-licensed",
+        "IntPhys 2 Main split videos; download from the upstream release",
+        "https://github.com/facebookresearch/IntPhys2",
+    ),
+    Dataset(
         "imagenet",
         "upstream-licensed",
         "Obtain images from the licensed upstream release",
