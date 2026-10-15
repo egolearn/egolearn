@@ -519,6 +519,7 @@ def test_hub_snapshot_symlinks_are_materialized_for_dataset_validation(tmp_path,
 def test_packaged_eval_config_uses_hosted_monitoring_subsets(tmp_path, monkeypatch):
     import sys
 
+    import torch
     from hydra import compose, initialize_config_module
     from omegaconf import OmegaConf
 
@@ -564,7 +565,9 @@ def test_packaged_eval_config_uses_hosted_monitoring_subsets(tmp_path, monkeypat
     monkeypatch.setattr(
         sys.modules["egolearn.config.instantiate"], "resolve", unexpected_resolution
     )
-    model = build_model({"encoders": {"vision": {"_target_": "encoder:toy_cnn", "dim": 4}}})
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(0)
+        model = build_model({"encoders": {"vision": {"_target_": "encoder:toy_cnn", "dim": 4}}})
     record_path = tmp_path / "record.json"
     result = evaluate(model, benchmarks=[spec], record_json=record_path)
     record = json.loads(record_path.read_text())
