@@ -40,16 +40,16 @@ message when the diff changes; review discussion stays in comments.
   (config, seeds, hardware, wall time), a table of numbers against the baseline,
   links to runs and artifacts, and a command to reproduce them. If nothing has
   run yet, say so and explain what is pending. Delete the section otherwise.
-- **Test plan**: commands that ran, where, and the outcome; cluster jobs by ID.
+- **Test plan**: commands that ran, where, and the outcome.
   If CI covers everything, say so. State any checks that have not run.
 - **Checklist**: the template's five top-level `- [x]` boxes, each ticked after verification.
   Add notes for conditional items, such as no dependency change or no code port.
 
 Summary comes first; Test plan and Checklist are the last two sections. Other
 sections belong between Summary and Test plan. Leave out review history, people,
-dates, a copy of the changelog, and the title repeated as a heading. Delete all
-template comments and empty optional sections. Aim for at most 40 non-blank
-lines; the checker warns past 40 and rejects more than 60.
+cluster job IDs, dates, a copy of the changelog, and the title repeated as a
+heading. Delete all template comments and empty optional sections. Aim for at
+most 40 non-blank lines; the checker warns past 40 and rejects more than 60.
 
 Draft the body in a file and check it before opening or updating the PR:
 

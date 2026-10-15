@@ -14,7 +14,7 @@
 
 ## Test plan
 
-<!-- Commands that ran, where, and the outcome (cluster jobs by ID); state pending checks, or say if CI covers everything. -->
+<!-- Commands that ran, where, and the outcome; state pending checks, or say if CI covers everything. No cluster job IDs. -->
 
 ## Checklist
 
