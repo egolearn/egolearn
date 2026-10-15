@@ -21,6 +21,8 @@ _PATH_KEYS = {
     "neg_dir",
     "manifest",
     "manifest_json",
+    "abstract_2d_manifest",
+    "rendered_3d_manifest",
     "vocab_json",
     "transcript_json",
     "split_file",
