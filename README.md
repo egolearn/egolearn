@@ -57,8 +57,7 @@ benchmark suites, configuration paths, and multirun.
 The SAYCam videos used in BabyCL and Memory Storyboard are hosted on
 [Databrary](https://nyu.databrary.org/volume/564/).
 See the [evaluation guide](docs/evaluation.md#saycam-access) for IRB approval,
-access requirements, and benchmark data preparation. Frame dumps can be packed
-into a shard store for fast random reads; see [data loading](docs/data_loading.md).
+access requirements, and benchmark data preparation.
 
 ## What's here
 
@@ -77,6 +76,8 @@ stop and resume exactly where they left off, and every run prints a
 per-stage timing report. Memory Storyboard and BabyCL are included as
 faithful ports of the original code, each expressed as a config file. The
 full walkthrough: [docs/design/architecture.md](docs/design/architecture.md).
+Frame dumps can be packed into a shard store for fast random reads; see
+[data loading](docs/data_loading.md).
 
 Trained checkpoints can be evaluated independently through
 `egolearn.evaluation.evaluate_checkpoint` or `egl eval`.
