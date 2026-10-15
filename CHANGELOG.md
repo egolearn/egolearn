@@ -13,6 +13,25 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   three-seed BabyCL SAYCam suite for Labeled-S 4AFC and linear decoding.
   Ordinary records preserve nonfinite-step skipping, avoid full dataset scans,
   and retain parent-run provenance and durable checkpoint links across attempts.
+- IntPhys 2 violation-of-expectation probe (`probe:intphys2`) on a generic VoE
+  scorer (`evaluation/voe.py`): V-JEPA prediction error on the 506 matched
+  (possible, impossible) pairs of the Main split. By default each video is sampled
+  uniformly to 64 frames and context lengths 2, 4, ..., 16 are scored one by one
+  (`voe_acc_ctx<C>`) and pooled (`voe_acc`) from a single decode; L2 surprise is
+  optional. Videos decode with PyAV (`av`, added to the `video` and `train`
+  extras). `metadata.csv` is pinned by SHA-256, and docs/evaluation/intphys2.md
+  documents the pinned download.
+- Hosted shape-bias and spatial-relation evaluation data: the prepared shape-bias
+  stimuli (`agentic-learning-ai-lab/egolearn-shape-bias`) and the spatial monitoring
+  subsets (`agentic-learning-ai-lab/egolearn-spatial-relation-categorization`,
+  `monitoring/2d-stimuli`, `monitoring/3d-stimuli`), with checksums, under CC BY 4.0.
+  Packaged `shape_bias_eval` and `spatial_relations_eval` configs evaluate a
+  checkpoint on them at the `v1` tag, and
+  `egl data fetch spatial-relation-categorization --revision v1`
+  installs a verified copy. The `spatial-relations` and `spatial-monitoring`
+  preparers no longer name Hub collections of their own.
+- Landing page at the site root (`landing/`), with the docs site under `/docs/`;
+  `scripts/docs/build.sh` builds both for Cloudflare Pages.
 - `egl export` writes safetensors model weights and JSON construction metadata,
   contract, and portable source provenance. Evaluation and initialization share
   a reader for exported directories and legacy checkpoints; full snapshots need
@@ -33,6 +52,9 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   with reproduction configs under `projects/`.
 - BabyCL offline training with complete storyboard/utterance indexing, mixed or
   pairs-only batches, utterance epochs, and deterministic prefetch/resume.
+- Docs site skeleton: MkDocs Material with the lab theme, built from `docs/` plus
+  the root and project READMEs, in staging mode (`noindex`) by default; a
+  non-required `docs` CI job builds it with `--strict`.
 - Torch-free Hub path resolution and checksummed, private-by-default dataset/checkpoint
   fetch and push commands; documented dataset access tiers. `init_from.checkpoint`
   accepts model Hub references and retains their resolved commit across snapshot resume.
@@ -108,8 +130,23 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   train-standardized features. Deterministic and RNG-free, so probing
   mid-training cannot perturb the run (tested); splits are frozen in the
   manifest.
+- Packed frame store (`egolearn.data.packed`, `stream:packed_frames`): frames
+  packed into large shard files with a numpy offset index, built and verified
+  with `python -m egolearn.data.packed`; the same sessions, times, refs and
+  pixels as `stream:saycam`, one read per frame and per contiguous clip, and a
+  memory-mapped index instead of per-session listings, so Loader workers start
+  in seconds instead of minutes. Cold random 256-frame batches drop from 1.2 s
+  to 36 ms on network scratch. `Stream.open_frames` lets the Loader fetch a
+  clip's frames in one call. See `docs/data_loading.md`.
 
 ### Changed
+
+- Remove the `scripts/prepare_shape_bias.py`, `scripts/prepare_spatial_relations.py`,
+  and `scripts/prepare_spatial_monitoring.py` wrappers. Use `egl data prepare`
+  with `shape-bias`, `spatial-relations`, or `spatial-monitoring`, or the installed
+  module commands listed in the CLI guide.
+- Trim redundant training smoke tests and validation matrices; share resume and
+  synthetic-config setup, and document how to keep new tests focused.
 
 - `egl doctor --submit` checks submission tools and cluster storage on planning
   hosts, including CPU allocations. The documented benchmark workflow stops
@@ -160,12 +197,23 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   augmentation randomness comes from its own derived seed, so the worker
   count never changes what a run computes (covered by a serial-vs-pool
   equality test); stream order and ref picking stay sequential.
+- The SimCLR-style image views (`simclr_strong`, `babycl_ms_aug`) default to a
+  separable Gaussian blur (`blur_impl=separable`: about 4x cheaper, within one
+  intensity level of the reference, same RNG draws); `blur_impl=torchvision`
+  keeps the bit-exact reference and `none` is the ablation. Loader workers
+  flush denormal floats (`loader.flush_denormal`, default on): the blur's
+  small-sigma kernels ran ~100x slower on subnormal tail weights that cannot
+  change a rounded pixel; loaded tensors are identical with or without it
+  (tested) and the trainer process is untouched. Frame-directory listings
+  sort by (time, name), independent of `os.listdir` order.
 
 ### Fixed
 
 - Automatic evaluation records serialize in-memory dataclass arguments while
   preserving the original objects for benchmark construction. Loading a snapshot
   restores its run provenance, or clears stale provenance when none was saved.
+- Keep a root 404 page in the combined site build and apply the staging flag
+  consistently to the landing page and docs, including an explicitly empty value.
 - All benchmark configs recorded by standalone evaluation reduce absolute local
   path settings to file or directory names, while preserving original top-level
   `hf://` references, structured metadata, and paths used to load benchmark data.

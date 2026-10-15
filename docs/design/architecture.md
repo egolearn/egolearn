@@ -125,7 +125,9 @@ a session exposes time-aligned channels, dense (video frames) and sparse
 (utterances, narrations, annotations). Sparse items are surfaced at their
 end time — a streaming learner never acts on an utterance it hasn't fully
 heard. Alignment is always media time, never index. Ships with
-`stream:saycam`, `stream:babyview`, `stream:video` and `stream:toy`
+`stream:saycam`, `stream:babyview`, `stream:packed_frames` (the same adapter
+over a packed shard store, one read per frame or clip; see
+[data_loading.md](../data_loading.md)), `stream:video` and `stream:toy`
 (synthetic, with known ground truth).
 
 `decoding/` is where video decode backends live. Baseline storage is
@@ -150,7 +152,8 @@ contiguous clips — and its time shows up as `data.load` in the timing
 report. `views.py` holds named augmentation pipelines (`center_crop`,
 `simclr_strong`; method-tied recipes like `cvcl_aug` live in their methods
 package) plus clip-domain views that draw parameters once per clip so all T
-frames get the same crop/flip/jitter.
+frames get the same crop/flip/jitter. `blur.py` holds the Gaussian blur
+implementations the SimCLR-style views choose from (`blur_impl`).
 
 `batching/` declares what a minibatch is. A recipe is a list of slots; each
 slot names its source (a memory tier, a tier mix with fractions, or the
@@ -344,6 +347,7 @@ Each concrete benchmark owns a package under
 | `vtwt` | one image, two 2-word phrases; the positive must strictly win | `vtwt_acc` |
 | `baby_winoground` | 2×2 image/phrase matrix; group-correct iff both directions hold | `bw_group_acc` + per-context accs |
 | `shape_bias` | novel shape/texture triplets, cosine preference | `shape_bias` |
+| `intphys2` | possible vs impossible video pairs; V-JEPA prediction error, 64 uniform frames, contexts 2-16 | `voe_acc` + per-context `voe_acc_ctx<C>` |
 
 Some quirks of the originals are preserved on purpose (OOV words map to
 padding index 0 and still count in the mean-pool denominator; no sos/eos;
@@ -516,6 +520,7 @@ method = one paper's research code, eval = benchmark code.
 | `src/egolearn/config/instantiate.py` | shared | recursive `_target_` instantiation + the plain single-file config loader |
 | `src/egolearn/data/sources/base.py` | shared | Stream/Session/Channel protocols; sparse items surface at their end time |
 | `src/egolearn/data/sources/saycam.py` | shared | SAYCam + BabyView adapters (frame dirs + the CVCL transcript json) |
+| `src/egolearn/data/sources/packed.py` | shared | the same adapter over a packed frame store: same refs, one read per frame or clip |
 | `src/egolearn/data/sources/video.py` | shared | video-first source: raw video files + a pluggable decoder |
 | `src/egolearn/data/sources/toy.py` | shared | synthetic stream with known ground truth |
 | `src/egolearn/data/decoding/base.py` | shared | `VideoDecoder` protocol, sequential vs random access |
@@ -523,6 +528,8 @@ method = one paper's research code, eval = benchmark code.
 | `src/egolearn/data/decoding/poodle.py` | shared | integration stub for the lab's video pipeline |
 | `src/egolearn/data/loading.py` | shared | the Loader — the only place refs become tensors; all units (frame/segment/pair/clip) |
 | `src/egolearn/data/views.py` | shared | named augmentation pipelines + clip-consistent views |
+| `src/egolearn/data/blur.py` | shared | Gaussian blur implementations for the image views (separable default, reference, none) |
+| `src/egolearn/data/packed/` | shared | packed frame store: shard files + numpy index; `python -m egolearn.data.packed` builds and verifies |
 | `src/egolearn/data/text.py` | shared | CVCL-style vocab tokenizer |
 | `src/egolearn/data/batching/recipe.py` | streaming | slot/recipe declaration, incl. the fallback recipe |
 | `src/egolearn/data/batching/composer.py` | streaming | fills slots: draw all refs first, then load, tokenize, resolve labels, collate |
@@ -548,7 +555,7 @@ method = one paper's research code, eval = benchmark code.
 | `src/egolearn/evaluation/evaluator.py` | shared | benchmark execution and structured results |
 | `src/egolearn/evaluation/checkpoint.py` | shared | model-only checkpoint loading and evaluation |
 | `src/egolearn/evaluation/probe.py` | shared | the training `Probe` contract |
-| `src/egolearn/evaluation/benchmarks/` | eval | 4AFC, linear decoding, visual two-word test, Baby Winoground, shape-bias probes |
+| `src/egolearn/evaluation/benchmarks/` | eval | 4AFC, linear decoding, visual two-word test, Baby Winoground, shape-bias, IntPhys 2 probes |
 | `src/egolearn/methods/storyboard/` | method | verbatim clustering + recluster admission + learner embedder |
 | `src/egolearn/methods/babycl/refine.py` | method | verbatim segmentation math from `online_ms_refine.py` |
 | `src/egolearn/methods/babycl/segmenter.py` | method | the OnlineSegmenter, 1:1 |

@@ -13,6 +13,7 @@ from PIL import Image, ImageFilter, ImageOps
 
 from egolearn.config.registry import EMBEDDERS, VIEWS
 from egolearn.core.refs import ItemRef
+from egolearn.data.blur import gaussian_blur
 from egolearn.data.views import IMAGENET_MEAN, IMAGENET_STD
 from egolearn.memory.admission.base import EmbeddingProvider
 
@@ -52,7 +53,11 @@ def cvcl_aug(size: int = 224):
 
 @VIEWS.register("babycl_ms_aug")
 def babycl_ms_aug(
-    size: int = 224, view_idx: int = 0, scale_min: float = 0.2, scale_max: float = 1.0
+    size: int = 224,
+    view_idx: int = 0,
+    scale_min: float = 0.2,
+    scale_max: float = 1.0,
+    blur_impl: str = "separable",
 ):
     """The augmentation BabyCL EFFECTIVELY applies to visual-segment frames, 1:1 with
     the original, which runs in two stages:
@@ -66,9 +71,15 @@ def babycl_ms_aug(
     round-trip changes nothing beyond uint8 rounding).  This differs from the
     generic core `simclr_strong`, which random-crops the RAW frame -- BabyCL's
     random crops only ever see the center-cropped 224x224 content.
-    view 0: blur p=1.0; view 1: blur p=0.1 + solarize p=0.2."""
+    view 0: blur p=1.0; view 1: blur p=0.1 + solarize p=0.2.
+
+    `blur_impl` is the same switch as in the core `simclr_strong` view:
+    `separable` (default, within one intensity level of the reference),
+    `torchvision` (bit-exact reference), `none` (ablation; keeps the RNG
+    draws).  Set it on both ms views."""
     k = max(3, int(0.1 * size) // 2 * 2 + 1)
     blur_p = 1.0 if view_idx == 0 else 0.1
+    blur = gaussian_blur(k, blur_impl)
     ops: list = [
         T.Resize(size, interpolation=T.InterpolationMode.BICUBIC),
         T.CenterCrop(size),
@@ -78,7 +89,7 @@ def babycl_ms_aug(
         T.RandomHorizontalFlip(p=0.5),
         T.RandomApply([T.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
         T.RandomGrayscale(p=0.2),
-        T.RandomApply([T.GaussianBlur(kernel_size=k, sigma=(0.1, 2.0))], p=blur_p),
+        T.RandomApply([blur], p=blur_p),
     ]
     if view_idx == 1:
         ops.append(

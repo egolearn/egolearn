@@ -136,11 +136,18 @@ def build(cfg: dict) -> Pipeline:
     stream: Stream = instantiate(cfg["stream"])
     ctx.clock.total_observations = stream.total_observations()
     views = ViewBank(cfg.get("views", {}))
-    workers = int((cfg.get("loader") or {}).get("workers", 0))
+    loader_cfg = dict(cfg.get("loader") or {})
+    workers = int(loader_cfg.get("workers", 0))
     if workers < 0:
         raise PipelineError(f"loader.workers must be >= 0, got {workers}")
     # workers re-run `_imports_` so project-registered views exist there too
-    loader = Loader(stream, views, workers=workers, imports=list(cfg.get("_imports_", [])))
+    loader = Loader(
+        stream,
+        views,
+        workers=workers,
+        imports=list(cfg.get("_imports_", [])),
+        flush_denormal=bool(loader_cfg.get("flush_denormal", True)),
+    )
 
     tokenizer = None
     if cfg.get("tokenizer"):

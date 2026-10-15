@@ -8,6 +8,11 @@ repos:
       - id: trailing-whitespace
       - id: check-merge-conflict
       - id: check-yaml
+        exclude: ^mkdocs\.yml$
+      - id: check-yaml
+        name: check mkdocs yaml
+        files: ^mkdocs\.yml$
+        args: [--unsafe]  # syntax only: mkdocs.yml uses !ENV and !!python/name
       - id: check-toml
 
   - repo: https://github.com/astral-sh/ruff-pre-commit

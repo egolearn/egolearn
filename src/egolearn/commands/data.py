@@ -36,11 +36,18 @@ DATASETS = (
         (("--asset-dir", ".sources/shape-bias"), ("--output-dir", "shape-bias")),
     ),
     Dataset(
+        "spatial-relation-categorization",
+        "public",
+        "Hosted spatial relation monitoring subsets (monitoring/)",
+        "https://doi.org/10.1016/j.cognition.2023.105690",
+        "spatial-relation-categorization",
+    ),
+    Dataset(
         "spatial-relations",
         "public",
         "Prepared spatial relation trials",
         "https://doi.org/10.1016/j.cognition.2023.105690",
-        "spatial-relations",
+        None,
         _BENCHMARKS + "spatial_relations.prepare",
         (("--output-dir", "spatial-relations"),),
     ),
@@ -49,7 +56,7 @@ DATASETS = (
         "public",
         "Balanced spatial monitoring subsets",
         "https://doi.org/10.1016/j.cognition.2023.105690",
-        "spatial-monitoring",
+        None,
         _BENCHMARKS + "spatial_relations.subset",
         (
             ("--full-root", "spatial-relations"),
@@ -102,6 +109,12 @@ DATASETS = (
         "IRB",
         "Public labels; restricted original and synthetic images",
         "https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/baby_winoground",
+    ),
+    Dataset(
+        "intphys2",
+        "upstream-licensed",
+        "IntPhys 2 Main split videos; download from the upstream release",
+        "https://github.com/facebookresearch/IntPhys2",
     ),
     Dataset(
         "imagenet",

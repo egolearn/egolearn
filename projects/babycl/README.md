@@ -71,4 +71,3 @@ Published ablations as config diffs:
 | CL-CVCL baseline | drop segments slot + ntxent/tcl; pairs-only recipe |
 | one-pass CVCL | additionally `rate.steps_per_admit: 1` |
 | BabyView | `stream: babyview`, `tokenizer.normalize: true`, portrait pre-crop view |
- 
