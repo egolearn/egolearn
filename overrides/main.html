@@ -22,7 +22,7 @@
       });
     })();
     // Scroll-aware header, like the lab site: past 20px of scroll the header
-    // becomes a frosted --card-bg card (styled in lab.css).
+    // becomes a frosted --card-bg card (styled in lab-mkdocs.css).
     (function () {
       var root = document.documentElement;
       function onScroll() { root.classList.toggle("lab-scrolled", window.scrollY > 20); }
@@ -30,7 +30,7 @@
       window.addEventListener("scroll", onScroll, { passive: true });
     })();
     // Desktop: Material opens search when its input gets focus, so the header
-    // search button just focuses the input (the panel is styled in lab.css
+    // search button just focuses the input (the panel is styled in lab-mkdocs.css
     // as a centered modal, like the lab site's search).
     document.addEventListener("click", function (e) {
       var btn = e.target.closest && e.target.closest('label.md-header__button[for="__search"]');

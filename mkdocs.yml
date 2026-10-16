@@ -64,7 +64,7 @@ theme:
 extra_css:
   - https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap
   - https://agenticlearning.ai/css/lab-tokens.css
-  - stylesheets/lab.css
+  - https://agenticlearning.ai/css/lab-mkdocs.css
 
 extra:
   generator: false
