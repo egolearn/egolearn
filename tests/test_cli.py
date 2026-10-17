@@ -30,7 +30,10 @@ def test_help_version_and_invalid_command(tmp_path, entrypoint):
     for args in [(), ("--help",)]:
         result = run_cli(tmp_path, *args, entrypoint=entrypoint)
         assert result.returncode == 0, result.stderr
-        assert "train" in result.stdout and "eval" in result.stdout
+        assert all(
+            command in result.stdout
+            for command in ("train", "eval", "export", "data", "submit", "doctor", "bench")
+        )
     result = run_cli(tmp_path, "--version", entrypoint=entrypoint)
     assert result.returncode == 0
     assert result.stdout.strip() == f"egolearn {__version__}"

@@ -25,6 +25,14 @@ clips both travel through the pool; a clip item carries its start index
 augments.  Streaming order stays intact: only stage two (refs -> tensors)
 runs in parallel; everything that decides WHICH refs to load is still
 sequential.
+
+Workers run with denormal floats flushed to zero (`loader.flush_denormal`,
+on by default): the Gaussian blur's small-sigma kernels put tail weights in
+float32's subnormal range, where x86 arithmetic is ~100x slower, and those
+weights cannot move a uint8 pixel, so the loaded tensors are identical with
+or without the flag (tests/test_blur.py checks this).  The setting is per
+process and only ever applied inside a worker; the trainer's own
+arithmetic, and in-process loading with workers=0, keep IEEE denormals.
 """
 
 from __future__ import annotations
@@ -56,13 +64,22 @@ WorkItem = tuple
 _WORKER: dict = {}  # per-process state, filled by _pool_init in each worker
 
 
-def _pool_init(stream: Stream, view_specs: dict, imports: list[str], cache_frames: int = 0) -> None:
+def _pool_init(
+    stream: Stream,
+    view_specs: dict,
+    imports: list[str],
+    cache_frames: int = 0,
+    flush_denormal: bool = True,
+) -> None:
     import importlib
     import signal
 
     # Only the training process handles checkpoint-pause signals.
     signal.signal(signal.SIGUSR1, signal.SIG_IGN)
     torch.set_num_threads(1)
+    # single-threaded, so the (per-thread) flush-to-zero mode covers every op
+    if flush_denormal and not torch.set_flush_denormal(True):
+        raise RuntimeError("this CPU cannot flush denormals; set loader.flush_denormal=false")
     # project components (views, ...) register themselves at import time; a
     # spawned worker starts from a bare interpreter, so the config's
     # `_imports_` must run here too before view pipelines can be rebuilt
@@ -98,11 +115,26 @@ def _decode_clip(
     cache_frames: int = 0,
 ) -> torch.Tensor:
     """[T, C, H, W] float clip; indices past the ref's end clamp to the last
-    frame (pad-by-repetition, the common video convention)."""
+    frame (pad-by-repetition, the common video convention).  The frames are
+    requested together (`Stream.open_frames`): one read on a packed store."""
     n = stream.num_frames(ref)
     idx = [min(start + j * stride, n - 1) for j in range(clip_len)]
-    cache = cache if cache is not None else OrderedDict()
-    frames = [_open_frame(stream, ref, i, cache, cache_frames) for i in idx]
+    if cache_frames:
+        cache = cache if cache is not None else OrderedDict()
+        # Read cache misses together, retaining hits even when this clip is
+        # larger than the cache. Repeated/padded indices decode only once.
+        available = {i: cache[(ref.key, i)] for i in idx if (ref.key, i) in cache}
+        missing = list(dict.fromkeys(i for i in idx if i not in available))
+        if missing:
+            available.update(zip(missing, stream.open_frames(ref, missing), strict=True))
+        frames = [available[i] for i in idx]
+        for i, frame in zip(idx, frames, strict=True):
+            cache.pop((ref.key, i), None)
+            cache[(ref.key, i)] = frame
+            while len(cache) > cache_frames:
+                cache.popitem(last=False)
+    else:
+        frames = stream.open_frames(ref, idx)
     if frames and all(
         isinstance(frame, Image.Image) and frame.mode == "RGB" and frame.size == frames[0].size
         for frame in frames
@@ -165,6 +197,7 @@ class Loader:
         views: ViewBank,
         workers: int = 0,
         imports: list[str] | None = None,
+        flush_denormal: bool = True,
         pin_memory: bool = False,
         packed: bool = False,
         cache_frames: int = 0,
@@ -182,6 +215,7 @@ class Loader:
             raise ValueError("loader workers and cache_frames must be nonnegative")
         if (self.cache_frames or self.affinity) and self.workers <= 0:
             raise ValueError("loader cache_frames and affinity require workers")
+        self.flush_denormal = bool(flush_denormal)  # worker-only CPU arithmetic mode
         self._pool: ProcessPoolExecutor | None = None
         self._affinity_pools: list[ProcessPoolExecutor] = []
         self._owners: dict[tuple, int] = {}
@@ -200,7 +234,13 @@ class Loader:
                 max_workers=self.workers,
                 mp_context=mp.get_context("spawn"),
                 initializer=_pool_init,
-                initargs=(self.stream, self.views.specs, self.imports, self.cache_frames),
+                initargs=(
+                    self.stream,
+                    self.views.specs,
+                    self.imports,
+                    self.cache_frames,
+                    self.flush_denormal,
+                ),
             )
         return self._pool
 
@@ -235,7 +275,13 @@ class Loader:
                     max_workers=1,
                     mp_context=mp.get_context("spawn"),
                     initializer=_pool_init,
-                    initargs=(self.stream, self.views.specs, self.imports, self.cache_frames),
+                    initargs=(
+                        self.stream,
+                        self.views.specs,
+                        self.imports,
+                        self.cache_frames,
+                        self.flush_denormal,
+                    ),
                 )
                 for _ in range(self.workers)
             ]
@@ -421,10 +467,9 @@ class Loader:
         that seed instead of the global stream, like frame_views.
 
         `view_names` must name clip-domain views (clip_simclr,
-        clip_center_crop, ...).  Frames are decoded one by one through
-        stream.open_frame; batching the decode through
-        VideoDecoder.read_window is an optimization left for the Poodle
-        integration.
+        clip_center_crop, ...).  The clip's frames are fetched together
+        through stream.open_frames, which the packed store serves in one
+        read and the frame-dir adapters as T opens.
         """
         start = self.pick_clip_start(ref, clip_len, stride, rng)
         return self._one_clip(ref, start, view_names, clip_len, stride, seed)

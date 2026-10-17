@@ -16,6 +16,7 @@ from egolearn.evaluation.benchmarks.shape_bias import (
     validate_stimulus_manifest,
 )
 from egolearn.evaluation.benchmarks.shape_bias.stimuli import sha256_file
+from egolearn.evaluation.evaluator import _configured_benchmark
 from egolearn.model.encoders.base import EncoderOutput
 
 
@@ -143,12 +144,19 @@ def test_probe_writes_compact_artifact(tmp_path: Path, monkeypatch) -> None:
     stimulus_root = tmp_path / "stimuli"
     prepare_shape_bias_stimuli(assets, stimulus_root, seed=1)
     output_path = tmp_path / "shape_bias.json"
-    probe = ShapeBiasProbe(
-        name="shape_bias",
-        manifest=str(stimulus_root / "stimulus_manifest.json"),
-        batch_size=31,
-        output_json=str(output_path),
+    probe, config = _configured_benchmark(
+        {
+            "_target_": "probe:shape_bias",
+            "name": "shape_bias",
+            "manifest": str(stimulus_root / "stimulus_manifest.json"),
+            "batch_size": 31,
+            "output_json": str(output_path),
+        }
     )
+    assert isinstance(probe, ShapeBiasProbe)
+    assert config["manifest"] == "stimulus_manifest.json"
+    assert config["output_json"] == output_path.name
+    assert str(tmp_path) not in json.dumps(config)
 
     metrics = probe.run(_FakeModel(), SimpleNamespace(device=torch.device("cpu")))
 
@@ -196,3 +204,33 @@ def test_shape_bias_runs_through_static_clip_wrapper(tmp_path: Path, monkeypatch
     assert result.metadata["shape_bias"]["manifest_sha256"] == sha256_file(
         stimulus_root / "stimulus_manifest.json"
     )
+
+
+def test_packaged_eval_config_uses_hosted_stimuli(tmp_path: Path, monkeypatch) -> None:
+    import sys
+
+    from hydra import compose, initialize_config_module
+    from omegaconf import OmegaConf
+
+    from egolearn.evaluation.evaluator import _configured_benchmark
+
+    assets = tmp_path / "assets"
+    _make_source_assets(assets, monkeypatch)
+    prepare_shape_bias_stimuli(assets, tmp_path / "repo", seed=1)
+    with initialize_config_module(config_module="egolearn.configs", version_base="1.3"):
+        cfg = OmegaConf.to_container(compose(config_name="shape_bias_eval"), resolve=True)
+    assert isinstance(cfg, dict)
+    spec = cfg["benchmarks"][0]
+    prefix = "hf://datasets/agentic-learning-ai-lab/egolearn-shape-bias@v1/"
+    assert spec["manifest"] == prefix + "stimulus_manifest.json"
+    monkeypatch.setattr(
+        sys.modules["egolearn.config.instantiate"],
+        "resolve",
+        lambda reference: tmp_path / "repo" / reference.removeprefix(prefix),
+    )
+
+    probe, config = _configured_benchmark(spec)
+
+    assert isinstance(probe, ShapeBiasProbe)
+    assert len(probe.records) == 256
+    assert config["manifest"] == spec["manifest"]

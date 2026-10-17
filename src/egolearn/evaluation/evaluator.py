@@ -10,7 +10,7 @@ import random
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +113,16 @@ def _frozen_model(model: ComposedModel) -> Iterator[None]:
             module.training = training
 
 
+def _portable_config(value: Any) -> Any:
+    """Reduce an absolute path setting without rewriting structured metadata."""
+    if isinstance(value, (str, Path)):
+        if isinstance(value, str) and value.startswith("hf://"):
+            return value
+        path = Path(value)
+        return path.name if path.is_absolute() else str(value)
+    return value
+
+
 def _configured_benchmark(spec: Benchmark | Mapping) -> tuple[Benchmark, dict]:
     if isinstance(spec, Benchmark):
         benchmark = spec
@@ -127,9 +137,18 @@ def _configured_benchmark(spec: Benchmark | Mapping) -> tuple[Benchmark, dict]:
         arguments = signature.bind(**{k: v for k, v in spec.items() if not k.startswith("_")})
         arguments.apply_defaults()
         config = {**arguments.arguments, **benchmark.configuration()}
+        # An instance may report the resolved cache path; retain the original
+        # Hub identity when the caller supplied one.
+        config.update(
+            {
+                key: value
+                for key, value in arguments.arguments.items()
+                if isinstance(value, str) and value.startswith("hf://")
+            }
+        )
     return benchmark, {
         "_target_": f"{type(benchmark).__module__}.{type(benchmark).__qualname__}",
-        **deepcopy(config),
+        **{key: _portable_config(value) for key, value in deepcopy(config).items()},
     }
 
 
@@ -191,8 +210,28 @@ def prepared_benchmarks(
 ) -> Sequence[Benchmark | Mapping]:
     if record is None:
         return benchmarks
+
+    def preserve_objects(original, recorded):
+        # Recording converts dataclasses to data, but constructors still need
+        # the original objects. Keep resolved Hub paths from the record too.
+        if is_dataclass(original) and not isinstance(original, type):
+            return original
+        if isinstance(original, Mapping):
+            return {key: preserve_objects(value, recorded[key]) for key, value in original.items()}
+        if isinstance(original, (list, tuple)):
+            items = [
+                preserve_objects(value, plain)
+                for value, plain in zip(original, recorded, strict=True)
+            ]
+            if isinstance(original, tuple) and hasattr(original, "_fields"):
+                return type(original)(*items)
+            return type(original)(items)
+        return recorded
+
     return [
-        record.config["benchmarks"][index] if isinstance(spec, Mapping) else spec
+        preserve_objects(spec, record.config["benchmarks"][index])
+        if isinstance(spec, Mapping)
+        else spec
         for index, spec in enumerate(benchmarks)
     ]
 
@@ -239,6 +278,12 @@ def _evaluate(
         for module in imports:
             importlib.import_module(module)
         configured = [_configured_benchmark(spec) for spec in benchmarks]
+        if record is not None:
+            for index, (_, config) in enumerate(configured):
+                for key in config:
+                    identity = record.value["input_provenance"].get(f"benchmarks.{index}.{key}", {})
+                    if "reference" in identity:
+                        config[key] = identity["reference"]
         names = [benchmark.name for benchmark, _ in configured]
         if len(names) != len(set(names)):
             raise ValueError("evaluation benchmark names must be unique")

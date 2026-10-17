@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from egolearn.hub import read_checksums, resolve_with_metadata, sha256_file, verify_checksums
+from egolearn.utils.model_artifact import METADATA, WEIGHTS, export_sha256, resolve_model_files
 
 # These are input arguments used by the shipped streams, tokenizers and probes.
 # Do not guess from arbitrary strings or inspect output/config/cache directories.
@@ -20,6 +21,8 @@ _PATH_KEYS = {
     "neg_dir",
     "manifest",
     "manifest_json",
+    "abstract_2d_manifest",
+    "rendered_3d_manifest",
     "vocab_json",
     "transcript_json",
     "split_file",
@@ -43,13 +46,30 @@ def input_identity(
     source = str(source)
     identity: dict[str, Any] = {"sha256": "unavailable", "revision": "unavailable"}
     path = Path(source).expanduser()
-    if source.startswith("hf://"):
+    if repo_type == "model" and source.startswith("hf://") and path.suffix == ".safetensors":
+        # Fetch both exported files at the immutable revision before replacing
+        # the Hub reference with a local path in the execution config.
+        path, _, metadata = resolve_model_files(source)
+        identity.update(metadata)
+    elif source.startswith("hf://"):
         path, metadata = resolve_with_metadata(source, repo_type=repo_type)
         identity.update(metadata)
         # `revision` in Hub metadata is the requested tag; commit is immutable.
     identity["name"] = path.name
     try:
-        if path.is_file():
+        if repo_type == "model" and (
+            path.suffix == ".safetensors" or (path.is_dir() and (path / WEIGHTS).is_file())
+        ):
+            weights = path / WEIGHTS if path.is_dir() else path
+            weights_sha = sha256_file(weights)
+            metadata_sha = sha256_file(weights.with_name(METADATA))
+            identity.update(
+                kind="model_export",
+                sha256=export_sha256(weights_sha, metadata_sha),
+                weights_sha256=weights_sha,
+                metadata_sha256=metadata_sha,
+            )
+        elif path.is_file():
             identity.update(kind="file", sha256=sha256_file(path))
         elif path.is_dir():
             identity["kind"] = "directory"

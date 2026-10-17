@@ -158,6 +158,7 @@ def load_snapshot(path: str, driver) -> None:
         stores[name].load_state_dict(st)
     driver.skipped_steps = state.get("driver", {}).get("skipped_steps", 0)
     driver.nonfinite_steps = state.get("driver", {}).get("nonfinite_steps", 0)
+    driver.run_provenance = state.get("run_provenance")
     print(
         f"[snapshot] resumed from {path} (step={driver.ctx.clock.step} "
         f"admitted={driver.ctx.clock.admitted})",

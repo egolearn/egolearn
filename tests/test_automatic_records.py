@@ -4,13 +4,17 @@ import json
 import subprocess
 import sys
 from copy import deepcopy
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 import torch
+from PIL import Image
 
 import egolearn
+from egolearn.config.registry import BENCHMARKS
 from egolearn.evaluation import Benchmark, EvaluationError, evaluate, evaluate_checkpoint
+from egolearn.evaluation.linear_probe import ClassificationSplit, LabeledImage, LinearProbe
 from egolearn.hub import sha256_file, write_checksums
 from egolearn.run_record import record_run
 from egolearn.training.hooks import CheckpointHook
@@ -174,9 +178,9 @@ def test_evaluation_failure_retains_completed_protocol_and_checkpoint(tmp_path, 
     checkpoint = tmp_path / "checkpoint.pth"
     CheckpointHook(str(tmp_path))._save(pipe.driver, checkpoint.name)
     record_path = tmp_path / "record.json"
-    with pytest.raises(EvaluationError, match="fails") as failure:
+    with pytest.raises(EvaluationError, match="fails") as error:
         evaluate_checkpoint(checkpoint, benchmarks=[Score(), Fails()], record_json=record_path)
-    assert str(failure.value.__cause__) == "synthetic failure"
+    assert str(error.value.__cause__) == "synthetic failure"
     record = json.loads(record_path.read_text())
     assert record["status"] == "failed"
     assert record["checkpoint"]["sha256"] == sha256_file(checkpoint)
@@ -338,6 +342,131 @@ def test_in_memory_evaluation_automatically_records_without_checkpoint_claim(
     assert len(results) == 2
     assert all(r["metrics"] == {"score/accuracy": 0.75} for r in results)
     assert all(r["evaluation"]["checkpoint"] is None for r in results)
+
+
+@pytest.mark.parametrize("entry", ["model", "checkpoint"])
+def test_evaluation_records_in_memory_split_without_changing_benchmark_arguments(
+    tmp_path, toy_config, monkeypatch, entry
+):
+    monkeypatch.chdir(tmp_path)
+    pipe = egolearn.build(toy_config(tmp_path))
+    items = []
+    for label, color in enumerate(("red", "blue")):
+        path = tmp_path / f"{color}.png"
+        Image.new("RGB", (24, 24), color).save(path)
+        items.append(LabeledImage(str(path), label))
+    split = ClassificationSplit(classes=("red", "blue"), train=tuple(items), test=tuple(items))
+    spec = {
+        "_target_": "probe:linear",
+        "name": "linear",
+        "encoder": "vision",
+        "size": 16,
+        "max_iter": 2,
+        "split": split,
+    }
+    original = deepcopy(spec)
+    run = LinearProbe.run
+
+    def check_split(self, model, ctx):
+        assert self.split is split
+        return run(self, model, ctx)
+
+    monkeypatch.setattr(LinearProbe, "run", check_split)
+    if entry == "model":
+        result = evaluate(pipe.model, benchmarks=[spec])
+    else:
+        checkpoint = tmp_path / "checkpoint.pth"
+        CheckpointHook(str(tmp_path))._save(pipe.driver, checkpoint.name)
+        result = evaluate_checkpoint(checkpoint, benchmarks=[spec])
+    assert spec == original
+    assert spec["split"] is split
+    [record] = records(tmp_path / "runs/eval")
+    assert record["status"] == "completed"
+    assert record["evaluation"]["results"] == result.results
+    plain_split = json.loads(json.dumps(asdict(split)))
+    assert record["config"]["benchmarks"][0]["split"] == plain_split
+    assert record["evaluation"]["configs"]["linear"]["split"] == split.metadata()
+    result.save_json(tmp_path / "evaluation.json")
+
+
+def test_evaluation_preserves_nested_dataclasses_and_resolved_hub_inputs(
+    tmp_path, toy_config, monkeypatch
+):
+    import egolearn.utils.input_provenance as inputs
+
+    item = LabeledImage("synthetic.png", 0)
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("[]")
+    reference = "hf://datasets/org/data@main/manifest.json"
+    calls = []
+
+    def resolve(source, repo_type):
+        calls.append((source, repo_type))
+        return manifest, {"reference": source, "commit": "b" * 40}
+
+    class ConfiguredScore(Score):
+        def __init__(self, options):
+            assert isinstance(options["examples"], tuple)
+            assert options["examples"][0][0] is item
+            assert options["manifest"] == str(manifest)
+
+    monkeypatch.setattr(inputs, "resolve_with_metadata", resolve)
+    monkeypatch.setitem(BENCHMARKS._items, "configured_score", ConfiguredScore)
+    spec = {
+        "_target_": "benchmark:configured_score",
+        "options": {"examples": ([item],), "manifest": reference},
+    }
+    pipe = egolearn.build(toy_config(tmp_path))
+    evaluate(pipe.model, benchmarks=[spec], record_json=tmp_path / "record.json")
+    assert calls == [(reference, "dataset")]
+    assert spec["options"] == {"examples": ([item],), "manifest": reference}
+    [record] = records(tmp_path)
+    options = record["config"]["benchmarks"][0]["options"]
+    assert options == {"examples": [[asdict(item)]], "manifest": str(manifest)}
+    assert record["input_provenance"]["benchmarks.0.options.manifest"]["commit"] == "b" * 40
+
+
+@pytest.mark.parametrize("provenance", ["present", "missing", "null"])
+def test_snapshot_load_replaces_provenance_before_saving_without_fit(
+    tmp_path, toy_config, monkeypatch, provenance
+):
+    import egolearn.run_record as run_records
+
+    # Offline drivers support loading a snapshot after an earlier fit().
+    cfg = toy_config(tmp_path)
+    for key in ("admission", "memories", "recipe", "routes", "label_stores"):
+        cfg.pop(key)
+    cfg["driver"] = {
+        "mode": "offline",
+        "max_steps": 2,
+        "batch": {"slot": "curr", "n": 4, "views": ["v1", "v2"]},
+    }
+    cfg["losses"] = cfg["losses"][:1]
+    source = egolearn.build({**cfg, "run_dir": str(tmp_path / "source")})
+    source.driver.fit()
+    snapshot = tmp_path / "source.pth"
+    save_snapshot(str(snapshot), source.driver)
+    state = torch.load(snapshot, weights_only=False)
+    if provenance == "missing":
+        state.pop("run_provenance")
+    elif provenance == "null":
+        state["run_provenance"] = None
+    torch.save(state, snapshot)
+
+    identity = run_records.source_identity()
+    monkeypatch.setattr(run_records, "source_identity", lambda: {**identity, "commit": "d" * 40})
+    destination = egolearn.build({**cfg, "seed": 99, "run_dir": str(tmp_path / "destination")})
+    destination.driver.fit()
+    assert destination.driver.run_provenance != state.get("run_provenance")
+    load_snapshot(str(snapshot), destination.driver)
+    assert destination.driver.run_provenance == state.get("run_provenance")
+
+    saved_again = tmp_path / "saved-again.pth"
+    save_snapshot(str(saved_again), destination.driver)
+    restored = torch.load(saved_again, weights_only=False)
+    assert restored["run_provenance"] == state.get("run_provenance")
+    for key, tensor in state["model"].items():
+        assert torch.equal(restored["model"][key], tensor)
 
 
 def test_preconstructed_benchmark_inputs_remain_descriptive(tmp_path, toy_config, monkeypatch):

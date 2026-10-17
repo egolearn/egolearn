@@ -28,9 +28,12 @@ def test_catalog_is_unique_and_distinguishes_metadata_from_pixels(capsys):
     assert rows["labeled-s"]["access"] == "IRB"
     assert rows["labeled-s-splits"]["access"] == "public"
     assert rows["imagenet"]["access"] == "upstream-licensed"
+    assert rows["intphys2"]["access"] == "upstream-licensed"
 
 
-@pytest.mark.parametrize("name", ["saycam", "babyview", "labeled-s", "imagenet", "unknown"])
+@pytest.mark.parametrize(
+    "name", ["saycam", "babyview", "labeled-s", "imagenet", "intphys2", "unknown"]
+)
 def test_unavailable_fetch_fails_without_contacting_hub(monkeypatch, name):
     def unexpected(*args, **kwargs):
         pytest.fail("restricted/unknown dataset must not contact Hub")
@@ -119,11 +122,15 @@ def test_fetch_preserves_prepared_directory_without_explicit_replace(tmp_path, m
 
 
 def test_fetch_and_prepare_use_the_same_layout(tmp_path):
-    for name in ("shape-bias", "spatial-relations", "spatial-monitoring", "babyview-4afc"):
+    for name in ("shape-bias", "babyview-4afc"):
         item = data.dataset(name)
         defaults = dict(item.prepare_defaults)
         output = defaults.get("--output-dir", defaults.get("--out_dir"))
         assert output == item.collection
+    # The hosted spatial collection bundles subsets; neither preparer fetches alone.
+    assert data.dataset("spatial-relation-categorization").prepare_module is None
+    assert data.dataset("spatial-relations").collection is None
+    assert data.dataset("spatial-monitoring").collection is None
     assert (
         dict(data.dataset("spatial-monitoring").prepare_defaults)["--full-root"]
         == "spatial-relations"

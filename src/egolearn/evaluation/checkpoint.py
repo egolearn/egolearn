@@ -19,7 +19,7 @@ from egolearn.evaluation.evaluator import (
     descriptive_benchmarks,
     prepared_benchmarks,
 )
-from egolearn.hub import resolve, resolve_with_metadata
+from egolearn.hub import resolve
 from egolearn.model.build import build_model
 from egolearn.model.model import ComposedModel
 from egolearn.run_record import record_run
@@ -67,13 +67,7 @@ def _load_model(
     imports: Sequence[str],
     trusted_snapshot: bool,
 ) -> tuple[ComposedModel, dict[str, Any]]:
-    local_path, provenance = resolve_with_metadata(checkpoint, repo_type="model")
-    state, metadata = read_checkpoint(local_path, trusted_snapshot=trusted_snapshot)
-    metadata = {
-        **provenance,
-        **metadata,
-        "training_provenance": state.get("run_provenance") or "unavailable",
-    }
+    state, metadata = read_checkpoint(checkpoint, trusted_snapshot=trusted_snapshot)
     source = model_config if model_config is not None else state.get("model_config")
     if source is None:
         raise ValueError(
@@ -132,8 +126,8 @@ def evaluate_checkpoint(
     device: str | torch.device = "cpu",
     seed: int = 0,
     imports: Sequence[str] = (),
-    trusted_snapshot: bool = False,
     record_json: str | Path | None = "auto",
+    trusted_snapshot: bool = False,
 ) -> EvaluationResult:
     """Load a trained model and evaluate it independently of its training data."""
     config: dict[str, Any] = {
@@ -161,6 +155,7 @@ def evaluate_checkpoint(
             trusted_snapshot=trusted_snapshot,
         )
         if record is not None:
+            # Hub resolution was frozen to a local path before loading. Keep its origin.
             origin = record.value["input_provenance"].get("checkpoint", {})
             metadata = {**origin, **metadata}
             record.value["checkpoint"] = metadata

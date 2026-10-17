@@ -1,8 +1,11 @@
 # Evaluating trained models
 
 The standalone evaluator runs benchmarks on a loaded `ComposedModel` or an
-EgoLearn checkpoint. It constructs no training stream, replay memory, training
+EgoLearn checkpoint or exported model directory. It constructs no training stream, replay memory, training
 optimizer, or driver. Install the `train` extra for the PyTorch dependencies.
+
+Use `egl data prepare <name>` for benchmark preparation; the
+[CLI guide](cli.md#data) lists the equivalent installed Python module commands.
 
 ## Python API
 
@@ -47,7 +50,9 @@ defaults for config-driven calls, protocol versions, dataset metadata, seeds,
 package version, source commit and dirty flag, and resolved model config.
 `code_revision` reports `"unavailable"` outside a source checkout or when Git
 cannot be queried. Checkpoint evaluations record the file name, SHA-256, and
-training step when available; no checkpoint directory is stored. Benchmark names
+training step when available; no checkpoint directory is stored. For exports,
+`weights_sha256` and `metadata_sha256` identify each file, while `sha256` hashes
+the concatenated hexadecimal digests (weights first), covering both files. Benchmark names
 must be unique within an evaluation.
 
 Existing small evaluations remain available with their `probe:*` configuration
@@ -60,6 +65,10 @@ labels and classes, not image bytes. Manifest-backed probes also record the
 manifest's byte hash; Labeled-S records the verified canonical split hash and source.
 Linear-probe path settings retain only the dataset directory or file name, so
 recorded configs do not expose machine-specific parent directories.
+For every benchmark, the runner reduces top-level absolute local path settings
+to file or directory names. This cleanup leaves relative values and structured
+metadata intact; config-driven calls retain their original top-level `hf://`
+references. Benchmarks still receive the original paths for loading data.
 
 If benchmark preparation, execution, metric conversion, or metadata collection
 fails, `EvaluationError.partial_result` retains completed benchmarks and their
@@ -208,9 +217,14 @@ needs the original tokenizer config/file or an explicit vocabulary size.
 Weights load strictly, and the export contract is checked when present.
 Pretrained encoder initialization is disabled while restoring a checkpoint.
 Training RNGs, optimizer state, and stream replay are never restored. Existing
-checkpoint files are read in full; only the model is kept. Ordinary checkpoints
-use restricted unpickling; there is no automatic unsafe fallback for snapshots.
-See the [checkpoint trust rule](../SECURITY.md#checkpoint-trust).
+checkpoint files still deserialize their stored contents before unrelated
+training state is released; this API does not change that file-format cost.
+Legacy checkpoints use restricted unpickling. Full snapshots need an explicit
+`trusted_snapshot=True` opt-in (Hydra: `trusted_snapshot=true`) and a trusted source.
+Exported directories from `egl export` load safetensors weights without pickle;
+their model configuration and contract are read from `model.json`. Evaluation
+records digests covering both files and retains source provenance. See
+[model export](cli.md#exporting-weights) and [checkpoint trust](../SECURITY.md#model-export-and-checkpoint-trust).
 
 ## Command line
 
@@ -226,6 +240,9 @@ run's date and time (or your explicit `hydra.run.dir`). For a trusted full
 snapshot, also pass `trusted_snapshot=true`.
 The packaged ImageNet config exposes its protocol settings under `benchmarks.0`,
 for example `benchmarks.0.encoder=image` or `benchmarks.0.batch_size=256`.
+`shape_bias_eval` and `spatial_relations_eval` evaluate shape bias and the spatial
+monitoring subsets on hosted data, so they need only `checkpoint=` (see
+[Hub artifacts](#hub-artifacts-and-access-tiers)).
 `egl eval --help` lists the default evaluation configuration. Custom suites
 can use `egl eval path/to/suite.yaml`. See the [CLI guide](cli.md) for overrides
 and configuration search paths.
@@ -270,7 +287,9 @@ fetches `agentic-learning-ai-lab/egolearn-shape-bias` into
 checked against `checksums.sha256`, and installed only after verification.
 `.egolearn-fetch.json` records the requested revision, resolved commit and
 verification status. Missing checksums require `--allow-unverified`; corrupt
-checksums always fail. `--repo` and `--dest` override the defaults.
+checksums always fail. `--repo` overrides the dataset repository. To choose the
+storage root, use `egl data --root DIR fetch shape-bias --revision <tag-or-commit>`;
+`--root` goes before `fetch`, and the collection is installed in `DIR/shape-bias`.
 
 Data paths in component configs, including benchmark manifests, may use
 `hf://<org>/<repo>@<revision>[/path/in/repo]`. Revisions are tags or commit IDs
@@ -281,13 +300,15 @@ use `fetch` when checksum verification is required. `HF_HOME` controls that cach
 Dataset references materialize the full snapshot once so manifests can safely
 read sibling files. This can download data during `dry_run=true`; that option
 skips training-stream iteration, not artifact resolution. Model file references
-download only the named file. Materialized copies require additional cache space
+must name a file and download only that file. Filename-less model references fail
+before any download. Loading an exported checkpoint also fetches its sibling
+`model.json` at the weights' immutable commit. Materialized copies require additional cache space
 and are not tracked by `hf cache` cleanup tools. Their path is
 `<Hub cache>/datasets--<org>--<repo>/egolearn-materialized/<generation>/<commit>`;
 remove the `egolearn-materialized` directory manually when no job uses its copies.
 Existing complete copies can be reused from a read-only shared cache. First-time
-materialization needs a writable cache; alternatively use `fetch --dest` to put a
-real-file collection on writable storage. If an offline snapshot was partial,
+materialization needs a writable cache; alternatively use `egl data --root DIR fetch`
+to put a real-file collection on writable storage. If an offline snapshot was partial,
 newly cached files produce a new materialization rather than reusing that subset.
 
 An explicit `hf://models/<org>/<repo>@<revision>/vocab.json` lets a tokenizer or
@@ -298,10 +319,13 @@ reference, repo, revision and resolved commit alongside the content digest.
 
 For example, a probe's `manifest` may be
 `hf://agentic-learning-ai-lab/egolearn-shape-bias@v1/stimulus_manifest.json`.
-Checkpoint and resume inputs use model repos with the same syntax, ending in an
-explicit filename such as `@v1/final.pth`; local checkpoint paths still work.
-Only load trusted checkpoints: Hub checksums establish file integrity, not trust
-in Python pickle contents. Model config files use model repos too.
+Checkpoint and initialization inputs use model repos with the same syntax, ending
+in an explicit filename such as `@v1/model.safetensors`; local exported directories
+and legacy checkpoint paths still work. Keep full snapshots in local run directories.
+Resume also retains support for legacy Hub snapshot references and always uses
+unrestricted pickle, so only resume snapshots you trust. Model Hub publishing now
+accepts only exported weights. Hub checksums establish file integrity, not trust
+in legacy Python pickle contents. Model config files use model repos too.
 
 | Dataset / artifact | Access tier | What may be hosted |
 | --- | --- | --- |
@@ -310,17 +334,28 @@ in Python pickle contents. Model config files use model repos too.
 | BabyView 4AFC and linear evaluation manifests | public | Split/trial metadata only, without pixels or restricted captions |
 | Labeled-S split metadata | public | Split identifiers only; source frames stay restricted |
 | ImageNet | upstream-licensed | Manifests only; users obtain images from the licensed upstream source |
+| IntPhys 2 Main split | upstream-licensed | Nothing; users download the CC-BY-NC videos from the upstream release |
 | SAYCam, Labeled-S frames, restricted BabyView and BabyVLM images | IRB | Never on the Hub, including private repos or pixel-embedding manifests |
 
-These are publication candidates, not a claim that collections already exist.
-Pinned upstream downloads remain available. A Hub Collection can group approved
-repos after their owners publish them; this change publishes no data or weights.
+Two collections are published, privately until the first release, under CC BY 4.0
+with the authors' permission. Cite the papers when using them.
+
+| Repo | Contents | Packaged config |
+| --- | --- | --- |
+| [agentic-learning-ai-lab/egolearn-shape-bias](https://huggingface.co/datasets/agentic-learning-ai-lab/egolearn-shape-bias/tree/v1) | Prepared stimuli (Tartaglini, Vong & Lake, 2022) | `shape_bias_eval` |
+| [agentic-learning-ai-lab/egolearn-spatial-relation-categorization](https://huggingface.co/datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization/tree/v1) | `monitoring/` subsets (Davidson, Orhan & Lake, 2024) | `spatial_relations_eval` |
+
+Both are tagged `v1`; fetch them with `egl data fetch shape-bias --revision v1` or
+`egl data fetch spatial-relation-categorization --revision v1`. The other rows are
+publication candidates, not a claim that collections already exist. Pinned upstream
+downloads remain available.
 
 To upload a prepared directory (not a training run directory):
 
 ```bash
 uv run python -m egolearn.hub push prepared/ --name shape-bias --license CC-BY-4.0
-uv run python -m egolearn.hub push weights/ --name babycl-saycam-seed0 \
+uv run egl export runs/example/final.pth exports/babycl-saycam-seed0
+uv run python -m egolearn.hub push exports/babycl-saycam-seed0 --name babycl-saycam-seed0 \
   --repo-type model --license MIT
 uv run egl data verify prepared/
 uv run python -m egolearn.hub checksum prepared/
@@ -331,7 +366,10 @@ unchanged, and creates a **private** repo. `--public` is required to create or
 upload to a public repo; it does not change an existing repo's visibility.
 The supported license identifiers are checked before repository creation (an
 unsupported identifier reports the accepted list). Choose a license you have
-authority to grant and inspect the directory before uploading: non-hidden payload files are included. Do not upload IRB data, embedded
+authority to grant and inspect the directory before uploading. Model repos require
+the validated `model.safetensors`/`model.json` pair from `egl export` and reject
+other payloads, including `.pth` files. Dataset uploads include non-hidden payload
+files. Do not upload IRB data, embedded
 frames, credentials or personal run metadata. Checkpoint names follow
 `egolearn-<method>-<data>-seed<n>`. SAYCam-trained weights stay in **private** model
 repos until publication rights under the Databrary agreement have been confirmed.

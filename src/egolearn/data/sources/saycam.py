@@ -155,24 +155,37 @@ class SaycamStream(S.Stream):
         if video_dir not in self._frames_cache:
             p = self.root / video_dir
             files = [f for f in os.listdir(p) if f.lower().endswith(_FRAME_EXTS)]
+            # by time, then name: a stable order whatever os.listdir returns
             files.sort(
-                key=lambda fn: _time_from_name(fn, self.naming, self.fps, self.strict_filenames)
+                key=lambda fn: (
+                    _time_from_name(fn, self.naming, self.fps, self.strict_filenames),
+                    fn,
+                )
             )
             self._frames_cache[video_dir] = files
         return self._frames_cache[video_dir]
+
+    def frame_files(self, video_dir: str) -> list[str]:
+        """Frame file names of one session directory in stream order: what
+        `open_frame` indexes, and the order a packed store keeps them in."""
+        return self._frames(video_dir)
+
+    def frame_times(self, files: list[str]) -> list[float]:
+        return [_time_from_name(fn, self.naming, self.fps, self.strict_filenames) for fn in files]
+
+    @staticmethod
+    def _stem(sid: str) -> str:
+        return os.path.splitext(sid)[0]
 
     def sessions(self):
         for sid in self.session_ids():
             files = self._frames(sid)
             if not files:
                 continue
-            times = [
-                _time_from_name(fn, self.naming, self.fps, self.strict_filenames) for fn in files
-            ]
+            times = self.frame_times(files)
             video = S.DenseFrameChannel("video", sid, times, [(sid, i) for i in range(len(files))])
             channels: dict[str, S.Channel] = {"video": video}
-            stem = os.path.splitext(sid)[0]
-            utts = self._utts_by_stem.get(stem, [])
+            utts = self._utts_by_stem.get(self._stem(sid), [])
             if utts:
                 channels["transcript"] = S.SparseIntervalChannel("transcript", sid, utts)
             yield S.Session(sid, channels)
@@ -182,7 +195,7 @@ class SaycamStream(S.Stream):
             total = 0
             for sid in self.session_ids():
                 total += len(self._frames(sid))
-                total += len(self._utts_by_stem.get(os.path.splitext(sid)[0], []))
+                total += len(self._utts_by_stem.get(self._stem(sid), []))
             self._total = total
         return self._total
 

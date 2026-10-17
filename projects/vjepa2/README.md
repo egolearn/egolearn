@@ -131,12 +131,25 @@ loss history, evaluation results and checksums:
 | SAYCam-S | [Checkpoint](https://huggingface.co/agentic-learning-ai-lab/egolearn-vjepa2-vits16-saycam-iid-seed0/tree/e6d997b1140d8e70f6a1745f22412b362e4f8f53) | [Checkpoint](https://huggingface.co/agentic-learning-ai-lab/egolearn-vjepa2-vits16-saycam-streaming-seed0/tree/a414d784ac5280146646d4a6b3de3a7afd5228b9) |
 | BabyView | [Checkpoint](https://huggingface.co/agentic-learning-ai-lab/egolearn-vjepa2-vits16-babyview-iid-seed0/tree/1070cec79333fbc91c563757e1eddfd4b6f08b75) | [Checkpoint](https://huggingface.co/agentic-learning-ai-lab/egolearn-vjepa2-vits16-babyview-streaming-seed0/tree/ad3a21994b21eb5074c9adfb03cb837e344376c9) |
 
-Download `model.pth` from the chosen revision with an authorized Hub account and
-pass its local path as `checkpoint` to either evaluation command. These exports
-preserve every context/EMA encoder and predictor tensor, plus construction and
-training provenance, while omitting optimizer state. Evaluation records retain
-the original `final.pth` hash; `training.json` maps it to the exported file hash.
+These pinned revisions contain legacy `model.pth` artifacts. Download that file
+with an authorized Hub account and pass its local path as `checkpoint` to either
+evaluation command. The restricted legacy checkpoint reader remains supported.
+These artifacts preserve every context/EMA encoder and predictor tensor, plus construction and
+training provenance, while omitting optimizer state. The bundled `training.json`
+maps the original `final.pth` hash to the artifact hash; new evaluation records
+identify the file actually loaded.
 The model cards document the single-seed results and protocol limitations.
+
+New Hub uploads use the safetensors export format described in
+[Security](../../SECURITY.md#model-export-and-checkpoint-trust):
+
+```bash
+uv run egl export "$RUN_DIR/final.pth" "$RUN_DIR/export"
+```
+
+Pass the resulting directory as `checkpoint` for evaluation. Its
+`checkpoint.sha256` identifies both exported files; `checkpoint.source.sha256`
+identifies the source checkpoint. The pinned legacy revisions above are unchanged.
 
 The `image_evals` configuration runs Labeled-S and BabyView frozen linear
 decoding and novel-object shape bias. Set `LABELED_S_ROOT`, `LABELED_S_SPLIT`
@@ -151,9 +164,12 @@ uv run python -m egolearn.evaluate --config-dir projects/vjepa2/configs \
 
 All four data environment variables are required by this recipe. Prepare
 BabyView manifests with `python -m egolearn.evaluation.benchmarks.babyview_4afc.prepare`
-and shape-bias stimuli with `python scripts/prepare_shape_bias.py` (see each
+and shape-bias stimuli with `uv run egl data prepare shape-bias` (see each
 command's `--help`). The canonical Labeled-S split source and checksum are
 defined in `egolearn.evaluation.benchmarks.labeled_s_linear.probe`.
+For hosted manifests, the run record's `input_provenance` retains the Hub
+reference and resolved commit; the wrapped probe's compact result configuration
+reports the manifest filename.
 
 Repeat with `random.pth` and a separate output path. This protocol freezes the
 EMA `video_target` encoder, repeats each normalized image for 16 frames, and
@@ -170,12 +186,6 @@ records, evaluation scores and a local results report outside Git; do not infer
 results from synthetic tests or job submission. Report complete/failed/pending
 status, commit, resolved config, input identities, W&B URL and measured timings.
 
-The branch depends on #37 (IntPhys), #49 (run records, including #42's CLI),
-and #34 (checkpoint/provenance). Submission (#36) and resume metadata (#40)
-are merged into main. The design records the initial dependency commits;
-merge main again when the remaining dependencies land. The nested-directory
-adapter reuses the isolated change from `feat/mae`.
-
 ## Full IID and streaming runs
 
 The `full_saycam_iid`, `full_saycam_streaming`, `full_babyview_iid`, and
@@ -185,6 +195,9 @@ then admits two new clips per update. Clips contain 16 frames at the prepared
 5 fps and never cross recordings or timestamp gaps. The FIFO spans recordings;
 it provides local replay without access to future clips. Incomplete recording
 and gap tails are counted and dropped. Every complete clip is admitted once.
+Keep the configured frame-directory streams for these recipes: the packed-frame
+backend does not yet support their strict filename options or BabyView's nested,
+natural-order sessions (see [data loading](../../docs/data_loading.md#using-a-store)).
 
 IID shuffles the identical clip inventory each epoch. For N clips, batch B and
 advance S, both modes run `ceil((N - B + S) / S)` updates, approximately B/S=16

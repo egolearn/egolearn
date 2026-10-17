@@ -7,18 +7,23 @@ same-shape matches are compared with all 15 same-texture matches by cosine
 similarity: 57,600 decisions total. Ties count as texture decisions, matching
 the released evaluation.
 
-Prepare the checksum-pinned stimuli::
+The prepared stimuli are hosted on the Hub (CC BY 4.0; cite the paper).
+Evaluate a checkpoint with the packaged config::
 
-    uv run --extra train python scripts/prepare_shape_bias.py
+    egl eval shape_bias_eval checkpoint=<checkpoint or export>
 
-Config::
+As a training-time probe::
 
     _imports_: [egolearn.evaluation.benchmarks.shape_bias]
     probes:
       - {_target_: "probe:shape_bias", name: shape_bias,
-         manifest: data/shape_bias/80_unaligned/stimulus_manifest.json,
+         manifest: "hf://datasets/agentic-learning-ai-lab/egolearn-shape-bias@v1/stimulus_manifest.json",
          batch_size: 32, view: resize, size: 224,
          output_json: "runs/shape_bias_step_{step}.json"}
+
+To regenerate the stimuli locally from the checksum-pinned upstream assets, run
+``egl data prepare shape-bias`` and point ``manifest`` at the local
+``stimulus_manifest.json``.
 """
 
 from .probe import ShapeBiasProbe

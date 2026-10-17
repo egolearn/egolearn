@@ -1,6 +1,10 @@
 # Full IID and chronological V-JEPA 2 training
 
-Extend feat/vjepa2 at da5bdb7, reusing the locally integrated PRs #49/#40/#34/#37/#36/#42. The original checkout remains untouched. User requested full IID and streaming on SAYCam and BabyView, from scratch; optional budget question pending, recommended matched ~16 IID passes like the existing full MAE experiments.
+Historical design record for extending the initial V-JEPA 2 implementation to
+full IID and streaming runs on SAYCam and BabyView. The shared dependency PRs
+have merged. The adopted budget matches one streaming pass to approximately
+16 IID passes. See the [project README](../../projects/vjepa2/README.md) for
+current recipes, continuation commands, and evaluation usage.
 
 ## Scientific protocol
 
@@ -19,7 +23,7 @@ IID shuffles the identical nonoverlapping clip inventory every epoch, drops inco
 
 ## Validation and launch gates
 
-Unit tests: emitter only emits after final frame, exactly equals offline refs over gaps/session tails, stride>1 if supported, monotonic input validation, no future-frame decode, FIFO all32 admission/new2 counts, no stale tail step, complete-source drain, small source rejection. CPU integration: matched IID/streaming steps and LR, exact resumed-vs-uninterrupted model/optimizer/teacher and masks, partial-final-quantum resume, nonfinite/skip fail, manifest mismatch rejection, no final file on pause, correct metrics rates, safe prefetch shutdown. Run existing shared streaming/offline/snapshot/record/VJEPA suite, ruff/mypy, package/lock/security checks as appropriate. Claude independently reviews design before code and diff before GPU launches; verify material findings and iterate. Four independent GPU preflights and continuation checks, inspect losses/gradients/memory/timing; use results for time allocation, not scientific early-stop choice.
+Unit tests: emitter only emits after final frame, exactly equals offline refs over gaps/session tails, stride>1 if supported, monotonic input validation, no future-frame decode, FIFO all32 admission/new2 counts, no stale tail step, complete-source drain, small source rejection. CPU integration: matched IID/streaming steps and LR, exact resumed-vs-uninterrupted model/optimizer/teacher and masks, partial-final-quantum resume, nonfinite/skip fail, manifest mismatch rejection, no final file on pause, correct metrics rates, safe prefetch shutdown. Run existing shared streaming/offline/snapshot/record/VJEPA suite, ruff/mypy, package/lock/security checks as appropriate. Four independent GPU preflights and continuation checks, inspect losses/gradients/memory/timing; use results for time allocation, not scientific early-stop choice.
 
 ## Final review resolutions
 

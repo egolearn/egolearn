@@ -234,6 +234,8 @@ def test_nested_babyview_gap_index_and_strict_filenames(tmp_path):
     Image.new("RGB", (64, 64)).save(malformed)
     with pytest.raises(ValueError, match="filename"):
         BabyViewStream(str(root), session_glob="*/*", strict_filenames=True).total_observations()
+    with pytest.raises(ValueError, match="filename"):
+        pipe.stream.frame_times([malformed.name])
 
 
 def test_wrong_fps_and_zero_windows_fail(tmp_path):

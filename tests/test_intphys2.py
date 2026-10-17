@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 import torchvision.transforms as T
 
-from egolearn.evaluation import evaluate
+from egolearn.evaluation import EvaluationError, evaluate
 from egolearn.evaluation.benchmarks.intphys2 import IntPhys2Probe
 from egolearn.evaluation.benchmarks.intphys2 import probe as intphys2
 from egolearn.evaluation.evaluator import EvaluationContext
@@ -201,8 +201,6 @@ def test_intphys2_scores_a_vjepa_model(tmp_path, monkeypatch):
         evaluate(model, benchmarks=[{**spec, "distance": "cosine"}], imports=imports)
 
     # the context/target split must fall on a tubelet boundary
-    from egolearn.evaluation import EvaluationError
-
-    with pytest.raises(EvaluationError) as failure:
+    with pytest.raises(EvaluationError) as caught:
         evaluate(model, benchmarks=[{**spec, "context_frames": [2, 3]}], imports=imports)
-    assert "tubelet" in str(failure.value.__cause__)
+    assert "tubelet" in str(caught.value.__cause__)

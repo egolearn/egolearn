@@ -18,6 +18,9 @@ memory retrieval, and egocentric video question answering.
 
 ## Quickstart
 
+Run Python setup and commands on a workstation or compute node. For cluster
+login-node submission, start with the [shell launcher](docs/cluster.md).
+
 ```bash
 git clone git@github.com:agentic-learning-ai-lab/egolearn.git
 cd egolearn
@@ -73,6 +76,8 @@ stop and resume exactly where they left off, and every run prints a
 per-stage timing report. Memory Storyboard and BabyCL are included as
 faithful ports of the original code, each expressed as a config file. The
 full walkthrough: [docs/design/architecture.md](docs/design/architecture.md).
+Frame dumps can be packed into a shard store for fast random reads; see
+[data loading](docs/data_loading.md).
 
 Trained checkpoints can be evaluated independently through
 `egolearn.evaluation.evaluate_checkpoint` or `egl eval`.
@@ -123,6 +128,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) (branching, gates, style, tests) and
 
 ## Cluster jobs
 
-Use `egl submit [sbatch options] -- <command>` for containerized jobs,
+On login nodes, use `scripts/slurm/submit [sbatch options] -- <command>` for containerized jobs,
 CPU environment preparation and immutable code snapshots. See [cluster setup](docs/cluster.md)
-for the scratch cache environment, pinned image and Hydra sweep arrays.
+for the scratch cache environment, pinned image and Hydra sweep arrays. Run all
+Python commands, including `egl doctor` and benchmark planning, in compute allocations.

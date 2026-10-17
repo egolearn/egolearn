@@ -1,6 +1,9 @@
 # V-JEPA 2 on SAYCam and BabyView
 
-Status: finalized after two independent review rounds before implementation.
+Historical design record for the initial implementation. The dependency PRs
+listed below have merged; their commit IDs record the original integration. See
+the [project README](../../projects/vjepa2/README.md) for current commands, model
+exports, and supported protocols.
 
 ## Scope and scientific contract
 
@@ -20,7 +23,7 @@ at `204698b45b3712590f06245fbfba32d3be539812`, specifically
 This revision includes newer methods too; only the original V-JEPA 2 path is
 in scope. Retain Meta attribution/license for any adapted reference logic.
 
-## Reuse and pending PRs
+## Reuse and initial dependencies
 
 | Existing component | Use |
 | --- | --- |
@@ -36,15 +39,10 @@ in scope. Retain Meta attribution/license for any adapted reference logic.
 | #40 `f2f3c9d` | Preserve live construction metadata on snapshot resume |
 | #34 `bd46094` | Restricted checkpoint loading and evaluation provenance |
 
-Use a branch from current main `a63c140`, isolated from unrelated dirty work.
-Merge required dependency branch heads locally without rewriting their history;
-do not merge their GitHub PRs. Resolve shared docs/checkpoint conflicts by
-retaining both behaviors and run their focused tests. Avoid merging unrelated
-BabyCL, MAE or slot-method branches. Reuse the isolated `saycam.py` adapter
-change from `feat/mae` at `1c8c4a2` (session_glob, natural_order, worker cache
-reset) rather than reimplementing its nested-directory support. Existing MAE cluster artifacts can identify
-available read-only dataset mounts and a working image, without copying its
-training loop. #41 safetensors is optional, not a training prerequisite.
+The initial implementation branched from `a63c140` and integrated the dependency
+commits above. Nested-directory support reused the adapter change from `feat/mae`
+at `1c8c4a2` (session_glob, natural_order, worker cache reset). New model uploads
+now use the shared safetensors export format documented in the project README.
 
 ## Architecture and objective changes
 
@@ -128,7 +126,7 @@ host timings as kernel durations. Preserve raw histories outside Git.
   interrupted/resumed training using an unchanged total schedule.
 - Test source clip continuity and config wiring with synthetic frame files,
   including BabyView nesting if required. No human-subject frames in tests.
-- Run full CPU suite, lint/format/type/lock/build checks. Ask Claude for design
+- Run full CPU suite, lint/format/type/lock/build checks. Use independent design
   review and revise before implementation; ask again for code review and fix
   confirmed findings before dataset training. Keep review text outside Git.
 - Submit immutable code only after checks/review. First run a short real-data
@@ -176,9 +174,8 @@ host timings as kernel durations. Preserve raw histories outside Git.
   reusable implementation, documented experimental configs, and tests belong
   on feat/vjepa2. Keep a local result report outside the checkout with records and
   W&B links; a public README contains commands and status, no unpublished numbers.
-  No main merge or publication is authorized by this workflow.
-- The implementation branch is explicitly stacked on #37/#49/#40/#34 and records
-  the dependency identities. Cluster-specific paths stay in private launch env.
+- The initial dependency identities are recorded above. Cluster-specific paths
+  stay in private launch environments.
 
 Preflight also verifies median source interval within 10% of 1/fps and a nonempty
 clip index. Predictor default mask_index is 0. A CHANGELOG entry accompanies the

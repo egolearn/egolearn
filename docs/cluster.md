@@ -1,10 +1,13 @@
 # Cluster jobs
 
-Use `egl submit [sbatch options] -- <command>` from a clean checkout.
-The installed `egl` command needs a base Python environment (no training extra).
-The launcher also needs Bash 4.4+, Git, coreutils, findutils, tar, iconv and `sbatch`;
-compute nodes need Bash 4.4+, Apptainer and `flock`. There is no login-node
-environment build or image pull.
+Use `scripts/slurm/submit [sbatch options] -- <command>` from a clean checkout
+on the login node. **Do not run Python on login nodes**, including any `egl`
+command, environment installation, diagnostics or benchmark planning. The shell
+launcher needs Bash 4.4+, Git, coreutils, findutils, tar, iconv and `sbatch`;
+compute nodes need Bash 4.4+, Apptainer and `flock`. Environment builds and image
+pulls run in CPU jobs. A compute node used for benchmark planning also needs the
+shell launcher's tools listed above and uv, with `sbatch` available on `PATH` to
+submit the worker array. Load the site's required modules in the planning shell.
 
 ## Setup and submission
 
@@ -15,7 +18,7 @@ site's writable storage root, edit account/partition settings, and run:
 ```bash
 chmod 600 env.sh
 source env.sh
-egl submit --gres=gpu:1 --cpus-per-task=8 --mem=64G --time=24:00:00 -- \
+scripts/slurm/submit --gres=gpu:1 --cpus-per-task=8 --mem=64G --time=24:00:00 -- \
   python -m egolearn.train --config-dir projects/babycl/configs \
   --config-name saycam_default stream.root_dir="$EGOLEARN_DATA/saycam"
 ```
@@ -78,11 +81,13 @@ Every submit archives exactly one clean Git commit. Staged, unstaged and
 untracked changes are refused; ignored data, `env.sh`, environments and outputs
 are excluded. Commit the intended code before submitting. Git submodules and
 tracked symlinks are refused because they could escape the archived tree.
-The underlying `scripts/slurm/submit` uses Bash, Git and standard Unix tools to
-archive code and write `run.json`; it remains available without Python on the
-login node. `egl submit` dispatches to that script from an installed base package.
-`egl bench run --submit` also uses Python to compose configs and verify inputs
-before submitting. Training dependencies and the container are prepared in CPU jobs.
+`scripts/slurm/submit` uses Bash, Git and standard Unix tools to archive code and
+write `run.json`, without Python on the login node. The installed `egl submit`
+alias dispatches to that script and is for workstations or compute allocations.
+Run `egl bench run --submit` in a CPU allocation: config composition and hashing
+every pinned input happen before submission. Follow the
+[benchmark planning steps](benchmark_suites.md#cluster-planning-in-a-cpu-job).
+Training dependencies and the container are prepared in CPU jobs.
 Command arguments must be UTF-8; submission checks them with `iconv` before
 creating a snapshot so `run.json` remains valid JSON.
 
@@ -126,11 +131,11 @@ queue lookup cannot exclude a job that has already finished.
 ## Arrays and dry runs
 
 ```bash
-egl submit --sweep --max-parallel 4 --gres=gpu:1 --cpus-per-task=8 --mem=64G -- \
+scripts/slurm/submit --sweep --max-parallel 4 --gres=gpu:1 --cpus-per-task=8 --mem=64G -- \
   python -m egolearn.train --config-dir projects/babycl/configs \
   --config-name saycam_default seed=0,1,2 driver.rate.steps_per_admit=1,4
-egl submit --commands /path/to/commands.txt --gres=gpu:1
-egl submit --dry-run -- python -m egolearn.train --help
+scripts/slurm/submit --commands /path/to/commands.txt --gres=gpu:1
+scripts/slurm/submit --dry-run -- python -m egolearn.train --help
 ```
 
 `--sweep` expands top-level Hydra comma lists into a Cartesian product. Lists,
@@ -139,6 +144,29 @@ nonblank, noncomment shell commands into one array; use trusted command files.
 `--max-parallel` caps concurrent tasks. `--dry-run` writes the local snapshot and
 record and prints the sbatch calls, but submits no jobs. `--chdir`, `--export`,
 `--wrap` and raw `--array` are managed by the launcher and cannot be overridden.
+
+## Diagnostics
+
+On the login node, the shell launcher checks required storage settings and the
+checkout before submitting. Its `--dry-run` performs those checks and writes a
+snapshot without executing Python or submitting jobs.
+
+Run `egl doctor` in an allocation. To check the prepared CPU environment, replace
+`CPU_PARTITION` with your site's CPU partition and submit from the login node:
+
+```bash
+scripts/slurm/submit --partition=CPU_PARTITION --cpus-per-task=2 --mem=8G \
+  --time=00:10:00 -- egl doctor --cluster --skip-cuda
+```
+
+For a CUDA check, request a GPU job and pass `--require-cuda` instead of
+`--skip-cuda`. Doctor's CUDA probe imports torch in a child process. Even with
+`--skip-cuda`, doctor itself runs Python and belongs in an allocation.
+
+In a CPU planning shell, use `egl doctor --submit --skip-cuda` to check submission
+tools and cluster storage before planning an array. This checks Bash, Git,
+`sbatch`, `iconv`, `tar`, and uv on that host, including inside a Slurm allocation.
+See the [benchmark planning workflow](benchmark_suites.md#cluster-planning-in-a-cpu-job).
 
 ## Caches and credentials
 

@@ -40,16 +40,16 @@ message when the diff changes; review discussion stays in comments.
   (config, seeds, hardware, wall time), a table of numbers against the baseline,
   links to runs and artifacts, and a command to reproduce them. If nothing has
   run yet, say so and explain what is pending. Delete the section otherwise.
-- **Test plan**: commands that ran, where, and the outcome; cluster jobs by ID.
+- **Test plan**: commands that ran, where, and the outcome.
   If CI covers everything, say so. State any checks that have not run.
 - **Checklist**: the template's five top-level `- [x]` boxes, each ticked after verification.
   Add notes for conditional items, such as no dependency change or no code port.
 
 Summary comes first; Test plan and Checklist are the last two sections. Other
 sections belong between Summary and Test plan. Leave out review history, people,
-dates, a copy of the changelog, and the title repeated as a heading. Delete all
-template comments and empty optional sections. Aim for at most 40 non-blank
-lines; the checker warns past 40 and rejects more than 60.
+cluster job IDs, dates, a copy of the changelog, and the title repeated as a
+heading. Delete all template comments and empty optional sections. Aim for at
+most 40 non-blank lines; the checker warns past 40 and rejects more than 60.
 
 Draft the body in a file and check it before opening or updating the PR:
 
@@ -82,6 +82,29 @@ Without `--files`, the Results warning is skipped. The path heuristic includes
 `.yaml` and `.yml`; reported numbers elsewhere are the author's responsibility.
 Fenced examples count as content, never headings, checklist boxes, or comments.
 
+## Docs site
+
+The landing page is `landing/index.html`, served at the site root; the MkDocs
+site from `docs/` (`mkdocs.yml`) is served under `/docs/`. Pages outside `docs/`
+(the root README, CHANGELOG, CONTRIBUTING, SECURITY, and the project READMEs) are
+added at build time by `scripts/docs/hooks.py`, which also points links to files
+outside the site at GitHub. Preview locally:
+
+```bash
+uv run --group docs mkdocs serve
+```
+
+Cloudflare Pages builds both with `scripts/docs/build.sh`:
+
+- Build command: `bash scripts/docs/build.sh`
+- Output directory: `dist`
+- Environment: `PYTHON_VERSION=3.12`; `EGOLEARN_SITE_STAGING=false` only for the public
+  production build (staging adds `noindex` and a `robots.txt` that blocks crawlers)
+
+Images in `landing/media/` are either drawn or generated for the page, or come
+from published, openly licensed sources and the datasets' own project pages; the
+page credits each one.
+
 ## Porting policy
 
 Code from the source repos (memory-storyboard, lifelong-memory, poodle,
@@ -111,6 +134,12 @@ files.
 | llm | `@pytest.mark.llm` | manual only (paid APIs), never CI | `uv run pytest -m llm` |
 
 Every ported or new library component lands with tests in the appropriate tier.
+Prefer a small set of behavior tests over a test for every function or input
+spelling. Extend an existing test when it already exercises the behavior; keep
+separate cases for known regressions and distinct failure modes. Share setup for
+the same contract, and avoid Cartesian products of independent options unless
+their interaction matters. Keep numerical correctness, reproducibility, checkpoint
+safety, and data-integrity checks when trimming redundant smoke tests.
 
 ## Dependencies
 

@@ -31,6 +31,16 @@ class CountingStream(Stream):
         return Image.fromarray(np.roll(pixels, index + ref.locator[0], axis=0))
 
 
+class DenormalCheckingStream(CountingStream):
+    def __init__(self, log_dir, flush_denormal):
+        super().__init__(log_dir)
+        self.flush_denormal = flush_denormal
+
+    def open_frame(self, ref, index):
+        assert (torch.tensor(1e-40).item() == 0) == self.flush_denormal
+        return super().open_frame(ref, index)
+
+
 def items(start=0, seed=11):
     return [
         ("clip", ItemRef("session", "video", 0, 1, (i,)), 0, ["clip"], 4, 1, seed + i)
@@ -106,6 +116,26 @@ def test_parallel_loading_matches_serial_and_reuses_live_clips(tmp_path, packed,
     finally:
         pooled.close()
         serial.close()
+
+
+@pytest.mark.parametrize("affinity", [False, True])
+def test_cached_worker_pools_honor_denormal_setting(tmp_path, affinity):
+    expected = Loader(CountingStream(tmp_path), bank()).tensor_batch(items())
+    for flush_denormal in (False, True):
+        loader = Loader(
+            DenormalCheckingStream(tmp_path, flush_denormal),
+            bank(),
+            1,
+            None,
+            flush_denormal,  # Preserve the positional argument already available on main.
+            packed=True,
+            affinity=affinity,
+            cache_frames=4,
+        )
+        try:
+            assert torch.equal(loader.tensor_batch(items()), expected)
+        finally:
+            loader.close()
 
 
 def test_frame_view_mutation_cannot_poison_worker_cache(tmp_path, monkeypatch):

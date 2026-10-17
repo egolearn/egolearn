@@ -1,8 +1,10 @@
 """Data: where observations come from and how they become training batches.
 
 Submodules:
-  * sources   -- dataset adapters (saycam, babyview, video, toy): sessions of
-                 time-aligned channels
+  * sources   -- dataset adapters (saycam, babyview, packed_frames, video,
+                 toy): sessions of time-aligned channels
+  * packed    -- packed frame store (shards + numpy index) behind
+                 stream:packed_frames; build/verify CLI
   * decoding  -- video decode backends (frame_dir, poodle stub): file+time ->
                  pixels, sequential and random access
   * loading   -- Loader: refs -> tensors, as late as possible

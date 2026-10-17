@@ -114,7 +114,7 @@ def main() -> int:
     ap.add_argument(
         "--device",
         default=None,
-        help="override cfg.device (embedder compute; use cpu on a login node)",
+        help="override cfg.device (embedder compute; run in a compute allocation on the cluster)",
     )
     ap.add_argument("--output-json", default=None)
     args = ap.parse_args()
