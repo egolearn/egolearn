@@ -150,8 +150,11 @@ safety, and data-integrity checks when trimming redundant smoke tests.
 
 ## Experiments
 
-- **Don't edit code after launching a job** (lab wiki rule) — jobs run launch-time
-  code, not queue-time code. The launcher phase adds per-run snapshotting.
+- Submit experiments through `scripts/slurm/submit`, which archives a clean commit
+  and runs the job from that snapshot. Keep archived code and environments unchanged
+  until dependent jobs finish; see [snapshots and records](docs/cluster.md#snapshots-and-records).
+- For local or interactive runs from an editable checkout, keep its source unchanged
+  until the run finishes, since spawned workers import that source.
 - W&B: entity `nyu-mengye-group`, always config-driven (`wandb.*` keys in the hydra
   config) — never hardcode project names in code.
 - LLM API keys are environment variables only — never CLI flags, configs, or code.
