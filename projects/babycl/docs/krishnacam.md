@@ -84,7 +84,25 @@ quality 95, with preparation time and disk usage reported separately from loadin
 JPEG compression is lossy, so tensor equality is checked only between video
 variants, using the first measured batch. The operating system cache is
 uncontrolled, and worker startup is reported separately from steady batch timing.
-The benchmark measures CPU loading and augmentation, not GPU training speed.
+The benchmark measures loading and CPU augmentation, not GPU training speed.
+
+## Hardware decoding
+
+Select NVIDIA NVDEC with `stream.decoder.device=cuda:0` on an allocated GPU.
+The decoder retains intermediate frames on the device and transfers only
+requested images for the existing CPU augmentations. Frame selection and
+augmentation seeds are unchanged. Metadata probing does not initialize CUDA,
+so you can still validate the config on a CPU allocation.
+
+This path requires PyAV 19 or newer, a CUDA-enabled FFmpeg build, and access to
+the NVIDIA video decoder libraries. An unavailable or unsupported hardware
+decoder raises an error instead of silently falling back to the CPU.
+
+Each worker has its own decoder handles and consumes GPU memory. Start with
+`stream.decoder.cache_handles=2` and a small worker pool, then measure scaling
+on your GPU. To benchmark hardware decoding with the same sampled requests,
+add `--device cuda:0 --cache-handles 2 --skip-individual` to the loading command
+and choose a new output directory. Request a GPU allocation for this comparison.
 
 The output directory contains `requests.json`, an incrementally updated
 `report.json`, and the optional bounded `jpeg/` cache. Keep these experiment

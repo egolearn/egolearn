@@ -1,4 +1,4 @@
-"""Decode constant-rate videos on demand with bounded, process-local handles."""
+"""Decode constant-rate videos on CPU or NVDEC with process-local handles."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ class _Handle:
     frames: Iterator
     index: int = -1
     image: Image.Image | None = None
+    pixel_format: str | None = None
 
 
 @DECODERS.register("pyav")
@@ -30,21 +31,48 @@ class PyAVDecoder(VideoDecoder):
     largest forward gap, in frames, decoded without seeking (default 64).
     Each codec uses ``threads`` CPU threads (default 1). No pixels are stored
     on disk. Variable-rate timestamps and missing frame counts raise errors.
+    ``device=cuda:0`` uses NVDEC without software fallback, retaining intermediate
+    frames on the GPU and downloading only requested images. Metadata probes
+    use the CPU even when hardware decoding is selected.
     """
 
-    def __init__(self, cache_handles: int = 4, seek_gap: int = 64, threads: int = 1):
+    def __init__(
+        self, cache_handles: int = 4, seek_gap: int = 64, threads: int = 1, device: str = "cpu"
+    ):
         if cache_handles < 1 or seek_gap < 1 or threads < 1:
             raise ValueError("cache_handles, seek_gap, and threads must be positive")
         self.cache_handles = cache_handles
         self.seek_gap = seek_gap
         self.threads = threads
+        if (
+            device != "cpu"
+            and device != "cuda"
+            and not (device.startswith("cuda:") and device[5:].isdigit())
+        ):
+            raise ValueError("decoder device must be cpu, cuda, or cuda:<index>")
+        self.device = device
         self._handles: OrderedDict[str, _Handle] = OrderedDict()
         self._meta: dict[str, tuple[float, int]] = {}
+        self._formats: dict[str, str] = {}
 
-    def _open(self, path: str) -> _Handle:
+    def _open(self, path: str, *, metadata_only: bool = False) -> _Handle:
         import av
 
-        container = av.open(path)
+        options: dict[str, Any] = {}
+        if self.device != "cpu" and not metadata_only:
+            from av.codec.hwaccel import HWAccel
+
+            if path not in self._formats:
+                metadata = self._open(path, metadata_only=True)
+                metadata.container.close()
+            options["hwaccel"] = HWAccel(
+                device_type="cuda",
+                device=self.device.partition(":")[2] or "0",
+                allow_software_fallback=False,
+                is_hw_owned=True,
+                options={"primary_ctx": "1"},
+            )
+        container = av.open(path, **options)
         try:
             if not container.streams.video:
                 raise ValueError(f"no video stream in {path}")
@@ -54,7 +82,21 @@ class PyAVDecoder(VideoDecoder):
                     f"decoder:pyav requires frame rate and frame count metadata: {path}"
                 )
             stream.codec_context.thread_count = self.threads
-            return _Handle(container, stream, iter(container.decode(stream)))
+            pixel_format = stream.codec_context.format
+            if options:
+                if not stream.codec_context.is_hwaccel:
+                    raise ValueError(f"selected video stream does not support NVDEC: {path}")
+                pixel_format_name = self._formats.get(path)
+            else:
+                pixel_format_name = pixel_format.name if pixel_format else None
+                if pixel_format_name:
+                    self._formats[path] = pixel_format_name
+            return _Handle(
+                container,
+                stream,
+                iter(container.decode(stream)),
+                pixel_format=pixel_format_name,
+            )
         except BaseException:
             container.close()
             raise
@@ -62,7 +104,7 @@ class PyAVDecoder(VideoDecoder):
     def probe(self, path: str) -> tuple[float, int]:
         """Return container frame rate and count without decoding pixels."""
         if path not in self._meta:
-            handle = self._open(path)
+            handle = self._open(path, metadata_only=True)
             try:
                 self._meta[path] = (float(handle.stream.average_rate), handle.stream.frames)
             finally:
@@ -105,6 +147,15 @@ class PyAVDecoder(VideoDecoder):
                 raise ValueError(f"frame {index} missing from constant-rate timeline: {path}")
             if ordinal == index:
                 handle.index = index
+                if frame.format.name == "cuda":
+                    # NVDEC surfaces use NV12/P010. Restore the coded pixel layout
+                    # before swscale's RGB conversion, whose chroma interpolation
+                    # otherwise differs from the CPU decoder's planar YUV path.
+                    if handle.pixel_format is None or handle.pixel_format == "cuda":
+                        raise ValueError(
+                            f"missing software pixel format for hardware decode: {path}"
+                        )
+                    frame = frame.reformat(format=handle.pixel_format)
                 handle.image = frame.to_image()
                 return handle.image
         raise IndexError(f"video ended before frame {index}: {path}")

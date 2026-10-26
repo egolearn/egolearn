@@ -15,7 +15,7 @@ stream:
   root_dir: ${oc.env:KRISHNACAM_ROOT,/path/to/krishnacam/kcam}
   manifest_json: ${oc.env:KRISHNACAM_MANIFEST,null}
   sessions: null
-  decoder: {_target_: "decoder:pyav", cache_handles: 8, seek_gap: 64, threads: 1}
+  decoder: {_target_: "decoder:pyav", device: cpu, cache_handles: 8, seek_gap: 64, threads: 1}
 
 loader:
   workers: 8

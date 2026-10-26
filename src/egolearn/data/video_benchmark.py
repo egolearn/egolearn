@@ -185,6 +185,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument("--size", type=int, default=224)
     parser.add_argument("--jpeg-reference", action="store_true")
+    parser.add_argument("--device", default="cpu", help="PyAV decoder device: cpu or cuda:<index>")
+    parser.add_argument("--cache-handles", type=int, default=8)
+    parser.add_argument("--seek-gap", type=int, default=64)
+    parser.add_argument("--skip-individual", action="store_true")
     args = parser.parse_args(argv)
     if min(args.batches, args.warmup, args.sessions, args.segments, args.frames, args.size) < 1:
         parser.error("batch, warmup, session, segment, frame, and size counts must be positive")
@@ -216,7 +220,10 @@ def main(argv: list[str] | None = None) -> int:
         "args": vars(args),
         "sessions": selected,
         "workload_sha256": hashlib.sha256(workload_json.encode()).hexdigest(),
-        "scope": "CPU decode and BabyCL augmentation; OS cache uncontrolled; JPEG is lossy",
+        "scope": (
+            f"{args.device} decode and CPU BabyCL augmentation; "
+            "OS cache uncontrolled; JPEG is lossy"
+        ),
         "variants": [],
     }
 
@@ -230,7 +237,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Preparing the bounded JPEG reference", flush=True)
         report["jpeg_preparation"] = prepare_jpegs(batches, output / "jpeg")
         save()
-    variants = [("video_individual", 0)]
+    variants = [] if args.skip_individual else [("video_individual", 0)]
     variants += [("video_grouped", workers) for workers in dict.fromkeys(args.workers)]
     if args.jpeg_reference:
         variants += [("jpeg", workers) for workers in dict.fromkeys(args.workers)]
@@ -242,7 +249,11 @@ def main(argv: list[str] | None = None) -> int:
         else:
             source_cls = IndividualVideoStream if name == "video_individual" else VideoStream
             source = source_cls(
-                args.root, PyAVDecoder(cache_handles=8), manifest_json=args.manifest
+                args.root,
+                PyAVDecoder(
+                    cache_handles=args.cache_handles, seek_gap=args.seek_gap, device=args.device
+                ),
+                manifest_json=args.manifest,
             )
         print(f"Measuring {name}, workers={workers}", flush=True)
         result = {

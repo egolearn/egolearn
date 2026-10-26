@@ -19,17 +19,17 @@ av = pytest.importorskip("av")
 pytestmark = pytest.mark.video
 
 
-def _write_video(path, *, variable=False, offset=0):
+def _write_video(path, *, variable=False, offset=0, size=(64, 48)):
     with av.open(str(path), "w") as container:
         stream = container.add_stream("libx264", rate=Fraction(30000, 1001))
-        stream.width, stream.height = 64, 48
+        stream.width, stream.height = size
         stream.pix_fmt = "yuv420p"
         stream.codec_context.gop_size = 12
         stream.codec_context.max_b_frames = 2
         rng = np.random.default_rng(2)
         for i in range(48):
             frame = av.VideoFrame.from_ndarray(
-                rng.integers(0, 256, (48, 64, 3), dtype=np.uint8), format="rgb24"
+                rng.integers(0, 256, (size[1], size[0], 3), dtype=np.uint8), format="rgb24"
             )
             frame.pts = offset + i + (i // 3 if variable else 0)
             frame.time_base = Fraction(1001, 30000)
@@ -87,6 +87,43 @@ def test_variable_rate_is_rejected(tmp_path):
             decoder.read_window(str(path), 0, 48)
     finally:
         decoder.close()
+
+
+def test_cuda_metadata_does_not_require_a_gpu(videos):
+    decoder = PyAVDecoder(device="cuda:0")
+    assert decoder.probe(str(videos / "20140901.mp4"))[1] == 48
+    assert not decoder._handles
+
+
+@pytest.mark.gpu
+def test_nvdec_matches_cpu_frames_and_worker_augmentations(tmp_path):
+    for name in ("a.mp4", "b.mp4"):
+        _write_video(tmp_path / name, offset=7, size=(128, 96))
+    path = str(tmp_path / "a.mp4")
+    expected = _reference(path)
+    decoder = PyAVDecoder(device="cuda:0", cache_handles=2, seek_gap=8)
+    try:
+        for i in [47, 0, 17, 17, 12, 46, 3]:
+            np.testing.assert_array_equal(decoder.read_frame(path, i), expected[i])
+        assert decoder._handles[path].stream.codec_context.is_hwaccel
+        copied = pickle.loads(pickle.dumps(decoder))
+        assert not copied._handles
+        copied.close()
+    finally:
+        decoder.close()
+    stream = VideoStream(str(tmp_path), PyAVDecoder(device="cuda:0", cache_handles=2))
+    channel = next(iter(stream.sessions())).channels["video"]
+    items = [("frame", channel.ref_at(i), 0, ["v"], i) for i in [0, 17, 46, 12, 17]]
+    views = ViewBank({"v": {"name": "simclr_strong", "size": 32}})
+    cpu = Loader(VideoStream(str(tmp_path), PyAVDecoder()), views)
+    gpu = Loader(stream, views, workers=2)
+    try:
+        expected_views = cpu.views_batch(items)
+        actual_views = gpu.views_batch(items)
+        assert all(torch.equal(a, b) for a, b in zip(actual_views, expected_views, strict=True))
+    finally:
+        gpu.close()
+        cpu.close()
 
 
 def test_stream_groups_files_and_preserves_refs(videos, monkeypatch):
