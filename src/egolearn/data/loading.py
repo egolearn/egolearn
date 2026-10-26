@@ -133,6 +133,7 @@ class Loader:
         self.imports = list(imports or [])  # modules workers import to register views
         self.flush_denormal = bool(flush_denormal)  # worker-only CPU arithmetic mode
         self._pool: ProcessPoolExecutor | None = None
+        self.frame_requests = 0  # successful logical frames, including repeated clip positions
         # optional StageTimer (egolearn.training.profiling); the driver attaches it
         self.timer: StageTimer | None = None
 
@@ -211,8 +212,11 @@ class Loader:
         contract that makes worker-pool loading reproducible."""
         if self.timer is not None:
             with self.timer.measure("data.load"):
-                return self._one_frame(ref, index, view_names, seed)
-        return self._one_frame(ref, index, view_names, seed)
+                result = self._one_frame(ref, index, view_names, seed)
+        else:
+            result = self._one_frame(ref, index, view_names, seed)
+        self.frame_requests += 1
+        return result
 
     def _one_frame(self, ref, index: int, view_names: list[str], seed: int | None):
         pil = self.stream.open_frame(ref, index)
@@ -240,8 +244,11 @@ class Loader:
             return []
         if self.timer is not None:
             with self.timer.measure("data.load"):
-                return self._views_batch(items)
-        return self._views_batch(items)
+                result = self._views_batch(items)
+        else:
+            result = self._views_batch(items)
+        self.frame_requests += sum(item[4] if item[0] == "clip" else 1 for item in items)
+        return result
 
     def _views_batch(self, items: list[WorkItem]) -> list[torch.Tensor]:
         # Bound decoded RGB memory while giving video backends nearby requests
@@ -293,7 +300,9 @@ class Loader:
         read and the frame-dir adapters as T opens.
         """
         start = self.pick_clip_start(ref, clip_len, stride, rng)
-        return self._one_clip(ref, start, view_names, clip_len, stride, seed)
+        result = self._one_clip(ref, start, view_names, clip_len, stride, seed)
+        self.frame_requests += clip_len
+        return result
 
     def _one_clip(
         self,

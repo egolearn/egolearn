@@ -4,6 +4,9 @@ Use these pilot configs to compare chronological replay with offline shuffled
 training directly from KrishnaCam MP4 recordings. Both train a visual SimCLR
 model with the same ResNet-18 encoder, augmentations, and contrastive loss.
 
+For ResNeXt-50 BabyCL training and video-versus-JPEG loading measurements, use
+the [BabyCL KrishnaCam guide](../babycl/docs/krishnacam.md).
+
 ## Dataset setup
 
 Download the video archive linked from the

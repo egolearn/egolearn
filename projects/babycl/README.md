@@ -3,6 +3,9 @@
 Reproduces the BabyCLIP default run (continual visual + verbal learning on
 SAYCam, single chronological pass).
 
+For silent KrishnaCam videos, use the
+[visual BabyCL training and benchmark guide](docs/krishnacam.md).
+
 **This project owns the paper's contribution, as 1:1 ports** (in
 `src/egolearn/methods/babycl/`; the config's `_imports_` list makes them
 register themselves on import):

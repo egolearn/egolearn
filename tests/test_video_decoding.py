@@ -137,6 +137,7 @@ def test_loader_workers_preserve_augmented_frames_and_padded_clips(videos):
     finally:
         pooled.close()
         serial.close()
+    assert serial.frame_requests == pooled.frame_requests == 52
     assert not stream.decoder._handles
 
 
@@ -176,3 +177,107 @@ def test_discovery_and_manifest_validation(videos, tmp_path):
         VideoStream(str(empty), PyAVDecoder()).session_ids()
     explicit = VideoStream(str(videos), PyAVDecoder(), sessions=["20140902.mp4"])
     assert explicit.session_ids() == ["20140902.mp4"]
+
+
+def test_video_benchmark_compares_identical_requests_and_bounded_jpegs(videos, tmp_path):
+    import json
+
+    from egolearn.data.video_benchmark import main
+
+    output = tmp_path / "benchmark"
+    assert (
+        main(
+            [
+                "--root",
+                str(videos),
+                "--output-dir",
+                str(output),
+                "--workers",
+                "0",
+                "--batches",
+                "1",
+                "--warmup",
+                "1",
+                "--sessions",
+                "2",
+                "--segments",
+                "2",
+                "--frames",
+                "2",
+                "--seconds",
+                "0.5",
+                "--size",
+                "32",
+                "--jpeg-reference",
+            ]
+        )
+        == 0
+    )
+    report = json.loads((output / "report.json").read_text())
+    assert report["status"] == "completed"
+    individual, grouped, jpeg = report["variants"]
+    assert individual["first_measured_batch_sha256"] == grouped["first_measured_batch_sha256"]
+    assert jpeg["kind"] == "jpeg"
+    assert all(result["frame_requests"] == 4 for result in report["variants"])
+    assert report["jpeg_preparation"]["frames"] <= 8
+    assert report["jpeg_preparation"]["bytes"] > 0
+    assert all(result["frames_per_s"] > 0 for result in report["variants"])
+
+
+def test_babycl_krishnacam_trains_without_transcripts(videos, tmp_path):
+    import torch.nn.functional as F
+
+    import egolearn
+    from egolearn.config.registry import EMBEDDERS
+    from egolearn.memory.admission.base import EmbeddingProvider
+
+    @EMBEDDERS.register("test_video_mean")
+    class MeanEmbedder(EmbeddingProvider):
+        def embed_refs(self, refs, normalize=True):
+            values = torch.stack(
+                [self.loader.frame_views(ref, 0, ["eval"])[0].mean(dim=(1, 2)) for ref in refs]
+            )
+            return F.normalize(values, dim=1) if normalize else values
+
+    config_dir = Path(__file__).resolve().parents[1] / "projects/babycl/configs"
+    with initialize_config_dir(config_dir=str(config_dir), version_base="1.3"):
+        cfg = compose(config_name="krishnacam_pilot")
+    plain = OmegaConf.to_container(cfg, resolve=True)
+    assert isinstance(plain, dict)
+    assert plain["model"]["encoders"]["vision"]["_target_"] == "encoder:resnext50"
+    assert len(plain["losses"]) == 2 and "tokenizer" not in plain
+    plain.update(device="cpu", record_json=None, run_dir=str(tmp_path / "run"))
+    plain["stream"]["root_dir"] = str(videos)
+    plain["loader"]["workers"] = 0
+    plain["embedders"] = {"cluster": {"_target_": "embedder:test_video_mean"}}
+    for view in plain["views"].values():
+        view["size"] = 32
+    admission = plain["admission"][0]
+    admission.update(
+        fps=30000 / 1001,
+        avg_seg_frames=12,
+        embed_stride=3,
+        compute_stride_frames=3,
+        window_scale=2,
+        seg_extend_min_sec=0.1,
+        seg_extend_max_sec=0.2,
+    )
+    plain["memories"]["segments"]["tiers"]["short"]["capacity"] = 2
+    slot = plain["recipe"]["slots"][0]
+    slot.update(n=2, frames_per_item=2)
+    plain["model"] = {
+        "encoders": {"vision": {"_target_": "encoder:toy_cnn", "dim": 16}},
+        "heads": {
+            "proj128": {"encoder": "vision", "_target_": "head:mlp", "sizes": [16, 16, 8]},
+            "cls": {"encoder": "vision", "_target_": "head:linear", "in_dim": 16, "out_dim": 2000},
+        },
+    }
+    plain["driver"].update(prefetch=False, max_steps=2)
+    plain["driver"]["rate"]["steps_per_admit"] = 1
+    plain["hooks"] = {}
+    pipe = egolearn.build(plain)
+    pipe.driver.fit()
+    assert pipe.ctx.clock.step == 2
+    assert pipe.ctx.clock.events_emitted > 0
+    assert pipe.loader.frame_requests > 8  # training frames plus segmentation embeddings
+    assert pipe.driver.nonfinite_steps == 0
