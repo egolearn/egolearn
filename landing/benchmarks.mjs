@@ -44,10 +44,14 @@ export function validateTable(data) {
       fields(run.provenance, ["training_config_sha256", "training_code_commit", "legacy_evaluation"]);
       const checkpoint = run.checkpoint;
       fields(checkpoint, ["repo_id", "revision", "sha256", "weights_sha256", "metadata_sha256", "step", "private"]);
+      const local = checkpoint.repo_id === null;
+      const validLocation = local
+        ? checkpoint.revision === null && checkpoint.private === null
+        : repoPattern.test(checkpoint.repo_id) && commitPattern.test(checkpoint.revision) && typeof checkpoint.private === "boolean";
       if (!digestPattern.test(run.id) || !row.expected_seeds.includes(run.seed) || seeds.has(run.seed) ||
-          !checkpoint || !repoPattern.test(checkpoint.repo_id) || !commitPattern.test(checkpoint.revision) ||
-          !digestPattern.test(checkpoint.sha256) || checkpoints.has(checkpoint.sha256) ||
-          typeof checkpoint.private !== "boolean") throw new Error("Invalid run reference");
+          !validLocation || !digestPattern.test(checkpoint.sha256) || checkpoints.has(checkpoint.sha256)) {
+        throw new Error("Invalid run reference");
+      }
       seeds.add(run.seed);
       checkpoints.add(checkpoint.sha256);
     }
@@ -135,9 +139,13 @@ export function renderTable(data, container) {
       }
       for (const run of row.runs) {
         const p = element("p");
-        const model = `https://huggingface.co/${run.checkpoint.repo_id}/tree/${run.checkpoint.revision}`;
         const record = `https://huggingface.co/datasets/${data.results_repo}/blob/${data.revision || "main"}/runs/${run.id}.json`;
-        p.append(link(`Seed ${run.seed} weights${run.checkpoint.private ? " (restricted)" : ""}`, model));
+        if (run.checkpoint.repo_id === null) {
+          p.append(document.createTextNode(`Seed ${run.seed} · checkpoint not uploaded`));
+        } else {
+          const model = `https://huggingface.co/${run.checkpoint.repo_id}/tree/${run.checkpoint.revision}`;
+          p.append(link(`Seed ${run.seed} weights${run.checkpoint.private ? " (restricted)" : ""}`, model));
+        }
         p.append(document.createTextNode(" · "), link("evaluation record", record));
         details.append(p);
       }

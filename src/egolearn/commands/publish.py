@@ -22,6 +22,9 @@ def main(argv: list[str] | None = None) -> int:
     push_parser.add_argument("--collection")
     push_parser.add_argument("--public-results", action="store_true")
     push_parser.add_argument(
+        "--results-only", action="store_true", help="keep checkpoint weights local"
+    )
+    push_parser.add_argument(
         "--prompt-token", action="store_true", help="read a token without echoing it"
     )
     args = parser.parse_args(argv)
@@ -40,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
                 results_repo=args.results_repo,
                 collection=args.collection,
                 public_results=args.public_results,
+                results_only=args.results_only,
             )
             print(json.dumps(receipt, indent=2))
     except (OSError, ValueError) as error:

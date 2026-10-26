@@ -190,7 +190,7 @@ def test_import_binds_to_checkpoint_and_requires_explicit_legacy_opt_in(tmp_path
         import_evaluations([path], allow_legacy=True, **kwargs)
 
 
-def test_prepare_exports_and_strictly_reloads_synthetic_model(tmp_path):
+def test_prepare_exports_and_strictly_reloads_synthetic_model(tmp_path, monkeypatch):
     import torch
 
     from egolearn.model.build import build_model
@@ -249,6 +249,32 @@ def test_prepare_exports_and_strictly_reloads_synthetic_model(tmp_path):
     with pytest.raises(ValueError, match="training seed"):
         prepare(manifest, tmp_path / "wrong-seed")
     assert not (tmp_path / "wrong-seed").exists()
+
+    api = Mock()
+    monkeypatch.setattr("huggingface_hub.HfApi", lambda: api)
+    monkeypatch.setattr(hub, "_model", Mock(side_effect=AssertionError("must not upload weights")))
+    captured = []
+
+    def publish_results(api, runs, **kwargs):
+        for run in runs:
+            validate_run(run, published=True)
+            assert run["checkpoint"]["repo_id"] is None
+            assert run["checkpoint"]["revision"] is None
+        captured.extend(runs)
+        return "a" * 40
+
+    monkeypatch.setattr(hub, "publish_results", publish_results)
+    receipt = hub.publish(
+        destination, results_repo="test/results", collection="test/collection", results_only=True
+    )
+    assert len(captured) == 1
+    assert receipt["models"] == [] and receipt["results_only"]
+    api.add_collection_item.assert_called_once_with(
+        "test/collection",
+        "test/results",
+        "dataset",
+        exists_ok=True,
+    )
 
 
 @pytest.fixture
@@ -321,3 +347,25 @@ def test_private_public_visibility_mismatch_fails_without_mutation(remote):
     with pytest.raises(ValueError, match="visibility"):
         hub.publish_results(api, [make_run()], results_repo="test/results")
     assert not state.commits
+
+
+def test_results_only_records_can_gain_model_links_without_changing_evidence(remote):
+    api, state = remote
+    hosted = make_run(1, (1,))
+    local = copy.deepcopy(hosted)
+    for key in ("repo_id", "revision", "private"):
+        local["checkpoint"][key] = None
+    validate_run(local, published=True)
+    assert cell([local])["mean"] == 0.1
+    hub.publish_results(api, [local], results_repo="test/results")
+    hub.publish_results(api, [hosted], results_repo="test/results")
+    record = json.loads(state.files[f"runs/{hosted['id']}.json"])
+    assert record == hosted
+    revision = state.sha
+    hub.publish_results(api, [local], results_repo="test/results")
+    assert state.sha == revision
+    assert len(state.commits) == 2
+    invalid = copy.deepcopy(local)
+    invalid["checkpoint"]["revision"] = "a" * 40
+    with pytest.raises(ValueError, match="local checkpoints"):
+        validate_run(invalid, published=True)

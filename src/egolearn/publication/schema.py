@@ -153,16 +153,20 @@ def validate_run(run: dict[str, Any], *, published: bool = False) -> None:
     _keys(checkpoint, "sha256 step weights_sha256 metadata_sha256 repo_id revision private")
     for key in ("sha256", "weights_sha256", "metadata_sha256"):
         sha256(checkpoint[key])
-    repo_id(checkpoint["repo_id"])
-    if type(checkpoint["private"]) is not bool:
-        raise ValueError("checkpoint visibility must be explicit")
     if checkpoint["step"] is not None and type(checkpoint["step"]) is not int:
         raise ValueError("checkpoint step must be an integer or null")
     revision = checkpoint["revision"]
-    if (published or revision is not None) and (
-        not isinstance(revision, str) or not re.fullmatch(r"[a-f0-9]{40}", revision)
-    ):
-        raise ValueError("published checkpoints require an immutable Hub commit")
+    if checkpoint["repo_id"] is None:
+        if revision is not None or checkpoint["private"] is not None:
+            raise ValueError("local checkpoints must not claim Hub revision or visibility")
+    else:
+        repo_id(checkpoint["repo_id"])
+        if type(checkpoint["private"]) is not bool:
+            raise ValueError("checkpoint visibility must be explicit")
+        if (published or revision is not None) and (
+            not isinstance(revision, str) or not re.fullmatch(r"[a-f0-9]{40}", revision)
+        ):
+            raise ValueError("hosted checkpoints require an immutable Hub commit")
     provenance = run["provenance"]
     _keys(provenance, "training_config_sha256 training_code_commit legacy_evaluation")
     sha256(provenance["training_config_sha256"])
@@ -228,10 +232,18 @@ def merge_runs(existing: list[dict], incoming: list[dict]) -> list[dict]:
         previous = by_id.get(run["id"])
         if previous is not None and previous != run:
             same_content = deepcopy(run)
-            same_content["checkpoint"]["revision"] = previous["checkpoint"]["revision"]
+            for key in ("repo_id", "revision", "private"):
+                same_content["checkpoint"][key] = previous["checkpoint"][key]
             if same_content == previous:
-                # A card-only commit must not move an already published model pin.
-                continue
+                old_repo = previous["checkpoint"]["repo_id"]
+                new_repo = run["checkpoint"]["repo_id"]
+                if old_repo is None and new_repo is not None:
+                    # Adding a verified model location does not change evaluation evidence.
+                    by_id[run["id"]] = run
+                    continue
+                if new_repo is None or old_repo == new_repo:
+                    # Keep the original pin after card edits or results-only retries.
+                    continue
             raise ValueError(f"conflicting results for run {run['id']}; records are immutable")
         by_id[run["id"]] = run
     return sorted(by_id.values(), key=lambda run: run["id"])

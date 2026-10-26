@@ -119,16 +119,19 @@ def publish_results(api, runs: list[dict], *, results_repo: str, public: bool = 
         table = build_table(merged, results_repo=results_repo, updated_at=now)
         if merged == existing:
             return info.sha
-        old_ids = {r["id"] for r in existing}
-        files = {f"runs/{r['id']}.json": encoded(r) for r in merged if r["id"] not in old_ids}
+        old_records = {r["id"]: r for r in existing}
+        files = {
+            f"runs/{r['id']}.json": encoded(r) for r in merged if old_records.get(r["id"]) != r
+        }
         files["index.json"] = encoded({"schema_version": 1, "runs": merged})
         files["benchmarks.json"] = encoded(table)
         if "README.md" not in names:
             files["README.md"] = (
                 b"---\ntags:\n- egolearn\n---\n\n# EgoLearn results\n\n"
                 b"Per-run evaluation records and a generated benchmark table. "
-                b"Each record links scores to an immutable model revision "
-                b"and checkpoint digest.\n\n"
+                b"Each record identifies the evaluated checkpoint by digest. "
+                b"Hosted checkpoints also carry an immutable model revision. "
+                b"A null model repository means the checkpoint has not been uploaded.\n\n"
                 b"## Interpretation\n\n"
                 b"Values are fractions unless a column specifies another unit. "
                 b"Means and sample standard deviations require every declared training seed "
@@ -140,7 +143,8 @@ def publish_results(api, runs: list[dict], *, results_repo: str, public: bool = 
                 b"do not verify underlying image content. Architectures and training budgets "
                 b"can differ between conditions. See each run's protocol and provenance fields.\n\n"
                 b"## Files\n\n"
-                b"`runs/` contains immutable records. `index.json` contains all records. "
+                b"`runs/` contains evaluation records with immutable evidence. "
+                b"Model locations can be added later. `index.json` contains all records. "
                 b"`benchmarks.json` is the website feed. Each update commits all three together. "
                 b"This repository contains no checkpoints, frames, transcripts or local paths.\n"
             )
@@ -168,9 +172,14 @@ def publish_results(api, runs: list[dict], *, results_repo: str, public: bool = 
 
 
 def publish(
-    bundle: Path, *, results_repo: str, collection: str | None = None, public_results: bool = False
+    bundle: Path,
+    *,
+    results_repo: str,
+    collection: str | None = None,
+    public_results: bool = False,
+    results_only: bool = False,
 ) -> dict:
-    """Upload a prepared bundle; leave existing models and run records immutable."""
+    """Publish evaluation evidence and optionally upload its model exports."""
     from huggingface_hub import HfApi
 
     document = read_json(bundle / "bundle.json")
@@ -197,20 +206,26 @@ def publish(
     if collection:
         api.get_collection(collection)
     for run in runs:
-        directory = bundle / "models" / str(run["training_seed"])
-        run["checkpoint"]["revision"] = _model(api, run, directory)
+        if results_only:
+            for key in ("repo_id", "revision", "private"):
+                run["checkpoint"][key] = None
+        else:
+            directory = bundle / "models" / str(run["training_seed"])
+            run["checkpoint"]["revision"] = _model(api, run, directory)
     revision = publish_results(api, runs, results_repo=results_repo, public=public_results)
     receipt = {
         "results_repo": results_repo,
         "revision": revision,
-        "models": [run["checkpoint"] for run in runs],
+        "models": [run["checkpoint"] for run in runs if run["checkpoint"]["repo_id"]],
+        "results_only": results_only,
         "collection": collection,
     }
     (bundle / "publication.json").write_bytes(encoded(receipt))
     if collection:
         for run in runs:
-            api.add_collection_item(
-                collection, run["checkpoint"]["repo_id"], "model", exists_ok=True
-            )
+            if run["checkpoint"]["repo_id"]:
+                api.add_collection_item(
+                    collection, run["checkpoint"]["repo_id"], "model", exists_ok=True
+                )
         api.add_collection_item(collection, results_repo, "dataset", exists_ok=True)
     return receipt

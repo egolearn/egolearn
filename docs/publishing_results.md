@@ -1,8 +1,8 @@
 # Publishing benchmark results
 
-Use `egl publish` to upload evaluated checkpoints and update the website's benchmark
-table. The publisher stores weights in private model repositories and results in a
-separate dataset repository. Your original checkpoints and evaluation files remain local.
+Use `egl publish` to publish evaluation results and update the website's benchmark
+table, with optional checkpoint uploads. The publisher stores results in a dataset
+repository and uploaded weights in private model repositories. Your original files remain local.
 
 Install the `train` extra before preparing exports. On the cluster, run these commands
 inside a compute allocation, following the [cluster guide](cluster.md).
@@ -104,21 +104,27 @@ The token needs write access to the destination organization.
 ```bash
 egl publish push exports/publication \
   --results-repo your-org/egolearn-results \
-  --collection your-org/egolearn-COLLECTION_ID
+  --collection your-org/egolearn-COLLECTION_ID --results-only
 ```
 
-Copy the collection slug from its Hugging Face URL. Collection membership is optional.
-The command uploads private model repositories first, then commits per-run records,
-the index, and `benchmarks.json` together. The returned receipt names immutable Hub
-revisions and is saved locally as `publication.json`.
+Copy the collection slug from its Hugging Face URL, or omit the optional collection
+argument. With `--results-only`, the command uploads evaluation records and their generated
+table while keeping weights local. Records retain the verified checkpoint and export hashes,
+with null repository, revision and visibility fields. The website labels these checkpoints
+as not uploaded and links to their evaluation evidence.
+
+Omit `--results-only` to upload private model repositories before publishing the results.
+Both modes commit per-run records, the index, and `benchmarks.json` together. The returned
+receipt names the results revision and any uploaded models, and is saved as `publication.json`.
 
 Both models and results default to private. `--public-results` selects a public results
 destination without making weights public. Existing visibility is preserved, and a mismatch
 fails. Follow the [checkpoint publication rules](evaluation.md#hub-artifacts-and-access-tiers) before
 redistributing SAYCam-trained weights. Private model cards grant no redistribution license.
 
-Retries reuse identical models and records. A changed export needs a new model repository,
-and changed evidence for an existing run is refused. Concurrent publishers retry index
+Retries reuse identical models and records. You can later rerun without `--results-only`
+to attach uploaded weights to unchanged evaluation evidence. A changed export needs a new
+model repository, and changed evidence for an existing run is refused. Concurrent publishers retry index
 conflicts without discarding other runs. Adding a seed extends the existing condition;
 repeated evaluations of one checkpoint do not count as independent seeds.
 

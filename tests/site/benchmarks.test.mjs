@@ -3,7 +3,7 @@ import {readFileSync} from "node:fs";
 import {test} from "node:test";
 import {parseHTML} from "linkedom";
 import {benchmarkResponse} from "../../functions/api/benchmarks.js";
-import {formatMetric, startBenchmarks, validateTable} from "../../landing/benchmarks.mjs";
+import {formatMetric, renderTable, startBenchmarks, validateTable} from "../../landing/benchmarks.mjs";
 
 function fixture() {
   return {
@@ -134,6 +134,28 @@ test("rendering keeps the last successful table during failures and safely adds 
     assert.match(status.textContent, /Refreshes every minute/);
   } finally {
     controller.stop();
+    delete globalThis.document;
+  }
+});
+
+test("results-only records display their evidence without inventing a model link", () => {
+  const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
+  globalThis.document = document;
+  try {
+    const data = fixture();
+    const checkpoint = data.rows[0].runs[0].checkpoint;
+    checkpoint.repo_id = null;
+    checkpoint.revision = null;
+    checkpoint.private = null;
+    const container = document.getElementById("table");
+    renderTable(data, container);
+    assert.match(container.textContent, /43\.3/);
+    assert.match(container.textContent, /checkpoint not uploaded/);
+    assert.equal(container.querySelectorAll("details a").length, 1);
+    assert.equal(container.querySelector("details a").textContent, "evaluation record");
+    checkpoint.revision = "b".repeat(40);
+    assert.throws(() => validateTable(data));
+  } finally {
     delete globalThis.document;
   }
 });
