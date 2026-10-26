@@ -169,7 +169,9 @@ def validate_run(run: dict[str, Any], *, published: bool = False) -> None:
     if type(provenance["legacy_evaluation"]) is not bool:
         raise ValueError("legacy_evaluation must be a boolean")
     commit = provenance["training_code_commit"]
-    if commit is not None and not re.fullmatch(r"[a-f0-9]{40}", commit):
+    if commit is not None and (
+        not isinstance(commit, str) or not re.fullmatch(r"[a-f0-9]{40}", commit)
+    ):
         raise ValueError("invalid training code commit")
     if not isinstance(run["evaluations"], list) or not run["evaluations"]:
         raise ValueError("a published run needs evaluations")
@@ -178,6 +180,8 @@ def validate_run(run: dict[str, Any], *, published: bool = False) -> None:
         _keys(evaluation, "column value protocol protocol_sha256 source_sha256")
         column = evaluation["column"]
         _keys(column, "id benchmark metric label description unit direction")
+        if any(not isinstance(value, str) or not value for value in column.values()):
+            raise ValueError("column fields must be nonempty strings")
         for key in ("id", "benchmark", "metric"):
             identifier(column[key])
         if column["id"] in seen:
@@ -198,6 +202,8 @@ def validate_run(run: dict[str, Any], *, published: bool = False) -> None:
         _keys(protocol, "version settings input_sha256 input_scope evaluation_seed code_commit")
         if not isinstance(protocol["version"], str) or not protocol["version"]:
             raise ValueError("benchmark version is required")
+        if not isinstance(protocol["input_scope"], str) or not protocol["input_scope"]:
+            raise ValueError("protocol input scope is required")
         if not isinstance(protocol["settings"], dict) or not isinstance(
             protocol["input_sha256"], dict
         ):
@@ -207,7 +213,9 @@ def validate_run(run: dict[str, Any], *, published: bool = False) -> None:
         if type(protocol["evaluation_seed"]) is not int:
             raise ValueError("evaluation seed is required")
         commit = protocol["code_commit"]
-        if commit is not None and not re.fullmatch(r"[a-f0-9]{40}", commit):
+        if commit is not None and (
+            not isinstance(commit, str) or not re.fullmatch(r"[a-f0-9]{40}", commit)
+        ):
             raise ValueError("invalid evaluation code commit")
         if evaluation["protocol_sha256"] != digest(protocol):
             raise ValueError("protocol identity mismatch")

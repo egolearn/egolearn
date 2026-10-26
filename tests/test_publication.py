@@ -130,6 +130,21 @@ def test_metadata_cannot_smuggle_paths_or_unrecognized_fields():
         validate_run(run)
 
 
+def test_malformed_publication_metadata_is_rejected_before_upload():
+    run = make_run()
+    run["evaluations"][0]["column"] = {**DEFAULT_COLUMNS[0], "label": ["invalid"]}
+    with pytest.raises(ValueError, match="column fields"):
+        validate_run(run)
+    run = make_run()
+    run["evaluations"][0]["protocol"]["input_scope"] = False
+    with pytest.raises(ValueError, match="input scope"):
+        validate_run(run)
+    run = make_run()
+    run["provenance"]["training_code_commit"] = 123
+    with pytest.raises(ValueError, match="training code commit"):
+        validate_run(run)
+
+
 def evaluation(checkpoint_sha):
     return {
         "schema_version": 2,
