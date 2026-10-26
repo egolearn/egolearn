@@ -113,19 +113,9 @@ def _batch_images(stream: Stream, items: list[WorkItem]) -> dict:
     return dict(zip(rows, images, strict=True))
 
 
-def _pool_batch(items: list[WorkItem]) -> list[tuple[list[int], torch.Tensor]]:
-    """Pack equal-shaped rows into one shared tensor per group for transfer."""
+def _pool_batch(items: list[WorkItem]) -> list[torch.Tensor]:
     images = _batch_images(_WORKER["stream"], items)
-    groups: dict[tuple, list[tuple[int, torch.Tensor]]] = {}
-    for i, item in enumerate(items):
-        tensor = _pool_task(item, images.get(i))
-        groups.setdefault((tensor.dtype, tuple(tensor.shape)), []).append((i, tensor))
-    # A tensor storage crosses the process boundary through a separate descriptor
-    # transfer. Packing avoids repeating that handshake for every frame.
-    return [
-        ([i for i, _ in rows], torch.stack([tensor for _, tensor in rows]))
-        for rows in groups.values()
-    ]
+    return [_pool_task(item, images.get(i)) for i, item in enumerate(items)]
 
 
 class Loader:
@@ -282,16 +272,7 @@ class Loader:
                         out.append(self._frame_views(images[i], views, seed))
             return out
         pool = self._ensure_pool()
-        out = []
-        for items_chunk, packed in zip(batches, pool.map(_pool_batch, batches), strict=True):
-            rows: list[torch.Tensor | None] = [None] * len(items_chunk)
-            for indices, tensors in packed:
-                for i, tensor in zip(indices, tensors.unbind(0), strict=True):
-                    rows[i] = tensor
-            for tensor in rows:
-                assert tensor is not None
-                out.append(tensor)
-        return out
+        return [tensor for batch in pool.map(_pool_batch, batches) for tensor in batch]
 
     def clip_views(
         self,
