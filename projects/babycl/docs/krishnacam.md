@@ -149,7 +149,8 @@ have prepared counterparts.
 
 For GPU training, use `projects/babycl/configs/krishnacam_prepared.yaml`. It keeps
 the original stream root and redirects decoding to the cache, so replay snapshots
-retain valid original paths. To compare against the short pilot, override
+retain valid original paths. This config uses 32 loader processes; set
+`loader.workers` explicitly when comparing pool sizes. To compare against the short pilot, override
 `memories.segments.tiers.short.capacity=4` and
 `memories.segments.tiers.long.capacity=16` in the full-pipeline benchmark. Add
 `--gpu-log /path/to/gpu.csv` to collect one-second GPU samples with training steps;

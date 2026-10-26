@@ -5,6 +5,9 @@ defaults:
 hydra:
   searchpath: [pkg://egolearn.configs]
 
+loader:
+  workers: 32
+
 stream:
   decoder:
     _target_: "decoder:babycl_prepared_video"
