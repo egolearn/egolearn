@@ -21,6 +21,14 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   optional. Videos decode with PyAV (`av`, added to the `video` and `train`
   extras). `metadata.csv` is pinned by SHA-256, and docs/evaluation/intphys2.md
   documents the pinned download.
+- GRASP Level 2 violation-of-expectation probe (`probe:grasp`) on the same VoE
+  scorer: the 2,048 (plausible, implausible) twins of the 16 intuitive-physics
+  tests, paired by file index as in Garrido et al. (2025). `egl data prepare grasp`
+  builds the pair manifest from the unpacked upstream videos (per-video SHA-256,
+  frame count, and a first-frame match flag per pair, since the pairing is not an
+  upstream contract). The probe takes `manifest` and `data_root`, optionally
+  restricts `tests`, and reports per-test and per-concept scores;
+  docs/evaluation/grasp.md documents the download and protocol.
 - Hosted shape-bias and spatial-relation evaluation data: the prepared shape-bias
   stimuli (`agentic-learning-ai-lab/egolearn-shape-bias`) and the spatial monitoring
   subsets (`agentic-learning-ai-lab/egolearn-spatial-relation-categorization`,
@@ -141,6 +149,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Changed
 
+- The VoE scorer reports `voe_auroc`, the pairing-free probability that an
+  impossible video's pooled surprise outranks a possible one's, and accepts
+  per-pair group labels for `voe_acc_<group>`/`voe_auroc_<group>`; IntPhys 2
+  results gain `voe_auroc`.
 - Remove the `scripts/prepare_shape_bias.py`, `scripts/prepare_spatial_relations.py`,
   and `scripts/prepare_spatial_monitoring.py` wrappers. Use `egl data prepare`
   with `shape-bias`, `spatial-relations`, or `spatial-monitoring`, or the installed

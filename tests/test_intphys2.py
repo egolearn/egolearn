@@ -18,7 +18,7 @@ from egolearn.evaluation import EvaluationError, evaluate
 from egolearn.evaluation.benchmarks.intphys2 import IntPhys2Probe
 from egolearn.evaluation.benchmarks.intphys2 import probe as intphys2
 from egolearn.evaluation.evaluator import EvaluationContext
-from egolearn.evaluation.voe import read_video
+from egolearn.evaluation.voe import auroc, read_video
 from egolearn.model.build import build_model
 
 pytestmark = pytest.mark.video
@@ -75,10 +75,11 @@ def test_intphys2_pairs_count_the_impossible_twin_as_more_surprising(tmp_path, m
         (str(root / "Videos/2_Possible.mp4"), str(root / "Videos/2_Impossible.mp4")),
     ]
     assert probe.metadata() == {"n_pairs": 2, "metadata_sha256": intphys2.METADATA_SHA256}
-    # brighter = more surprising: only the first pair has its impossible video brighter
+    # brighter = more surprising: only the first pair has its impossible video brighter;
+    # unpaired, the two bright and the two dark videos tie, so the AUROC is chance too
     monkeypatch.setattr(probe, "surprise", lambda model, clips: {2: clips.mean(dim=(1, 2, 3, 4))})
     ctx = EvaluationContext(seed=0, device=torch.device("cpu"))
-    assert probe.run(None, ctx) == {"voe_acc_ctx2": 0.5, "voe_acc": 0.5}
+    assert probe.run(None, ctx) == {"voe_acc_ctx2": 0.5, "voe_acc": 0.5, "voe_auroc": 0.5}
 
 
 def test_voe_acc_pools_surprise_over_context_lengths(tmp_path, monkeypatch):
@@ -94,7 +95,14 @@ def test_voe_acc_pools_surprise_over_context_lengths(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(probe, "surprise", lambda model, clips: next(surprise))
     ctx = EvaluationContext(seed=0, device=torch.device("cpu"))
-    assert probe.run(None, ctx) == {"voe_acc_ctx2": 1.0, "voe_acc_ctx4": 0.5, "voe_acc": 0.5}
+    # pooled surprise: pair 1 (2.0, 1.0), pair 2 (0.5, 2.5) -> impossible outranks possible
+    # in 3 of the 4 unpaired comparisons
+    assert probe.run(None, ctx) == {
+        "voe_acc_ctx2": 1.0,
+        "voe_acc_ctx4": 0.5,
+        "voe_acc": 0.5,
+        "voe_auroc": 0.75,
+    }
 
 
 def test_intphys2_verifies_metadata(tmp_path):
@@ -181,6 +189,7 @@ def test_intphys2_scores_a_vjepa_model(tmp_path, monkeypatch):
     probe.prepare()
     assert probe.pairs is not None
     expected = dict.fromkeys(result, 0.0)
+    pooled = []
     with torch.no_grad():
         for pair in probe.pairs:
             clips = torch.stack([read_video(p, 8, probe.transform) for p in pair])
@@ -192,6 +201,9 @@ def test_intphys2_scores_a_vjepa_model(tmp_path, monkeypatch):
             for key, (possible, impossible) in scores.items():
                 assert possible != impossible  # distinct videos -> distinct surprise
                 expected[key] += float(impossible > possible) / len(probe.pairs)
+            pooled.append(scores["voe_acc"].tolist())
+    table = np.asarray(pooled)
+    expected["voe_auroc"] = auroc(table[:, 0], table[:, 1])
     assert result == expected
 
     # L2 surprise scores the same context lengths

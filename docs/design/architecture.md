@@ -347,7 +347,8 @@ Each concrete benchmark owns a package under
 | `vtwt` | one image, two 2-word phrases; the positive must strictly win | `vtwt_acc` |
 | `baby_winoground` | 2×2 image/phrase matrix; group-correct iff both directions hold | `bw_group_acc` + per-context accs |
 | `shape_bias` | novel shape/texture triplets, cosine preference | `shape_bias` |
-| `intphys2` | possible vs impossible video pairs; V-JEPA prediction error, 64 uniform frames, contexts 2-16 | `voe_acc` + per-context `voe_acc_ctx<C>` |
+| `intphys2` | possible vs impossible video pairs; V-JEPA prediction error, 64 uniform frames, contexts 2-16 | `voe_acc` + per-context `voe_acc_ctx<C>`, `voe_auroc` |
+| `grasp` | GRASP Level 2 plausible vs implausible twins on the same VoE readout, from a prepared pair manifest | `voe_acc`, `voe_auroc`, per-context `voe_acc_ctx<C>`, per-test and per-concept `voe_acc_<group>`/`voe_auroc_<group>` |
 
 Some quirks of the originals are preserved on purpose (OOV words map to
 padding index 0 and still count in the mean-pool denominator; no sos/eos;
@@ -555,7 +556,7 @@ method = one paper's research code, eval = benchmark code.
 | `src/egolearn/evaluation/evaluator.py` | shared | benchmark execution and structured results |
 | `src/egolearn/evaluation/checkpoint.py` | shared | model-only checkpoint loading and evaluation |
 | `src/egolearn/evaluation/probe.py` | shared | the training `Probe` contract |
-| `src/egolearn/evaluation/benchmarks/` | eval | 4AFC, linear decoding, visual two-word test, Baby Winoground, shape-bias, IntPhys 2 probes |
+| `src/egolearn/evaluation/benchmarks/` | eval | 4AFC, linear decoding, visual two-word test, Baby Winoground, shape-bias, IntPhys 2, GRASP probes |
 | `src/egolearn/methods/storyboard/` | method | verbatim clustering + recluster admission + learner embedder |
 | `src/egolearn/methods/babycl/refine.py` | method | verbatim segmentation math from `online_ms_refine.py` |
 | `src/egolearn/methods/babycl/segmenter.py` | method | the OnlineSegmenter, 1:1 |

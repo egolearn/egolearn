@@ -335,6 +335,7 @@ in legacy Python pickle contents. Model config files use model repos too.
 | Labeled-S split metadata | public | Split identifiers only; source frames stay restricted |
 | ImageNet | upstream-licensed | Manifests only; users obtain images from the licensed upstream source |
 | IntPhys 2 Main split | upstream-licensed | Nothing; users download the CC-BY-NC videos from the upstream release |
+| GRASP Level 2 | upstream-licensed | The pair manifest (hashes and frame counts, no pixels); users download the videos from the upstream release |
 | SAYCam, Labeled-S frames, restricted BabyView and BabyVLM images | IRB | Never on the Hub, including private repos or pixel-embedding manifests |
 
 Two collections are published, privately until the first release, under CC BY 4.0

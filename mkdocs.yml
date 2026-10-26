@@ -116,6 +116,7 @@ nav:
     - Benchmark suites: benchmark_suites.md
     - Spatial relations: evaluation/spatial_relations.md
     - IntPhys 2: evaluation/intphys2.md
+    - GRASP: evaluation/grasp.md
   - Methods:
     - BabyCL: projects/babycl.md
     - Memory Storyboard: projects/storyboard.md

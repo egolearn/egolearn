@@ -67,7 +67,7 @@ synthetic test data); admission components watch the stream and decide what
 goes into bounded replay buffers; a batch recipe describes how training
 batches are sampled from those buffers; SSL and image-text losses train the
 model; probes score it while it trains (4AFC, linear probing, visual two-word
-test, Baby Winoground, shape bias, IntPhys 2). Buffers and sampling only ever handle lightweight
+test, Baby Winoground, shape bias, IntPhys 2, GRASP). Buffers and sampling only ever handle lightweight
 references, never image tensors, so they stay cheap; an admission component that needs
 to look at image content pulls the frames it wants through the loader (both
 shipped methods do this to decide where segments end). Training can follow the stream in order (the streaming mode) or
@@ -113,6 +113,9 @@ should find each physically impossible video more surprising than its matched
 possible twin. The registered `probe:intphys2` reports pairwise accuracy from
 V-JEPA prediction error; see the
 [task definition, pinned data download, and probe configuration](docs/evaluation/intphys2.md).
+GRASP Level 2 runs the same readout over 16 physics tests; `probe:grasp` adds a
+pairing-free AUROC and per-test and per-concept scores from a prepared pair
+manifest; see the [GRASP guide](docs/evaluation/grasp.md).
 
 ## Lifecycle
 

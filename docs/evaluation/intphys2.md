@@ -63,7 +63,10 @@ per video.
 A pair is correct when the impossible video is strictly more surprising than
 the possible one. `voe_acc_ctx<C>` scores each context length alone. `voe_acc`
 first averages each video's surprise over all context lengths, then compares
-once per pair.
+once per pair. `voe_auroc` ranks every video by that pooled surprise with no
+pairing: the probability that an impossible video is more surprising than a
+possible one, ties counting one half (chance 50%). It is the single-video check
+that the pairwise score does not ride on pair-level artifacts.
 
 This is not the paper's prediction-based protocol, which slides 48-frame windows
 over the video (frame step 10) and sweeps context lengths 12-42 with a growing
@@ -96,7 +99,7 @@ probes:
 
 The values shown are the defaults; `context_frames` also accepts a single
 integer. For standalone evaluation, place the same entry under `benchmarks:`
-(see [the evaluation guide](../evaluation.md)). Metrics are `voe_acc` and one
+(see [the evaluation guide](../evaluation.md)). Metrics are `voe_acc`, `voe_auroc`, and one
 `voe_acc_ctx<C>` per context length, and the evaluator records the full probe
 configuration, including defaults, with the results. Before scoring, the probe
 checks that all 1,012 videos exist.
