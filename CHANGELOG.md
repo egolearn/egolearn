@@ -8,6 +8,7 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Loader workers pack matching view tensors into shared buffers to reduce per-frame transfer overhead.
 - BabyCL supports verified lossless video caches after fixed spatial preprocessing,
   retaining original replay references and decoding requested frames on demand.
 - PyAV supports optional NVDEC decoding, keeping intermediate frames on the GPU
