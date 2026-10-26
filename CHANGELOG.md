@@ -8,6 +8,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- `egl publish` uploads evaluated model exports and updates the website's benchmark
+  table from versioned, per-seed Hugging Face records.
 - Automatic atomic run records for CLI and Python training/evaluation, with input
   identities, checkpoint lineage, preserved failed attempts, and a pinned-input
   three-seed BabyCL SAYCam suite for Labeled-S 4AFC and linear decoding.

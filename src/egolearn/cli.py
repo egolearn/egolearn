@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=("train", "eval", "export", "data", "submit", "doctor", "bench"),
+        choices=("train", "eval", "export", "publish", "data", "submit", "doctor", "bench"),
     )
     parser.add_argument("arguments", nargs=argparse.REMAINDER, metavar="[CONFIG] [HYDRA_ARGS ...]")
     args = parser.parse_args(argv)

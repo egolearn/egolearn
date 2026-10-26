@@ -114,6 +114,7 @@ nav:
   - Evaluation:
     - Evaluate a model: evaluation.md
     - Benchmark suites: benchmark_suites.md
+    - Publishing results: publishing_results.md
     - Spatial relations: evaluation/spatial_relations.md
     - IntPhys 2: evaluation/intphys2.md
   - Methods:
