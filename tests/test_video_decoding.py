@@ -95,6 +95,74 @@ def test_cuda_metadata_does_not_require_a_gpu(videos):
     assert not decoder._handles
 
 
+def test_prepared_videos_preserve_refs_pixels_and_worker_augmentations(videos, tmp_path):
+    import torchvision.transforms as T
+
+    from egolearn.methods.babycl.prepared_video import PreparedVideoDecoder, prepare
+
+    cache = tmp_path.with_name(tmp_path.name + "_prepared")
+    report = prepare(str(videos), str(cache), workers=2, size=32, gop=4)
+    assert report["num_frames"] == 96
+    original_mtime = (cache / "20140901.mp4").stat().st_mtime_ns
+    prepare(str(videos), str(cache), workers=1, size=32, gop=4)
+    assert (cache / "20140901.mp4").stat().st_mtime_ns == original_mtime
+    decoder = PreparedVideoDecoder(str(videos), str(cache), seek_gap=4)
+    raw = VideoStream(str(videos), PyAVDecoder())
+    prepared = VideoStream(str(videos), decoder)
+    raw_channel = next(iter(raw.sessions())).channels["video"]
+    channel = next(iter(prepared.sessions())).channels["video"]
+    assert channel.ref_at(17) == raw_channel.ref_at(17)
+    prefix = T.Compose([T.Resize(32, interpolation=T.InterpolationMode.BICUBIC), T.CenterCrop(32)])
+    for index in [47, 0, 17, 17, 12, 46, 3]:
+        ref = channel.ref_at(index)
+        np.testing.assert_array_equal(prepared.open_frame(ref, 0), prefix(raw.open_frame(ref, 0)))
+    views = ViewBank(
+        {
+            "v1": {"name": "babycl_ms_aug", "size": 32, "view_idx": 0},
+            "v2": {"name": "babycl_ms_aug", "size": 32, "view_idx": 1},
+            "eval": {"name": "center_crop", "size": 32},
+        }
+    )
+    items = [("frame", channel.ref_at(i), 0, ["v1", "v2", "eval"], i) for i in [47, 0, 17, 17]]
+    serial = Loader(raw, views)
+    pooled = Loader(prepared, views, workers=2, imports=["egolearn.methods.babycl"])
+    try:
+        expected, actual = serial.views_batch(items), pooled.views_batch(items)
+        assert all(torch.equal(a, b) for a, b in zip(actual, expected, strict=True))
+    finally:
+        serial.close()
+        pooled.close()
+    with pytest.raises(ValueError, match="incompatible"):
+        Loader(prepared, ViewBank({"bad": {"name": "simclr_strong", "size": 32}}))
+    with pytest.raises(ValueError, match="incompatible"):
+        decoder.validate_views({"wrong_size": {"name": "center_crop", "size": 224}})
+    with pytest.raises(ValueError, match="incompatible"):
+        decoder.validate_views(
+            {"flipped": {"name": "center_crop", "size": 32, "vertical_flip": True}}
+        )
+    # A snapshot's original paths must fail loudly when the prepared data changes.
+    with (cache / "20140901.mp4").open("ab") as f:
+        f.write(b"modified")
+    restored = pickle.loads(pickle.dumps(decoder))
+    with pytest.raises(ValueError, match="stale or modified"):
+        restored.read_frame(str(videos / "20140901.mp4"), 0)
+
+
+def test_preparation_rejects_variable_rate_and_nested_output(tmp_path):
+    from egolearn.methods.babycl.prepared_video import prepare
+
+    source = tmp_path / "source"
+    source.mkdir()
+    _write_video(source / "variable.mp4", variable=True)
+    with pytest.raises(ValueError, match="non-nested"):
+        prepare(str(source), str(source / "prepared"))
+    output = tmp_path / "prepared"
+    with pytest.raises(ValueError, match="non-constant"):
+        prepare(str(source), str(output), size=32)
+    assert not (output / "variable.mp4").exists()
+    assert not list(output.glob("*.partial.mp4"))
+
+
 @pytest.mark.gpu
 def test_nvdec_matches_cpu_frames_and_worker_augmentations(tmp_path):
     for name in ("a.mp4", "b.mp4"):

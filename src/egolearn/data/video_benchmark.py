@@ -174,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
     parser.add_argument("--manifest")
+    parser.add_argument("--prepared-root", help="verified BabyCL lossless video cache")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--workers", type=int, nargs="+", default=[0, 4, 8])
     parser.add_argument("--batches", type=int, default=12)
@@ -248,11 +249,19 @@ def main(argv: list[str] | None = None) -> int:
             source = JPEGReference(str(output / "jpeg"))
         else:
             source_cls = IndividualVideoStream if name == "video_individual" else VideoStream
+            decoder_kwargs = dict(
+                cache_handles=args.cache_handles, seek_gap=args.seek_gap, device=args.device
+            )
+            decoder = PyAVDecoder(**decoder_kwargs)
+            if args.prepared_root:
+                from egolearn.methods.babycl.prepared_video import PreparedVideoDecoder
+
+                decoder = PreparedVideoDecoder(
+                    source_root=args.root, prepared_root=args.prepared_root, **decoder_kwargs
+                )
             source = source_cls(
                 args.root,
-                PyAVDecoder(
-                    cache_handles=args.cache_handles, seek_gap=args.seek_gap, device=args.device
-                ),
+                decoder,
                 manifest_json=args.manifest,
             )
         print(f"Measuring {name}, workers={workers}", flush=True)

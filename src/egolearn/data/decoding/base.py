@@ -52,3 +52,6 @@ class VideoDecoder:
 
     def close(self) -> None:
         """Release any cached decode handles."""
+
+    def validate_views(self, specs: dict[str, dict]) -> None:
+        """Reject views incompatible with any preprocessing already applied to pixels."""

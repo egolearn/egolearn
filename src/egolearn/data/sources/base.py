@@ -176,5 +176,8 @@ class Stream:
         """Read frame requests in order, allowing adapters to group storage reads."""
         return [self.open_frame(ref, index) for ref, index in requests]
 
+    def validate_views(self, specs: dict[str, dict]) -> None:
+        """Reject views incompatible with source-side spatial preprocessing."""
+
     def close(self) -> None:
         """Release storage handles owned by this process."""

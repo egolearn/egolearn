@@ -108,6 +108,51 @@ The output directory contains `requests.json`, an incrementally updated
 `report.json`, and the optional bounded `jpeg/` cache. Keep these experiment
 artifacts outside the repository.
 
+## Lossless prepared videos
+
+For repeated BabyCL runs, prepare smaller videos containing the exact RGB pixels
+after the views' fixed bicubic resize and center crop. Frames remain in MP4 files
+and are decoded on demand. H.264 RGB lossless encoding avoids another lossy color
+conversion, and a keyframe every eight frames bounds random-access decoding work.
+These lossless RGB videos use CPU decoding, while model training uses the GPU.
+Use `--device cpu` for this loading benchmark and remove any NVDEC training override.
+
+This cache is specific to the configured spatial preprocessing. It supports
+`babycl_ms_aug` and unflipped `center_crop` views at the prepared size, rejecting
+other views when the loader is built. Keep the originals for other augmentations,
+resolutions, and evaluations. Preparation records library versions and rejects a
+cache built with different decoding or image-processing versions.
+
+On a CPU allocation, choose a separate directory and prepare a subset first:
+
+```bash
+export KRISHNACAM_PREPARED=/path/to/krishnacam/prepared
+uv run python -m egolearn.methods.babycl.prepared_video \
+    --source-root "$KRISHNACAM_ROOT" --prepared-root "$KRISHNACAM_PREPARED" \
+    --workers 16 --sessions recording_a.mp4 recording_b.mp4
+```
+
+Replace the session names with filenames from the source directory. Omit
+`--sessions` to convert all MP4s directly under that directory. Each complete
+output is decoded and checked against a hash of every preprocessed source frame.
+Frame counts, frame rates, and source-relative frame times must also match.
+Output container timestamps start at zero. Repeating preparation
+skips verified files whose source and output fingerprints are unchanged.
+
+Measure disk usage and GPU training throughput before preparing the full dataset.
+Lossless RGB videos can exceed the originals' size despite their smaller dimensions.
+Add `--prepared-root "$KRISHNACAM_PREPARED" --seek-gap 8` to the loading benchmark
+to reuse its original frame requests and seeds. The selected recordings must all
+have prepared counterparts.
+
+For GPU training, use `projects/babycl/configs/krishnacam_prepared.yaml`. It keeps
+the original stream root and redirects decoding to the cache, so replay snapshots
+retain valid original paths. To compare against the short pilot, override
+`memories.segments.tiers.short.capacity=4` and
+`memories.segments.tiers.long.capacity=16` in the full-pipeline benchmark. Add
+`--gpu-log /path/to/gpu.csv` to collect one-second GPU samples with training steps;
+exclude warmup and worker startup when assessing steady training utilization.
+
 ## Full chronological runs
 
 Submit full runs through the [Slurm launcher](../../../scripts/slurm/README.md)

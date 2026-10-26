@@ -129,6 +129,7 @@ class Loader:
     ):
         self.stream = stream
         self.views = views
+        stream.validate_views(views.specs)
         self.workers = int(workers)
         self.imports = list(imports or [])  # modules workers import to register views
         self.flush_denormal = bool(flush_denormal)  # worker-only CPU arithmetic mode

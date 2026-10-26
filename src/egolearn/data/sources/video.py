@@ -167,5 +167,8 @@ class VideoStream(S.Stream):
                 out[row] = image
         return out
 
+    def validate_views(self, specs: dict[str, dict]) -> None:
+        self.decoder.validate_views(specs)
+
     def close(self) -> None:
         self.decoder.close()

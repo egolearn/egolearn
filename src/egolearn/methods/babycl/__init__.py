@@ -11,4 +11,4 @@ Everything else BabyCL uses comes from the shared core toolbox (saycam/babyview
 adapters, ntxent/tcl/clip_infonce losses, simclr views, resnext50, Table policies).
 """
 
-from . import an_chunks, data, model, refine, segmenter  # noqa: F401
+from . import an_chunks, data, model, prepared_video, refine, segmenter  # noqa: F401
