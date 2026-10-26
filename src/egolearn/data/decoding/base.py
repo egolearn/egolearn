@@ -19,9 +19,8 @@ optimize them separately:
     seek to the nearest keyframe and decode forward, batching requests to
     the same file where possible.
 
-The efficient random-access implementation is expected to come from the
-lab's existing video pipeline (see decoding/poodle.py); this class defines
-the interface that integration has to fill in.
+PyAV supplies a CPU backend for constant-rate recordings. The Poodle
+backend remains a placeholder for integration with the lab's video pipeline.
 """
 
 from __future__ import annotations

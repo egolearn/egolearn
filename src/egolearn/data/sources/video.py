@@ -17,15 +17,14 @@ Locators are (video_path, i0[, i1]) frame-index spans, the same shape the
 frame-dir adapters use -- so admission components and memory never need to
 know which backend created a ref (a lightweight pointer to frames on disk).
 
-Known limitation (fine for the skeleton, must be fixed with a real video
-backend): `open_frame` uses the decoder's RANDOM access path even during the
-sequential streaming pass.  See decoding/poodle.py for the two ways to close
-this (a read-ahead cache inside the decoder, or prefetching via iter_frames).
+Frame batches group requests by file. The PyAV backend reuses decode handles
+for nearby forward reads and seeks for replay across larger gaps.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
 
@@ -47,9 +46,11 @@ class VideoStream(S.Stream):
         transcript_json: str | None = None,
         manifest_json: str | None = None,
         sessions: list[str] | None = None,
+        recursive: bool = False,
     ):
         self.root = Path(root_dir)
         self.decoder = decoder
+        self.recursive = recursive
         self._session_ids = sessions  # explicit ordering wins; else sorted scan
         self._meta: dict[str, dict] = {}
         self._utts_by_stem: dict[str, list[dict]] = {}
@@ -83,15 +84,25 @@ class VideoStream(S.Stream):
     # ---- session enumeration -----------------------------------------------
     def session_ids(self) -> list[str]:
         if self._session_ids is None:
+            paths = self.root.rglob("*") if self.recursive else self.root.iterdir()
             self._session_ids = sorted(
-                f for f in os.listdir(self.root) if f.lower().endswith(_VIDEO_EXTS)
+                p.relative_to(self.root).as_posix()
+                for p in paths
+                if p.is_file() and p.suffix.lower() in _VIDEO_EXTS
             )
+            if not self._session_ids:
+                raise ValueError(f"no video files found in {self.root}")
         return self._session_ids
 
     def _session_meta(self, sid: str) -> dict:
         if sid not in self._meta:
             fps, n = self.decoder.probe(str(self.root / sid))
             self._meta[sid] = {"fps": float(fps), "num_frames": int(n)}
+        meta = self._meta[sid]
+        if not math.isfinite(float(meta["fps"])) or float(meta["fps"]) <= 0:
+            raise ValueError(f"invalid frame rate for {sid}: {meta['fps']}")
+        if int(meta["num_frames"]) < 0:
+            raise ValueError(f"negative frame count for {sid}")
         return self._meta[sid]
 
     def sessions(self):
@@ -136,3 +147,25 @@ class VideoStream(S.Stream):
         if not (0 <= index < i1 - i0):
             raise IndexError(f"frame index {index} outside ref span {i1 - i0}")
         return self.decoder.read_frame(path, i0 + index)
+
+    def open_frames(self, ref: ItemRef, indices: list[int]) -> list:
+        return self.open_frame_batch([(ref, i) for i in indices])
+
+    def open_frame_batch(self, requests: list[tuple[ItemRef, int]]) -> list:
+        grouped: dict[str, list[tuple[int, int]]] = {}
+        for row, (ref, index) in enumerate(requests):
+            path, i0, i1 = self._locator_span(ref)
+            if not 0 <= index < i1 - i0:
+                raise IndexError(f"frame index {index} outside ref span {i1 - i0}")
+            grouped.setdefault(path, []).append((row, i0 + index))
+        out: list = [None] * len(requests)
+        for path, rows in grouped.items():
+            start = min(index for _, index in rows)
+            end = max(index for _, index in rows) + 1
+            images = self.decoder.read_window(path, start, end, [i - start for _, i in rows])
+            for (row, _), image in zip(rows, images, strict=True):
+                out[row] = image
+        return out
+
+    def close(self) -> None:
+        self.decoder.close()

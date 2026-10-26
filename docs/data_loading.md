@@ -1,4 +1,8 @@
-# Data loading: blur, denormals, and the packed frame store
+# Data loading: video, blur, denormals, and the packed frame store
+
+For direct decoding from MP4 files, use `stream:video` with `decoder:pyav`.
+The [KrishnaCam experiment guide](../projects/krishnacam/README.md) covers dataset
+setup, streaming and offline configs, and loader measurements without extracted JPEGs.
 
 Where a frame's CPU time goes on the SAYCam 5 fps frame dumps (224 px JPEGs,
 one process, medians, from an October 2026 study on the lab cluster: single

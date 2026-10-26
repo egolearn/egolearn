@@ -1,0 +1,36 @@
+# Pilot: chronological stream, visual SimCLR, FIFO and reservoir replay.
+defaults:
+  - shared
+  - _self_
+
+hydra:
+  searchpath: [pkg://egolearn.configs]
+
+run_dir: runs/krishnacam_streaming
+
+admission:
+  - {_target_: "admission:frame_emitter", subsample: 6}
+
+memories:
+  frames:
+    tiers:
+      short: {capacity: 1024, update: fifo}
+      long: {capacity: 8192, update: reservoir}
+    admit_to: [short, long]
+    overflow: {}
+
+routes:
+  RawFrame: frames
+
+recipe:
+  slots:
+    - {name: frames,
+       source: {kind: mix, memory: frames, fractions: {short: 0.5, long: 0.5}},
+       n: 64, unit: frame, views: [v1, v2], strict: true}
+
+driver:
+  advance: {kind: observations, n: 384}
+  rate: {steps_per_admit: 4, resample: true}
+  warmup: {admitted: 1536}  # source observations -> 256 replay frames at subsample=6
+  prefetch: true
+  max_steps: 1000
