@@ -72,7 +72,8 @@ def main() -> int:
         if not cuda:
             raise ValueError("--gpu-log requires CUDA training")
         Path(args.gpu_log).parent.mkdir(parents=True, exist_ok=True)
-        uuid = torch.cuda.get_device_properties(pipe.ctx.device).uuid
+        uuid = str(torch.cuda.get_device_properties(pipe.ctx.device).uuid)
+        uuid = "GPU-" + uuid.removeprefix("GPU-")
         monitor = subprocess.Popen(
             [
                 "nvidia-smi",
@@ -116,6 +117,8 @@ def main() -> int:
             monitor.wait(timeout=10)
         if sampler is not None:
             sampler.join(timeout=10)
+        if monitor is not None and monitor.returncode not in (0, -15):
+            raise RuntimeError(f"nvidia-smi sampling failed with exit code {monitor.returncode}")
     wall = time.perf_counter() - t0
 
     steps = pipe.ctx.clock.step

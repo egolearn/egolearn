@@ -266,7 +266,3 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     print(json.dumps(prepare(**vars(args)), indent=2), flush=True)
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

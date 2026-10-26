@@ -114,8 +114,8 @@ For repeated BabyCL runs, prepare smaller videos containing the exact RGB pixels
 after the views' fixed bicubic resize and center crop. Frames remain in MP4 files
 and are decoded on demand. H.264 RGB lossless encoding avoids another lossy color
 conversion, and a keyframe every eight frames bounds random-access decoding work.
-These lossless RGB videos use CPU decoding, while model training uses the GPU.
-Use `--device cpu` for this loading benchmark and remove any NVDEC training override.
+These lossless RGB videos require CPU decoding, so use `--device cpu` in the
+loading benchmark and `stream.decoder.device=cpu` for GPU training.
 
 This cache is specific to the configured spatial preprocessing. It supports
 `babycl_ms_aug` and unflipped `center_crop` views at the prepared size, rejecting
@@ -127,7 +127,7 @@ On a CPU allocation, choose a separate directory and prepare a subset first:
 
 ```bash
 export KRISHNACAM_PREPARED=/path/to/krishnacam/prepared
-uv run python -m egolearn.methods.babycl.prepared_video \
+uv run python -m egolearn.methods.babycl.prepare_video \
     --source-root "$KRISHNACAM_ROOT" --prepared-root "$KRISHNACAM_PREPARED" \
     --workers 16 --sessions recording_a.mp4 recording_b.mp4
 ```
@@ -138,6 +138,8 @@ output is decoded and checked against a hash of every preprocessed source frame.
 Frame counts, frame rates, and source-relative frame times must also match.
 Output container timestamps start at zero. Repeating preparation
 skips verified files whose source and output fingerprints are unchanged.
+
+### Cache benchmarks
 
 Measure disk usage and GPU training throughput before preparing the full dataset.
 Lossless RGB videos can exceed the originals' size despite their smaller dimensions.

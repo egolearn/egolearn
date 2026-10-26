@@ -96,12 +96,36 @@ def test_cuda_metadata_does_not_require_a_gpu(videos):
 
 
 def test_prepared_videos_preserve_refs_pixels_and_worker_augmentations(videos, tmp_path):
+    import json
+    import subprocess
+    import sys
+
     import torchvision.transforms as T
 
     from egolearn.methods.babycl.prepared_video import PreparedVideoDecoder, prepare
 
     cache = tmp_path.with_name(tmp_path.name + "_prepared")
-    report = prepare(str(videos), str(cache), workers=2, size=32, gop=4)
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "egolearn.methods.babycl.prepare_video",
+            "--source-root",
+            str(videos),
+            "--prepared-root",
+            str(cache),
+            "--workers",
+            "2",
+            "--size",
+            "32",
+            "--gop",
+            "4",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    report = json.loads((cache / "preparation.json").read_text())
     assert report["num_frames"] == 96
     original_mtime = (cache / "20140901.mp4").stat().st_mtime_ns
     prepare(str(videos), str(cache), workers=1, size=32, gop=4)
