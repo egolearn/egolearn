@@ -78,7 +78,7 @@ Supported units are `fraction` and `number`, with directions of `min` and `max`.
 Column IDs must retain the same definition, including display text, across publications.
 
 Condition metadata is also immutable. Keep the original manifest when adding seeds;
-changing a label or description does not revise an existing result.
+pushes that change a condition's label or description are refused.
 
 ## Preparation
 

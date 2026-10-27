@@ -190,9 +190,10 @@ export function startBenchmarks({container, status, fetcher = fetch, interval = 
       const message = `Results updated ${lastUpdated}. Refreshes every minute.`;
       if (status.textContent !== message) status.textContent = message;
     } catch {
-      status.textContent = lastUpdated
+      const message = lastUpdated
         ? `Showing results from ${lastUpdated}. Live refresh is unavailable; retrying every minute.`
         : "Published results are temporarily unavailable. Retrying every minute.";
+      if (status.textContent !== message) status.textContent = message;
     } finally {
       busy = false;
     }

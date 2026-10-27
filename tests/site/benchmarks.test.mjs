@@ -141,6 +141,9 @@ test("rendering keeps the last successful table during failures and safely adds 
     await controller.refresh();
     assert.equal(container.innerHTML, original);
     assert.match(status.textContent, /Live refresh is unavailable/);
+    const failureText = status.firstChild;
+    await controller.refresh();
+    assert.equal(status.firstChild, failureText);
     available = true;
     await controller.refresh();
     assert.equal(container.querySelector("details"), details);
