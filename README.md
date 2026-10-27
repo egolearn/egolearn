@@ -7,9 +7,9 @@
 
 [![ci](https://github.com/agentic-learning-ai-lab/egolearn/actions/workflows/ci.yml/badge.svg)](https://github.com/agentic-learning-ai-lab/egolearn/actions/workflows/ci.yml)
 
-Learning from first-person video streams: streaming self-supervised representation
-learning, continual learning and replay, temporal segmentation, multimodal learning,
-memory retrieval, and egocentric video question answering.
+EgoLearn trains and evaluates models from first-person video streams. It supports
+streaming and offline self-supervised learning, bounded replay memory, temporal
+segmentation, and image–text learning.
 [Agentic Learning AI Lab](https://agenticlearning.ai), New York University.
 
 > **Private — unpublished research.** This repo is confidential until its first public
@@ -56,28 +56,28 @@ benchmark suites, configuration paths, and multirun.
 
 The SAYCam videos used in BabyCL and Memory Storyboard are hosted on
 [Databrary](https://nyu.databrary.org/volume/564/).
-See the [evaluation guide](docs/evaluation.md#saycam-access) for IRB approval,
+See the [evaluation data guide](docs/evaluation/data.md#saycam-access) for IRB approval,
 access requirements, and benchmark data preparation.
 
-## What's here
+<a id="whats-here"></a>
 
-The streaming learning framework. In plain terms: dataset adapters read
-egocentric video as a time-ordered stream (SAYCam, BabyView, raw video,
-synthetic test data); admission components watch the stream and decide what
-goes into bounded replay buffers; a batch recipe describes how training
-batches are sampled from those buffers; SSL and image-text losses train the
-model; probes score it while it trains (4AFC, linear probing, visual two-word
-test, Baby Winoground, shape bias, IntPhys 2). Buffers and sampling only ever handle lightweight
-references, never image tensors, so they stay cheap; an admission component that needs
-to look at image content pulls the frames it wants through the loader (both
-shipped methods do this to decide where segments end). Training can follow the stream in order (the streaming mode) or
-shuffle everything like ordinary offline training (the IID mode). Runs can
-stop and resume exactly where they left off, and every run prints a
-per-stage timing report. Memory Storyboard and BabyCL are included as
-faithful ports of the original code, each expressed as a config file. The
-full walkthrough: [docs/design/architecture.md](docs/design/architecture.md).
-Frame dumps can be packed into a shard store for fast random reads; see
-[data loading](docs/data_loading.md).
+## Training and evaluation
+
+EgoLearn trains models from video streams while controlling what the learner keeps
+in memory and revisits during training. Streaming runs process observations in
+chronological order and sample from bounded replay buffers. Offline runs shuffle
+the selected dataset across epochs.
+
+Memory stores frame references and metadata, while the loader decodes and augments
+images when training or segmentation needs them. A configuration selects the memory
+policy, batch composition, model, and losses. The
+[architecture guide](docs/design/architecture.md) explains how these choices fit together.
+
+The included [BabyCL](projects/babycl/README.md) and
+[Memory Storyboard](projects/storyboard/README.md) projects provide method implementations
+and experiment configs. Runs support snapshot continuation and report time spent in
+each training stage. For large frame collections, the [data-loading guide](docs/data_loading.md)
+covers packed storage, worker processes, and augmentation controls.
 
 Trained checkpoints can be evaluated independently through
 `egolearn.evaluation.evaluate_checkpoint` or `egl eval`.
@@ -85,9 +85,8 @@ Full ImageNet decoding runs as a standalone benchmark, with dataset preparation
 deferred until evaluation. See [the evaluation guide](docs/evaluation.md) for
 Python usage, CLI configuration, and checkpoint compatibility.
 
-The rest of the consolidation (LifelongMemory's QA/memory line, more evals)
-arrives per [docs/roadmap.md](docs/roadmap.md), and **nothing is ported
-without triage** — see the porting policy there.
+The [roadmap](docs/roadmap.md) tracks candidate additions, including LifelongMemory's
+QA and retrieval work. Each port requires a concrete need and an agreed scope.
 
 For staged training with selected checkpoint weights, see the
 [initialization guide](docs/initialization.md).
@@ -101,7 +100,7 @@ For staged training with selected checkpoint weights, see the
 | `projects/` | One directory per paper: thin entry points + configs composing on the library ([conventions](projects/README.md)) |
 | `tests/` | Tiered tests: unit (default), `video`, `slow`, `gpu`, `llm` markers |
 | `scripts/` | Committed operational scripts and cluster launchers |
-| `docs/` | Roadmap and design notes |
+| `docs/` | Training and evaluation guides, reference, design notes, and roadmap |
 
 Spatial relation categorization evaluates two-choice relation matching in
 2D abstract scenes and 3D rendered scenes. The registered `probe:spatial_relations`
