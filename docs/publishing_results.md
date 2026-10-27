@@ -63,7 +63,10 @@ The input-hash file records the identities consumed by the evaluation:
 
 Provide recorded hashes for file inputs such as manifests, split files, CSVs and
 vocabularies. Do not substitute a hash of today's data for missing historical
-evidence. Directory-based evaluations can supply recorded class ordering and counts
+evidence. Copy hashes from the evaluation's run record when available. Preparation
+checks their format and required keys, but does not independently verify the supplied
+hashes against a run record or read the original inputs.
+Directory-based evaluations can supply recorded class ordering and counts
 through their native metadata. Neither source establishes a digest of the underlying
 image collection; the published protocol states that limit.
 
@@ -72,7 +75,10 @@ accuracy, shape preference, and Labeled-S, BabyView and ImageNet linear decoding
 To publish another metric, provide a `columns` array in the manifest. Each column
 needs `id`, `benchmark`, `metric`, `label`, `description`, `unit` and `direction`.
 Supported units are `fraction` and `number`, with directions of `min` and `max`.
-Column IDs must retain the same definition across publications.
+Column IDs must retain the same definition, including display text, across publications.
+
+Condition metadata is also immutable. Keep the original manifest when adding seeds;
+changing a label or description does not revise an existing result.
 
 ## Preparation
 
@@ -122,11 +128,16 @@ destination without making weights public. Existing visibility is preserved, and
 fails. Follow the [checkpoint publication rules](evaluation.md#hub-artifacts-and-access-tiers) before
 redistributing SAYCam-trained weights. Private model cards grant no redistribution license.
 
-Retries reuse identical models and records. You can later rerun without `--results-only`
-to attach uploaded weights to unchanged evaluation evidence. A changed export needs a new
-model repository, and changed evidence for an existing run is refused. Concurrent publishers retry index
-conflicts without discarding other runs. Adding a seed extends the existing condition;
-repeated evaluations of one checkpoint do not count as independent seeds.
+Keep the prepared bundle, including `model.json` and `model.safetensors`, after a
+results-only upload. Rerun `push` on that same bundle without `--results-only` to attach
+weights later. Preparing again can change the export metadata hash because it records
+the exporter's code revision. Such a bundle cannot replace the published evidence.
+
+Retries reuse identical models and records. The publisher checks existing results for
+conflicts before uploading weights, then checks again when committing the results.
+A concurrent conflicting publication can still leave uploaded weights without a results
+link. Concurrent updates to distinct runs are merged. Adding a seed extends the existing
+condition; repeated evaluations of one checkpoint do not count as independent seeds.
 
 ## Website deployment
 

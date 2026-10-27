@@ -16,24 +16,23 @@ from egolearn.publication.schema import (
     run_id,
     validate_run,
 )
+from egolearn.utils.input_provenance import INPUT_PATH_KEYS
 from egolearn.utils.model_artifact import export_sha256, file_digest
 
 # Paths describe local storage, not evaluation protocols. Hashes identify inputs.
-INPUT_PATHS = {
+DIRECTORY_INPUTS = {
     "data_root",
     "root_dir",
-    "manifest",
-    "csv_path",
+    "image_root",
     "image_dir",
     "pos_dir",
     "neg_dir",
-    "vocab_json",
-    "split_file",
     "train_dir",
     "val_dir",
-    "vocabulary",
     "cache_dir",
 }
+INPUT_PATHS = INPUT_PATH_KEYS | DIRECTORY_INPUTS | {"vocabulary"}
+FILE_INPUTS = INPUT_PATHS - DIRECTORY_INPUTS - {"checkpoint"}
 OUTPUT_PATHS = {"output_json", "output_dir", "feature_cache"}
 
 
@@ -84,8 +83,7 @@ def import_evaluations(
                     if pin["kind"] in pins and pins[pin["kind"]] != pin["sha256"]:
                         raise ValueError("conflicting recorded input hashes")
                     pins[pin["kind"]] = pin["sha256"]
-            file_inputs = {"manifest", "csv_path", "vocab_json", "split_file", "vocabulary"}
-            missing = {k for k in file_inputs if original_settings.get(k) and k not in pins}
+            missing = {k for k in FILE_INPUTS if original_settings.get(k) and k not in pins}
             if missing:
                 raise ValueError(f"missing recorded input hashes for {name}: {sorted(missing)}")
             # Preserve class ordering and sample counts without publishing class/sample lists.

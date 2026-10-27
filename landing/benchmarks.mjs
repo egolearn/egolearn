@@ -172,6 +172,7 @@ export function renderTable(data, container) {
 export function startBenchmarks({container, status, fetcher = fetch, interval = 60000}) {
   let busy = false;
   let lastUpdated = null;
+  let lastData = null;
   async function refresh() {
     if (busy || document.hidden) return;
     busy = true;
@@ -180,9 +181,14 @@ export function startBenchmarks({container, status, fetcher = fetch, interval = 
       if (!response.ok) throw new Error("Results unavailable");
       const data = validateTable(await response.json());
       if (data.revision !== undefined && !commitPattern.test(data.revision)) throw new Error("Invalid feed revision");
-      renderTable(data, container);
-      lastUpdated = new Date(data.updated_at).toLocaleString();
-      status.textContent = `Results updated ${lastUpdated}. Refreshes every minute.`;
+      const serialized = JSON.stringify(data);
+      if (serialized !== lastData) {
+        renderTable(data, container);
+        lastData = serialized;
+        lastUpdated = new Date(data.updated_at).toLocaleString();
+      }
+      const message = `Results updated ${lastUpdated}. Refreshes every minute.`;
+      if (status.textContent !== message) status.textContent = message;
     } catch {
       status.textContent = lastUpdated
         ? `Showing results from ${lastUpdated}. Live refresh is unavailable; retrying every minute.`

@@ -1,0 +1,819 @@
+{
+  "runs": [
+    {
+      "checkpoint": {
+        "metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "private": true,
+        "repo_id": "test/model-1",
+        "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000001",
+        "step": 12,
+        "weights_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "condition": {
+        "architecture": "ToyCNN",
+        "dataset": "Synthetic",
+        "description": "Synthetic tests only.",
+        "id": "toy",
+        "label": "Toy",
+        "regime": "offline"
+      },
+      "evaluations": [
+        {
+          "column": {
+            "benchmark": "labeled_s_4afc",
+            "description": "Four-alternative image-word matching.",
+            "direction": "max",
+            "id": "labeled_s_4afc",
+            "label": "Labeled-S 4AFC",
+            "metric": "four_afc_acc",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.1
+        },
+        {
+          "column": {
+            "benchmark": "babyview_4afc",
+            "description": "Four-alternative image-word matching.",
+            "direction": "max",
+            "id": "babyview_4afc",
+            "label": "BabyView 4AFC",
+            "metric": "four_afc_acc",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.1
+        },
+        {
+          "column": {
+            "benchmark": "vtwt",
+            "description": "Visual word-text matching accuracy.",
+            "direction": "max",
+            "id": "vtwt",
+            "label": "VTWT",
+            "metric": "vtwt_acc",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.1
+        },
+        {
+          "column": {
+            "benchmark": "baby_winoground",
+            "description": "Group accuracy.",
+            "direction": "max",
+            "id": "baby_winoground",
+            "label": "Baby Winoground",
+            "metric": "bw_group_acc",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.1
+        },
+        {
+          "column": {
+            "benchmark": "shape_bias",
+            "description": "Shape preference, not classification accuracy.",
+            "direction": "max",
+            "id": "shape_bias",
+            "label": "Shape preference",
+            "metric": "shape_bias",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.1
+        },
+        {
+          "column": {
+            "benchmark": "labeled_s_linear",
+            "description": "Frozen-feature linear decoding, top-1 accuracy.",
+            "direction": "max",
+            "id": "labeled_s_linear",
+            "label": "Labeled-S linear",
+            "metric": "top1",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.1
+        },
+        {
+          "column": {
+            "benchmark": "babyview_linear",
+            "description": "Frozen-feature linear decoding, top-1 accuracy.",
+            "direction": "max",
+            "id": "babyview_linear",
+            "label": "BabyView linear",
+            "metric": "top1",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.1
+        },
+        {
+          "column": {
+            "benchmark": "imagenet_linear",
+            "description": "Frozen-feature linear decoding, top-1 accuracy.",
+            "direction": "max",
+            "id": "imagenet_linear",
+            "label": "ImageNet linear",
+            "metric": "top1",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.1
+        }
+      ],
+      "expected_seeds": [
+        1,
+        2,
+        3
+      ],
+      "id": "38850e25a79894a59d815d75e87ef7f14b5d153fe703ba52df6df165b8517e5c",
+      "provenance": {
+        "legacy_evaluation": false,
+        "training_code_commit": null,
+        "training_config_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "schema_version": 1,
+      "training_seed": 1
+    },
+    {
+      "checkpoint": {
+        "metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "private": true,
+        "repo_id": "test/model-2",
+        "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000002",
+        "step": 12,
+        "weights_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "condition": {
+        "architecture": "ToyCNN",
+        "dataset": "Synthetic",
+        "description": "Synthetic tests only.",
+        "id": "toy",
+        "label": "Toy",
+        "regime": "offline"
+      },
+      "evaluations": [
+        {
+          "column": {
+            "benchmark": "labeled_s_4afc",
+            "description": "Four-alternative image-word matching.",
+            "direction": "max",
+            "id": "labeled_s_4afc",
+            "label": "Labeled-S 4AFC",
+            "metric": "four_afc_acc",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.2
+        },
+        {
+          "column": {
+            "benchmark": "babyview_4afc",
+            "description": "Four-alternative image-word matching.",
+            "direction": "max",
+            "id": "babyview_4afc",
+            "label": "BabyView 4AFC",
+            "metric": "four_afc_acc",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.2
+        },
+        {
+          "column": {
+            "benchmark": "vtwt",
+            "description": "Visual word-text matching accuracy.",
+            "direction": "max",
+            "id": "vtwt",
+            "label": "VTWT",
+            "metric": "vtwt_acc",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.2
+        },
+        {
+          "column": {
+            "benchmark": "baby_winoground",
+            "description": "Group accuracy.",
+            "direction": "max",
+            "id": "baby_winoground",
+            "label": "Baby Winoground",
+            "metric": "bw_group_acc",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.2
+        },
+        {
+          "column": {
+            "benchmark": "shape_bias",
+            "description": "Shape preference, not classification accuracy.",
+            "direction": "max",
+            "id": "shape_bias",
+            "label": "Shape preference",
+            "metric": "shape_bias",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.2
+        },
+        {
+          "column": {
+            "benchmark": "labeled_s_linear",
+            "description": "Frozen-feature linear decoding, top-1 accuracy.",
+            "direction": "max",
+            "id": "labeled_s_linear",
+            "label": "Labeled-S linear",
+            "metric": "top1",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.2
+        },
+        {
+          "column": {
+            "benchmark": "babyview_linear",
+            "description": "Frozen-feature linear decoding, top-1 accuracy.",
+            "direction": "max",
+            "id": "babyview_linear",
+            "label": "BabyView linear",
+            "metric": "top1",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.2
+        },
+        {
+          "column": {
+            "benchmark": "imagenet_linear",
+            "description": "Frozen-feature linear decoding, top-1 accuracy.",
+            "direction": "max",
+            "id": "imagenet_linear",
+            "label": "ImageNet linear",
+            "metric": "top1",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.2
+        }
+      ],
+      "expected_seeds": [
+        1,
+        2,
+        3
+      ],
+      "id": "2a4c3f737a933ba1e347da7ff3973662611dc946db09cfa1bfb000f41ef492c6",
+      "provenance": {
+        "legacy_evaluation": false,
+        "training_code_commit": null,
+        "training_config_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "schema_version": 1,
+      "training_seed": 2
+    }
+  ],
+  "table": {
+    "columns": [
+      {
+        "benchmark": "labeled_s_4afc",
+        "description": "Four-alternative image-word matching.",
+        "direction": "max",
+        "id": "labeled_s_4afc",
+        "label": "Labeled-S 4AFC",
+        "metric": "four_afc_acc",
+        "unit": "fraction"
+      },
+      {
+        "benchmark": "babyview_4afc",
+        "description": "Four-alternative image-word matching.",
+        "direction": "max",
+        "id": "babyview_4afc",
+        "label": "BabyView 4AFC",
+        "metric": "four_afc_acc",
+        "unit": "fraction"
+      },
+      {
+        "benchmark": "vtwt",
+        "description": "Visual word-text matching accuracy.",
+        "direction": "max",
+        "id": "vtwt",
+        "label": "VTWT",
+        "metric": "vtwt_acc",
+        "unit": "fraction"
+      },
+      {
+        "benchmark": "baby_winoground",
+        "description": "Group accuracy.",
+        "direction": "max",
+        "id": "baby_winoground",
+        "label": "Baby Winoground",
+        "metric": "bw_group_acc",
+        "unit": "fraction"
+      },
+      {
+        "benchmark": "shape_bias",
+        "description": "Shape preference, not classification accuracy.",
+        "direction": "max",
+        "id": "shape_bias",
+        "label": "Shape preference",
+        "metric": "shape_bias",
+        "unit": "fraction"
+      },
+      {
+        "benchmark": "labeled_s_linear",
+        "description": "Frozen-feature linear decoding, top-1 accuracy.",
+        "direction": "max",
+        "id": "labeled_s_linear",
+        "label": "Labeled-S linear",
+        "metric": "top1",
+        "unit": "fraction"
+      },
+      {
+        "benchmark": "babyview_linear",
+        "description": "Frozen-feature linear decoding, top-1 accuracy.",
+        "direction": "max",
+        "id": "babyview_linear",
+        "label": "BabyView linear",
+        "metric": "top1",
+        "unit": "fraction"
+      },
+      {
+        "benchmark": "imagenet_linear",
+        "description": "Frozen-feature linear decoding, top-1 accuracy.",
+        "direction": "max",
+        "id": "imagenet_linear",
+        "label": "ImageNet linear",
+        "metric": "top1",
+        "unit": "fraction"
+      }
+    ],
+    "results_repo": "test/results",
+    "rows": [
+      {
+        "cells": {
+          "baby_winoground": {
+            "expected_n": 3,
+            "mean": 0.2,
+            "n": 3,
+            "protocols": [
+              {
+                "code_commit": null,
+                "evaluation_seed": 0,
+                "input_scope": "Manifest hashes only",
+                "input_sha256": {
+                  "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                "settings": {
+                  "size": 224
+                },
+                "sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+                "version": "1"
+              }
+            ],
+            "sd": 0.09999999999999999,
+            "status": "complete"
+          },
+          "babyview_4afc": {
+            "expected_n": 3,
+            "mean": 0.2,
+            "n": 3,
+            "protocols": [
+              {
+                "code_commit": null,
+                "evaluation_seed": 0,
+                "input_scope": "Manifest hashes only",
+                "input_sha256": {
+                  "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                "settings": {
+                  "size": 224
+                },
+                "sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+                "version": "1"
+              }
+            ],
+            "sd": 0.09999999999999999,
+            "status": "complete"
+          },
+          "babyview_linear": {
+            "expected_n": 3,
+            "mean": 0.2,
+            "n": 3,
+            "protocols": [
+              {
+                "code_commit": null,
+                "evaluation_seed": 0,
+                "input_scope": "Manifest hashes only",
+                "input_sha256": {
+                  "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                "settings": {
+                  "size": 224
+                },
+                "sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+                "version": "1"
+              }
+            ],
+            "sd": 0.09999999999999999,
+            "status": "complete"
+          },
+          "imagenet_linear": {
+            "expected_n": 3,
+            "mean": 0.2,
+            "n": 3,
+            "protocols": [
+              {
+                "code_commit": null,
+                "evaluation_seed": 0,
+                "input_scope": "Manifest hashes only",
+                "input_sha256": {
+                  "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                "settings": {
+                  "size": 224
+                },
+                "sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+                "version": "1"
+              }
+            ],
+            "sd": 0.09999999999999999,
+            "status": "complete"
+          },
+          "labeled_s_4afc": {
+            "expected_n": 3,
+            "mean": 0.2,
+            "n": 3,
+            "protocols": [
+              {
+                "code_commit": null,
+                "evaluation_seed": 0,
+                "input_scope": "Manifest hashes only",
+                "input_sha256": {
+                  "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                "settings": {
+                  "size": 224
+                },
+                "sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+                "version": "1"
+              }
+            ],
+            "sd": 0.09999999999999999,
+            "status": "complete"
+          },
+          "labeled_s_linear": {
+            "expected_n": 3,
+            "mean": 0.2,
+            "n": 3,
+            "protocols": [
+              {
+                "code_commit": null,
+                "evaluation_seed": 0,
+                "input_scope": "Manifest hashes only",
+                "input_sha256": {
+                  "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                "settings": {
+                  "size": 224
+                },
+                "sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+                "version": "1"
+              }
+            ],
+            "sd": 0.09999999999999999,
+            "status": "complete"
+          },
+          "shape_bias": {
+            "expected_n": 3,
+            "mean": 0.2,
+            "n": 3,
+            "protocols": [
+              {
+                "code_commit": null,
+                "evaluation_seed": 0,
+                "input_scope": "Manifest hashes only",
+                "input_sha256": {
+                  "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                "settings": {
+                  "size": 224
+                },
+                "sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+                "version": "1"
+              }
+            ],
+            "sd": 0.09999999999999999,
+            "status": "complete"
+          },
+          "vtwt": {
+            "expected_n": 3,
+            "mean": 0.2,
+            "n": 3,
+            "protocols": [
+              {
+                "code_commit": null,
+                "evaluation_seed": 0,
+                "input_scope": "Manifest hashes only",
+                "input_sha256": {
+                  "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                "settings": {
+                  "size": 224
+                },
+                "sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+                "version": "1"
+              }
+            ],
+            "sd": 0.09999999999999999,
+            "status": "complete"
+          }
+        },
+        "condition": {
+          "architecture": "ToyCNN",
+          "dataset": "Synthetic",
+          "description": "Synthetic tests only.",
+          "id": "toy",
+          "label": "Toy",
+          "regime": "offline"
+        },
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "id": "toy",
+        "runs": [
+          {
+            "checkpoint": {
+              "metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "private": true,
+              "repo_id": "test/model-1",
+              "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000001",
+              "step": 12,
+              "weights_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "id": "38850e25a79894a59d815d75e87ef7f14b5d153fe703ba52df6df165b8517e5c",
+            "provenance": {
+              "legacy_evaluation": false,
+              "training_code_commit": null,
+              "training_config_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            },
+            "seed": 1
+          },
+          {
+            "checkpoint": {
+              "metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "private": true,
+              "repo_id": "test/model-2",
+              "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000002",
+              "step": 12,
+              "weights_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "id": "2a4c3f737a933ba1e347da7ff3973662611dc946db09cfa1bfb000f41ef492c6",
+            "provenance": {
+              "legacy_evaluation": false,
+              "training_code_commit": null,
+              "training_config_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            },
+            "seed": 2
+          },
+          {
+            "checkpoint": {
+              "metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "private": true,
+              "repo_id": "test/model-3",
+              "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000003",
+              "step": 12,
+              "weights_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "id": "f2ccbb0589b846c19231ce80eb2ddc4c46a6da5a317b7f2f14e87f0e23969a37",
+            "provenance": {
+              "legacy_evaluation": false,
+              "training_code_commit": null,
+              "training_config_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            },
+            "seed": 3
+          }
+        ]
+      }
+    ],
+    "schema_version": 1,
+    "updated_at": "2026-01-01T00:00:00Z"
+  }
+}

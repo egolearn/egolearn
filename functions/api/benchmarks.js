@@ -10,11 +10,16 @@ export async function benchmarkResponse(env, fetcher = fetch) {
   if (!repoPattern.test(repository) || !token) {
     return new Response(JSON.stringify({error: "Benchmark source is not configured"}), {status: 503, headers});
   }
+  let failure = "upstream request";
   try {
     const response = await fetcher(`https://huggingface.co/datasets/${repository}/resolve/main/benchmarks.json`, {
-      headers: {Authorization: `Bearer ${token}`}, cache: "no-store", signal: AbortSignal.timeout(10000),
+      headers: {Authorization: `Bearer ${token}`, "Cache-Control": "no-cache"},
+      // Older Pages compatibility dates do not support Request.cache.
+      cf: {cacheTtlByStatus: {"100-599": -1}}, signal: AbortSignal.timeout(10000),
     });
+    failure = `upstream HTTP ${response.status}`;
     if (!response.ok || !response.body) throw new Error("Hub unavailable");
+    failure = "feed read or size limit";
     // Bound the response even when the upstream omits Content-Length.
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -32,12 +37,14 @@ export async function benchmarkResponse(env, fetcher = fetch) {
     } finally {
       await reader.cancel();
     }
+    failure = "feed validation";
     const data = validateTable(JSON.parse(text));
     if (data.results_repo !== repository) throw new Error("Unexpected results repository");
     const revision = response.headers.get("x-repo-commit");
     if (revision && /^[a-f0-9]{40}$/.test(revision)) data.revision = revision;
     return new Response(JSON.stringify(data), {headers});
   } catch {
+    console.error(`Benchmark source unavailable: ${failure}`);
     return new Response(JSON.stringify({error: "Benchmark source is unavailable"}), {status: 502, headers});
   }
 }

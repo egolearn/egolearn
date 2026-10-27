@@ -40,6 +40,30 @@ def _repository(api, repository: str, kind: str, *, public: bool):
     return info
 
 
+def _results_runs(api, repository: str, revision: str, names: list[str]) -> list[dict]:
+    if "index.json" not in names:
+        return []
+    index = read_json(_download(api, repository, "dataset", revision, "index.json"))
+    if index.get("schema_version") != 1:
+        raise ValueError("unsupported remote results index")
+    return index["runs"]
+
+
+def _preflight_results(api, runs: list[dict], repository: str, *, public: bool) -> None:
+    from huggingface_hub.errors import RepositoryNotFoundError
+
+    try:
+        info = api.repo_info(repository, repo_type="dataset")
+    except RepositoryNotFoundError:
+        return
+    if info.private != (not public):
+        raise ValueError(f"visibility differs for {repository}; existing visibility is preserved")
+    names = api.list_repo_files(repository, repo_type="dataset", revision=info.sha)
+    existing = _results_runs(api, repository, info.sha, names)
+    merged = merge_runs(existing, runs)
+    build_table(merged, results_repo=repository, updated_at="preflight")
+
+
 def _model(api, run: dict, directory: Path) -> str:
     from huggingface_hub import CommitOperationAdd
 
@@ -108,12 +132,7 @@ def publish_results(api, runs: list[dict], *, results_repo: str, public: bool = 
     for attempt in range(3):
         info = _repository(api, results_repo, "dataset", public=public)
         names = api.list_repo_files(results_repo, repo_type="dataset", revision=info.sha)
-        existing = []
-        if "index.json" in names:
-            index = read_json(_download(api, results_repo, "dataset", info.sha, "index.json"))
-            if index.get("schema_version") != 1:
-                raise ValueError("unsupported remote results index")
-            existing = index["runs"]
+        existing = _results_runs(api, results_repo, info.sha, names)
         merged = merge_runs(existing, runs)
         now = datetime.now(UTC).isoformat()
         table = build_table(merged, results_repo=results_repo, updated_at=now)
@@ -200,9 +219,14 @@ def publish(
             raise ValueError("prepared model no longer matches its publication record")
     preflight = copy.deepcopy(runs)
     for run in preflight:
-        run["checkpoint"]["revision"] = "0" * 40
+        if results_only:
+            for key in ("repo_id", "revision", "private"):
+                run["checkpoint"][key] = None
+        else:
+            run["checkpoint"]["revision"] = "0" * 40
     build_table(preflight, results_repo=results_repo, updated_at="preflight")
     api = HfApi()
+    _preflight_results(api, preflight, results_repo, public=public_results)
     if collection:
         api.get_collection(collection)
     for run in runs:

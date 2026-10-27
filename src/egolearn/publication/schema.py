@@ -244,7 +244,10 @@ def merge_runs(existing: list[dict], incoming: list[dict]) -> list[dict]:
                 if new_repo is None or old_repo == new_repo:
                     # Keep the original pin after card edits or results-only retries.
                     continue
-            raise ValueError(f"conflicting results for run {run['id']}; records are immutable")
+            raise ValueError(
+                f"conflicting results for run {run['id']}; records are immutable. "
+                "Reuse the original prepared bundle to attach checkpoint weights."
+            )
         by_id[run["id"]] = run
     return sorted(by_id.values(), key=lambda run: run["id"])
 

@@ -22,6 +22,16 @@ function fixture() {
   };
 }
 
+test("the Python-generated schema-1 feed validates with all eight default metrics", () => {
+  const historical = JSON.parse(readFileSync(new URL("../fixtures/publication-v1.json", import.meta.url), "utf8"));
+  const data = validateTable(historical.table);
+  assert.equal(data.columns.length, 8);
+  assert.equal(data.rows[0].runs.length, 3);
+  for (const column of data.columns) {
+    assert.deepEqual(formatMetric(data.rows[0].cells[column.id], column), {value: "20.0", sd: "±10.0"});
+  }
+});
+
 test("metrics display percentages, unavailable cells and singleton uncertainty correctly", () => {
   const data = validateTable(fixture());
   const column = data.columns[0];
@@ -53,7 +63,9 @@ test("the server forwards credentials only to the configured Hub source and disa
   const response = await benchmarkResponse({EGOLEARN_RESULTS_REPO: "test/results", EGOLEARN_RESULTS_TOKEN: token}, async (url, options) => {
     assert.equal(url, "https://huggingface.co/datasets/test/results/resolve/main/benchmarks.json");
     assert.equal(options.headers.Authorization, `Bearer ${token}`);
-    assert.equal(options.cache, "no-store");
+    assert.ok(!Object.hasOwn(options, "cache"));
+    assert.equal(options.headers["Cache-Control"], "no-cache");
+    assert.deepEqual(options.cf.cacheTtlByStatus, {"100-599": -1});
     return new Response(JSON.stringify(fixture()), {headers: {"x-repo-commit": "d".repeat(40)}});
   });
   assert.equal(response.status, 200);
@@ -63,7 +75,9 @@ test("the server forwards credentials only to the configured Hub source and disa
   assert.equal(JSON.parse(body).revision, "d".repeat(40));
 });
 
-test("the server fails closed for missing configuration, upstream failures and mismatched feeds", async () => {
+test("the server fails closed for missing configuration, upstream failures and mismatched feeds", async (t) => {
+  const logs = [];
+  t.mock.method(console, "error", message => logs.push(message));
   assert.equal((await benchmarkResponse({}, () => assert.fail("must not fetch"))).status, 503);
   const env = {EGOLEARN_RESULTS_REPO: "test/results", EGOLEARN_RESULTS_TOKEN: "synthetic-secret"};
   for (const upstream of [
@@ -76,6 +90,11 @@ test("the server fails closed for missing configuration, upstream failures and m
     assert.equal(response.status, 502);
     assert.ok(!(await response.text()).includes(env.EGOLEARN_RESULTS_TOKEN));
   }
+  const response = await benchmarkResponse(env, async () => { throw new Error(env.EGOLEARN_RESULTS_TOKEN); });
+  assert.equal(response.status, 502);
+  assert.ok(logs.includes("Benchmark source unavailable: upstream request"));
+  assert.ok(logs.includes("Benchmark source unavailable: upstream HTTP 401"));
+  assert.ok(logs.every(message => !message.includes(env.EGOLEARN_RESULTS_TOKEN)));
 });
 
 test("a newly published row is available on the next fetch without rebuilding", async () => {
@@ -112,12 +131,21 @@ test("rendering keeps the last successful table during failures and safely adds 
     await new Promise(resolve => setImmediate(resolve));
     assert.match(container.textContent, /43\.3/);
     assert.equal(container.querySelectorAll(".meth").length, 1);
+    const details = container.querySelector("details");
+    details.setAttribute("open", "");
+    await controller.refresh();
+    assert.equal(container.querySelector("details"), details);
+    assert.ok(details.hasAttribute("open"));
     const original = container.innerHTML;
     available = false;
     await controller.refresh();
     assert.equal(container.innerHTML, original);
     assert.match(status.textContent, /Live refresh is unavailable/);
     available = true;
+    await controller.refresh();
+    assert.equal(container.querySelector("details"), details);
+    assert.ok(details.hasAttribute("open"));
+    assert.match(status.textContent, /Refreshes every minute/);
     data = {...fixture(), schema_version: 99};
     await controller.refresh();
     assert.equal(container.innerHTML, original);

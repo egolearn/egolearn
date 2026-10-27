@@ -3,6 +3,8 @@
 import copy
 import hashlib
 import json
+from pathlib import Path
+from shutil import copytree
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -20,6 +22,7 @@ from egolearn.publication.schema import (
     run_id,
     validate_run,
 )
+from egolearn.utils.model_artifact import file_digest
 
 
 def make_run(seed=1, expected=(1, 2, 3), value=None):
@@ -92,6 +95,18 @@ def test_aggregation_requires_complete_matching_seeds_and_uses_sample_sd():
     runs[-1]["evaluations"][0]["protocol_sha256"] = digest(runs[-1]["evaluations"][0]["protocol"])
     assert cell(runs)["status"] == "incompatible"
     assert cell(runs)["mean"] is None
+
+
+def test_current_defaults_can_extend_schema_one_results():
+    fixture = read_json(Path(__file__).parent / "fixtures" / "publication-v1.json")
+    new_run = make_run(3)
+    prototype = new_run["evaluations"][0]
+    new_run["evaluations"] = [
+        {**copy.deepcopy(prototype), "column": column} for column in DEFAULT_COLUMNS
+    ]
+    # This historical fixture also feeds the JS validator. Changing presentation
+    # metadata needs an explicit migration, not an incompatible default edit.
+    assert table(merge_runs(fixture["runs"], [new_run])) == fixture["table"]
 
 
 def test_duplicates_cannot_inflate_seed_counts_or_overwrite_results():
@@ -190,6 +205,28 @@ def test_import_binds_to_checkpoint_and_requires_explicit_legacy_opt_in(tmp_path
         import_evaluations([path], allow_legacy=True, **kwargs)
 
 
+@pytest.mark.parametrize(
+    "key", ["abstract_2d_manifest", "rendered_3d_manifest", "trials_json", "metadata_csv"]
+)
+def test_custom_file_inputs_require_hashes_and_do_not_publish_paths(tmp_path, key):
+    checkpoint = make_run()["checkpoint"]
+    source = evaluation(checkpoint["sha256"])
+    source["configs"]["labeled_s_4afc"] = {key: "private/trials.json", "image_root": "images"}
+    source["metadata"] = {"labeled_s_4afc": {"count": 12}}
+    path = tmp_path / "evaluation.json"
+    path.write_bytes(encoded(source))
+    kwargs = {"checkpoint": checkpoint, "columns": DEFAULT_COLUMNS}
+    with pytest.raises(ValueError, match="missing recorded input hashes"):
+        import_evaluations([path], input_hashes=[], **kwargs)
+    results, _ = import_evaluations(
+        [path],
+        input_hashes=[{"benchmark": "labeled_s_4afc", "kind": key, "sha256": "a" * 64}],
+        **kwargs,
+    )
+    assert results[0]["protocol"]["settings"] == {}
+    assert results[0]["protocol"]["input_sha256"][key] == "a" * 64
+
+
 def test_prepare_exports_and_strictly_reloads_synthetic_model(tmp_path, monkeypatch):
     import torch
 
@@ -251,8 +288,11 @@ def test_prepare_exports_and_strictly_reloads_synthetic_model(tmp_path, monkeypa
     assert not (tmp_path / "wrong-seed").exists()
 
     api = Mock()
+    api.repo_info.return_value = SimpleNamespace(sha="a" * 40, private=True)
+    api.list_repo_files.return_value = []
     monkeypatch.setattr("huggingface_hub.HfApi", lambda: api)
-    monkeypatch.setattr(hub, "_model", Mock(side_effect=AssertionError("must not upload weights")))
+    model_upload = Mock(side_effect=AssertionError("must not upload weights"))
+    monkeypatch.setattr(hub, "_model", model_upload)
     captured = []
 
     def publish_results(api, runs, **kwargs):
@@ -275,6 +315,91 @@ def test_prepare_exports_and_strictly_reloads_synthetic_model(tmp_path, monkeypa
         "dataset",
         exists_ok=True,
     )
+
+    # A re-export after a code change must fail before any model upload.
+    index = tmp_path / "index.json"
+    index.write_bytes(encoded({"schema_version": 1, "runs": captured}))
+    api.list_repo_files.return_value = ["index.json"]
+    monkeypatch.setattr(hub, "_download", lambda *args: index)
+    changed = tmp_path / "changed-export"
+    copytree(destination, changed)
+    metadata_path = changed / "models" / "1" / "model.json"
+    metadata = read_json(metadata_path)
+    metadata["provenance"]["code_revision"] = {"commit": "e" * 40, "dirty": False}
+    metadata_path.write_bytes(encoded(metadata))
+    changed_bundle = read_json(changed / "bundle.json")
+    changed_bundle["runs"][0]["checkpoint"]["metadata_sha256"] = file_digest(metadata_path)
+    (changed / "bundle.json").write_bytes(encoded(changed_bundle))
+    with pytest.raises(ValueError, match="Reuse the original prepared bundle"):
+        hub.publish(changed, results_repo="test/results")
+    model_upload.assert_not_called()
+
+    # The retained bundle still attaches weights successfully.
+    upload = Mock(return_value="b" * 40)
+    commit = Mock(return_value="c" * 40)
+    monkeypatch.setattr(hub, "_model", upload)
+    monkeypatch.setattr(hub, "publish_results", commit)
+    receipt = hub.publish(destination, results_repo="test/results")
+    upload.assert_called_once()
+    assert receipt["models"][0]["revision"] == "b" * 40
+    assert commit.call_args.args[1][0]["checkpoint"]["metadata_sha256"] == file_digest(
+        destination / "models" / "1" / "model.json"
+    )
+
+
+@pytest.mark.parametrize(
+    "case", ["new", "reuse", "incomplete", "metadata", "weights", "unmanaged", "public"]
+)
+def test_model_upload_only_reuses_verified_private_exports(tmp_path, monkeypatch, case):
+    directory = tmp_path / "model"
+    directory.mkdir()
+    (directory / "model.json").write_text("{}")
+    (directory / "model.safetensors").write_bytes(b"synthetic weights")
+    run = make_run()
+    run["checkpoint"]["metadata_sha256"] = file_digest(directory / "model.json")
+    run["checkpoint"]["weights_sha256"] = file_digest(directory / "model.safetensors")
+    metadata = tmp_path / "remote.json"
+    metadata.write_text('{"changed": true}' if case == "metadata" else "{}")
+    monkeypatch.setattr(hub, "_download", lambda *args: metadata)
+    files = ["model.json", "model.safetensors"]
+    if case == "new":
+        files = [".gitattributes"]
+    elif case == "incomplete":
+        files = ["model.json"]
+    elif case == "unmanaged":
+        files.append("snapshot.pth")
+    api = Mock()
+    api.repo_info.return_value = SimpleNamespace(
+        sha="a" * 40,
+        private=case != "public",
+        siblings=[
+            SimpleNamespace(
+                rfilename="model.safetensors",
+                lfs=SimpleNamespace(
+                    sha256="f" * 64 if case == "weights" else run["checkpoint"]["weights_sha256"]
+                ),
+            )
+        ],
+    )
+    api.list_repo_files.return_value = files
+    api.create_commit.return_value = SimpleNamespace(oid="b" * 40)
+    if case not in {"new", "reuse"}:
+        with pytest.raises(ValueError):
+            hub._model(api, run, directory)
+        api.create_commit.assert_not_called()
+    elif case == "reuse":
+        assert hub._model(api, run, directory) == "a" * 40
+        api.create_commit.assert_not_called()
+    else:
+        assert hub._model(api, run, directory) == "b" * 40
+        kwargs = api.create_commit.call_args.kwargs
+        assert kwargs["parent_commit"] == "a" * 40
+        assert {op.path_in_repo for op in kwargs["operations"]} == {
+            "model.json",
+            "model.safetensors",
+            "checksums.sha256",
+            "README.md",
+        }
 
 
 @pytest.fixture
