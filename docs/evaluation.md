@@ -9,8 +9,9 @@ not include one, but it does not require the original training stream.
 Full training snapshots require the explicit trust setting described under
 [checkpoint compatibility](#checkpoint-compatibility).
 
-Standalone evaluation defaults to `device=cpu`. Append `device=cuda` to a run
-command when evaluating on a compatible GPU.
+The base `evaluate` config defaults to `device=cpu`. The `imagenet_linear_eval`
+config used below defaults to `device=cuda`. To run that example on CPU,
+replace `device=cuda` with `device=cpu`.
 
 ## Command line
 
