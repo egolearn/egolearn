@@ -1,12 +1,9 @@
 # egolearn
 
-Learning from first-person video streams: streaming self-supervised learning,
-continual learning and replay, temporal segmentation, multimodal learning,
-memory, and egocentric video question answering.
-
-egolearn reads egocentric video as a time-ordered stream, decides what to keep
-in bounded replay buffers, trains models from those buffers, and scores them
-with developmental and vision benchmarks while they train or afterwards.
+EgoLearn trains visual and image–text models from first-person video streams.
+Streaming runs retain observations in bounded replay memory, while offline runs
+use the complete selected dataset. You can evaluate saved models independently
+or schedule small benchmarks during training.
 
 ## Start here
 

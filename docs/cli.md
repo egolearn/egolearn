@@ -99,7 +99,8 @@ the catalog defaults. Fetch and prepare use the same `ROOT/<name>` collection
 layout; shape-bias source assets live separately under `ROOT/.sources/shape-bias`. Use `egl data prepare NAME --help` for each preparer's
 options; this help works in a base installation without training extras.
 Preparation still needs the dependencies and source assets documented
-in the [evaluation guide](evaluation.md). It does not bypass data access requirements.
+in the [benchmark selection guide](evaluation.md#benchmark-selection) and
+[SAYCam evaluation data guide](evaluation/data.md). It does not bypass data access requirements.
 
 Each preparer also runs directly as an installed Python module:
 
