@@ -8,6 +8,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- KrishnaCam IID configs support instance-only SimCLR and temporal-only classification with fixed labels and explicit update budgets.
+
 - BabyCL supports verified lossless video caches after fixed spatial preprocessing,
   retaining original replay references and decoding requested frames on demand.
 - PyAV supports optional NVDEC decoding, keeping intermediate frames on the GPU
