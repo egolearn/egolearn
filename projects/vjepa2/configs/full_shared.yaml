@@ -1,0 +1,24 @@
+# Budget is derived from a complete chronological clip pass, matched across modes.
+run_control:
+  batch_size: 32
+  advance_clips: 2
+  expected_frames: null
+  expected_clips: null
+  max_seconds: 165600  # 46 hours including startup; requeue into a NEW allocation
+  stop_after_steps: 0  # operational preflight cap; never shortens the schedule
+# Throughput controls; tune to the CPU allocation without changing the recipe.
+loader: {workers: 8, pin_memory: false, packed: false, cache_frames: 0, affinity: false}
+wandb:
+  run_name: vjepa2-full-${dataset}-${driver.mode}-seed${seed}
+solver:
+  schedule: {warmup_frac: 0.05, warmup_min_steps: 100, floor: 0.0, anchor: false}
+driver:
+  max_steps: null
+  batch:
+    n: ${run_control.batch_size}
+hooks:
+  log_every: 100
+  checkpoint_every: 0
+  snapshot_every: 5000
+  snapshot_each_epoch: true
+  snapshot_milestones: []

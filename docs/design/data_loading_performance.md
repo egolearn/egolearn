@@ -79,9 +79,11 @@ clip workload.
 | Cold / warm, IID SimCLR two views | 567 / 521 ms | 539 / 500 ms |
 | Cold / warm, 64 clips of 16 frames | 848 / 806 ms | 764 / 665 ms |
 
-The large startup difference reflects the frame-directory adapter's listing
-cache. Passing that cache to spawned workers can block the trainer while each
-child imports torch. A packed stream passes the store path and maps the index
+The measured startup difference came from the frame-directory adapter's listing
+cache. Passing that cache to spawned workers blocked the trainer while each
+child imported torch. Frame-directory workers now omit that cache during spawn
+and list each session when first accessed, so these measurements predate the
+current behavior. A packed stream passes the store path and maps the index
 inside each worker.
 
 The first squashfs batch also fetched directory metadata and data blocks

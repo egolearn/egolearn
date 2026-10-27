@@ -28,7 +28,7 @@ import torch
 from egolearn.core.context import Context
 from egolearn.core.refs import ItemRef
 from egolearn.data.loading import Loader
-from egolearn.data.sources.base import Observation
+from egolearn.data.sources.base import Observation, Session
 from egolearn.memory.labels import LabelStore
 
 
@@ -88,6 +88,10 @@ class EventBuilder:
         """Called when a new recording session starts.  State that carries
         over between sessions (e.g. keeping label ids continuous) is handled
         here."""
+
+    def begin_session(self, session: Session) -> None:
+        """Receive channel metadata; existing builders keep their sid-only hook."""
+        self.start_session(session.sid)
 
     def ingest(self, obs: Observation) -> None:
         raise NotImplementedError  # pragma: no cover

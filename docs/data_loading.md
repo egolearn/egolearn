@@ -25,7 +25,7 @@ uv run python -m egolearn.data.packed pack /path/to/saycam_5fps /path/to/saycam_
     --include "S_*" --workers 32
 ```
 
-The input directory contains one subdirectory per session, with session
+The input directory contains one flat subdirectory per session, with session
 selection and frame ordering following the `stream:saycam` adapter's rules.
 Choose options that match your source:
 
@@ -86,6 +86,11 @@ has changed, including newly populated sessions matching the build's selection.
 
 ### Using a store
 
+The packer and packed adapter do not accept `session_glob`, `natural_order`, or
+`strict_filenames`. The V-JEPA 2 presets use these frame-directory options and
+cannot be switched directly to a packed store. In particular, nested BabyView
+sessions and their natural order are not supported by the current packed format.
+
 Change the stream target and root in your existing training configuration:
 
 ```yaml
@@ -141,6 +146,9 @@ Set `loader.workers` to run frame and clip decoding and augmentation in worker
 processes. The default, `0`, loads in the trainer process. Choose a worker
 count within your job's CPU allocation and measure batch-loading time.
 The packing command's `--workers` option controls only store construction.
+
+Frame-directory workers omit the listing cache during spawn and list each
+session when first accessed. Keep source directories unchanged throughout a run.
 
 To overlap the next batch's preparation with training, enable
 `driver.prefetch`. It requires `loader.workers >= 1`. For packaged presets

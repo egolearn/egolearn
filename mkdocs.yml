@@ -19,6 +19,7 @@ watch:
   - SECURITY.md
   - projects/babycl/README.md
   - projects/storyboard/README.md
+  - projects/vjepa2/README.md
   - scripts/docs/hooks.py
 
 theme:
@@ -123,10 +124,13 @@ nav:
   - Methods:
     - BabyCL: projects/babycl.md
     - Memory Storyboard: projects/storyboard.md
+    - V-JEPA 2: projects/vjepa2.md
   - Design:
     - Architecture: design/architecture.md
     - Data-loading performance: design/data_loading_performance.md
     - Streaming design history: design/streaming.md
+    - V-JEPA 2: design/vjepa2.md
+    - V-JEPA 2 full runs: design/vjepa2-full.md
   - Project:
     - Roadmap: roadmap.md
     - Changelog: changelog.md

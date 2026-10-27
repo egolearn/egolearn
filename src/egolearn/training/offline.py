@@ -40,15 +40,16 @@ regenerated epoch order.
 
 from __future__ import annotations
 
-from typing import cast
+import math
 
 import torch
 
 from egolearn.core import keys as K
 from egolearn.core.context import Context
 from egolearn.data.batching.recipe import modality_for_unit
+from egolearn.data.index import index_stream
 from egolearn.data.loading import Loader
-from egolearn.data.sources.base import DenseFrameChannel, Stream
+from egolearn.data.sources.base import Stream
 from egolearn.data.text import VocabTokenizer
 from egolearn.model.losses.base import own_forward_slots
 from egolearn.run_record import recorded_fit
@@ -77,6 +78,8 @@ class OfflineDriver:
         max_steps: int | None = None,
         subsample: int = 1,
         hooks: list | None = None,
+        max_frame_gap: float | None = None,
+        expected_fps: float | None = None,
         grad_accumulation: int = 1,
         prefetch: bool = False,
         tokenizer: VocabTokenizer | None = None,
@@ -95,6 +98,13 @@ class OfflineDriver:
             raise ValueError("offline driver: `batch.views` must name at least one view")
         if epochs is None and max_steps is None:
             raise ValueError("offline driver: set `epochs` and/or `max_steps`")
+        for name, value in (("max_frame_gap", max_frame_gap), ("expected_fps", expected_fps)):
+            if value is not None and (not math.isfinite(value) or value <= 0):
+                raise ValueError(f"{name} must be positive and finite")
+        self.max_frame_gap = max_frame_gap
+        self.expected_fps = expected_fps
+        self.expected_index_digest: str | None = None
+        self.index_stats: dict[str, float | int | str] = {}
         self.stream = stream
         self.loader = loader
         self.model = model
@@ -141,24 +151,20 @@ class OfflineDriver:
         return f"{self.slot}(n={self.n}, views={self.views})"
 
     def _build_index(self):
-        """List every (subsampled) item ref up front, turning the stream into
-        the conventional 'dataset as a list' that IID training expects:
-        unit=frame lists dense-channel frames, unit=clip lists non-overlapping
-        clip windows."""
-        refs = []
-        span = (self.clip_len - 1) * self.clip_stride + 1
-        for session in self.stream.sessions():
-            for ch in session.channels.values():
-                if getattr(ch, "kind", None) != "dense":
-                    continue
-                dense = cast(DenseFrameChannel, ch)
-                if self.unit == "clip":
-                    for j, i0 in enumerate(range(0, len(dense) - span + 1, span)):
-                        if j % self.subsample == 0:
-                            refs.append(dense.interval_ref(i0, i0 + span))
-                else:
-                    for i in range(0, len(dense), self.subsample):
-                        refs.append(dense.ref_at(i))
+        refs, self.index_stats = index_stream(
+            self.stream,
+            unit=self.unit,
+            clip_len=self.clip_len,
+            clip_stride=self.clip_stride,
+            subsample=self.subsample,
+            max_frame_gap=self.max_frame_gap,
+            expected_fps=self.expected_fps,
+        )
+        if getattr(self, "expected_index_digest", None) is not None:
+            from egolearn.data.index import index_digest
+
+            if index_digest(refs) != self.expected_index_digest:
+                raise ValueError("dataset clip inventory changed after budgeting")
         return refs
 
     # ------------------------------------------------------------------
@@ -194,7 +200,7 @@ class OfflineDriver:
                 ("frame", r, 0, self.views, self.ctx.derive_seed(f"aug:{seq}:{self.slot}:{i}"))
                 for i, r in enumerate(refs)
             ]
-        views = torch.stack(self.loader.views_batch(work), dim=0)
+        views = self.loader.tensor_batch(work)
         slot = {
             K.SLOT_VIEWS: views,
             K.SLOT_MODALITY: modality_for_unit(self.unit),
@@ -279,41 +285,43 @@ class OfflineDriver:
             from concurrent.futures import ThreadPoolExecutor
 
             executor = ThreadPoolExecutor(max_workers=1)
-        while self.ctx.clock.step < planned:
-            # per-epoch DERIVED shuffle: the order for epoch e depends only on
-            # (seed, e), so a resumed run regenerates it exactly and continues
-            # from step % batches_per_epoch
-            epoch = self.ctx.clock.step // batches_per_epoch
-            order = list(range(len(refs)))
-            # fresh_rng, not rng: the cached generator would be restored
-            # already-consumed on resume and shuffle a different order
-            self.ctx.fresh_rng(f"offline.shuffle.epoch{epoch}").shuffle(order)
-            pending = None  # (future, seq): the next batch, composing ahead
-            for b in range(self.ctx.clock.step % batches_per_epoch, batches_per_epoch):
-                if self.ctx.clock.step >= planned:
-                    break
-                if pending is not None:
-                    fut, seq = pending
-                    pending = None
-                    with self.timer.measure("batch.compose"):
-                        batch = fut.result()
-                    # committed only now that the batch is handed to training,
-                    # so a snapshot taken mid-flight stays consistent
-                    self.ctx.clock.compose_seq = seq + 1
-                else:
-                    with self.timer.measure("batch.compose"):
-                        batch = self._compose(self._pick(refs, order, b))
-                if (
-                    executor is not None
-                    and b + 1 < batches_per_epoch
-                    and self.ctx.clock.step + 1 < planned
-                ):
-                    seq = self.ctx.clock.compose_seq
-                    nxt = self._pick(refs, order, b + 1)
-                    pending = (executor.submit(self._compose, nxt, seq), seq)
-                self._train_step(batch)
-        if executor is not None:
-            executor.shutdown(wait=True)
+        try:
+            while self.ctx.clock.step < planned:
+                # per-epoch DERIVED shuffle: the order for epoch e depends only on
+                # (seed, e), so a resumed run regenerates it exactly and continues
+                # from step % batches_per_epoch
+                epoch = self.ctx.clock.step // batches_per_epoch
+                order = list(range(len(refs)))
+                # fresh_rng, not rng: the cached generator would be restored
+                # already-consumed on resume and shuffle a different order
+                self.ctx.fresh_rng(f"offline.shuffle.epoch{epoch}").shuffle(order)
+                pending = None  # (future, seq): the next batch, composing ahead
+                for b in range(self.ctx.clock.step % batches_per_epoch, batches_per_epoch):
+                    if self.ctx.clock.step >= planned:
+                        break
+                    if pending is not None:
+                        fut, seq = pending
+                        pending = None
+                        with self.timer.measure("batch.compose"):
+                            batch = fut.result()
+                        # committed only now that the batch is handed to training,
+                        # so a snapshot taken mid-flight stays consistent
+                        self.ctx.clock.compose_seq = seq + 1
+                    else:
+                        with self.timer.measure("batch.compose"):
+                            batch = self._compose(self._pick(refs, order, b))
+                    if (
+                        executor is not None
+                        and b + 1 < batches_per_epoch
+                        and self.ctx.clock.step + 1 < planned
+                    ):
+                        seq = self.ctx.clock.compose_seq
+                        nxt = self._pick(refs, order, b + 1)
+                        pending = (executor.submit(self._compose, nxt, seq), seq)
+                    self._train_step(batch)
+        finally:
+            if executor is not None:
+                executor.shutdown(wait=True)
         if self.grad_accumulation > 1 and self.ctx.clock.step % self.grad_accumulation != 0:
             # apply the tail of an unfinished accumulation window
             if self.schedule is not None:

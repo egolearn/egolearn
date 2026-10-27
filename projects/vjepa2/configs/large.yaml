@@ -1,0 +1,9 @@
+# Reference ViT-L dimensions only; training budget remains the small-run recipe.
+defaults: [saycam, _self_]
+hydra:
+  searchpath: [pkg://egolearn.configs]
+model:
+  encoders:
+    video: {dim: 1024, depth: 24, heads: 16}
+  predictors:
+    pred: {dim: 384, depth: 12, heads: 12}

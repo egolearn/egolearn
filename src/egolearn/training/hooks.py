@@ -200,3 +200,95 @@ class WandbHook(Hook):
     def on_end(self, driver):
         if self._run is not None:
             self._run.finish()
+
+
+class MetricsHook(Hook):
+    """Local JSONL and shared logs with synchronized interval throughput.
+
+    Runs before W&B/record hooks. The first interval includes index/worker startup;
+    later rates include loading, optimization, and intervening checkpoint overhead.
+    Diagnostics are logging values, never additional optimization loss terms.
+    """
+
+    def __init__(self, run_dir: str, every: int = 50):
+        import time
+        from pathlib import Path
+
+        self.path = Path(run_dir) / "metrics.jsonl"
+        self.every = max(1, int(every))
+        self.started = self.previous = time.perf_counter()
+        self.clips = self.frames = 0
+        self.elapsed_offset = 0.0
+        self._prepared = False
+
+    def _prepare_history(self, next_step: int) -> None:
+        """Keep a canonical curve across resume; archive any abandoned tail."""
+        import json
+        import uuid
+
+        self._prepared = True
+        if not self.path.exists():
+            return
+        original = self.path.read_text()
+        lines = original.splitlines()
+        retained = []
+        for i, line in enumerate(lines):
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                if i != len(lines) - 1:
+                    raise
+                continue  # a crash can interrupt the final append
+            if row["step"] < next_step:
+                retained.append(row)
+        if retained:
+            self.elapsed_offset = float(retained[-1]["elapsed_s"])
+        if len(retained) != len(lines) or (original and not original.endswith("\n")):
+            archive = self.path.with_name(f"metrics-abandoned-{uuid.uuid4().hex}.jsonl")
+            archive.write_text(original)
+            temporary = self.path.with_suffix(".jsonl.tmp")
+            temporary.write_text(
+                "".join(json.dumps(row, allow_nan=False) + "\n" for row in retained)
+            )
+            os.replace(temporary, self.path)
+
+    def on_step(self, driver, logs):
+        import json
+        import math
+        import time
+
+        if not self._prepared:
+            self._prepare_history(driver.ctx.clock.step)
+        # This hook is optional and supports the shared offline frame/clip driver.
+        n = getattr(driver, "n", 0)
+        frames = getattr(driver, "clip_len", 1) if getattr(driver, "unit", "frame") == "clip" else 1
+        if hasattr(driver, "last_batch_counts"):
+            self.clips += driver.last_batch_counts["clips"]
+            self.frames += driver.last_batch_counts["frames"]
+        else:
+            self.clips += n
+            self.frames += n * frames
+        step = driver.ctx.clock.step
+        if step != 1 and step % self.every:
+            return
+        if driver.ctx.device.type == "cuda":
+            torch.cuda.synchronize(driver.ctx.device)
+        now = time.perf_counter()
+        seconds = max(now - self.previous, 1e-9)
+        logs.update(
+            {
+                "elapsed_s": self.elapsed_offset + now - self.started,
+                "clips_per_s": self.clips / seconds,
+                "frames_per_s": self.frames / seconds,
+                "lr": float(driver.optimizer.param_groups[0]["lr"]),
+            }
+        )
+        for loss in driver.losses:
+            for name, value in getattr(loss, "diagnostics", {}).items():
+                logs[f"{loss.name}/{name}"] = float(value)
+        if not all(math.isfinite(value) for value in logs.values()):
+            raise ValueError("nonfinite training metric")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("a") as file:
+            file.write(json.dumps({"step": step, **logs}, allow_nan=False) + "\n")
+        self.previous, self.clips, self.frames = now, 0, 0

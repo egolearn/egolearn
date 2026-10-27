@@ -9,6 +9,18 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- V-JEPA 2 provides pretraining components, matched IID and chronological streaming
+  recipes, resumable runs, collapse diagnostics, throughput logs, and IntPhys evaluation.
+- V-JEPA 2 evaluates static clips with existing Labeled-S, BabyView, and shape-bias
+  scorers, recording the encoder and temporal input protocol.
+- V-JEPA 2 runs support verified checkpoint migration to a new runtime, opt-in
+  Slurm continuation, and preflight reporting of complete static source clips.
+- The group supervisor coordinates checkpoint pauses and failures for independent
+  V-JEPA 2 runs sharing an allocation.
+- The loader supports optional packed and pinned batches, bounded decoded-frame
+  caching, and stable worker assignment for replayed clips.
+- Frame-directory streams support opt-in strict filenames, nested recording
+  discovery, and gap-aware offline clip indexing.
 - EgoLearn provides configurable streaming and offline training with replay memory,
   composable models and losses, evaluation hooks, snapshots, and stage timing.
 - BabyCL and Memory Storyboard provide method implementations and reproduction
