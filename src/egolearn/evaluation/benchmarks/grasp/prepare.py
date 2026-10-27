@@ -5,8 +5,10 @@ video and ``level2/IP_<Test>/<n>.mp4`` its implausible twin, rendered from
 the same seed (the generator seeds each video with its index).  This walks
 those folders, pairs twins by file name, hashes every video, and records
 whether each pair opens on an identical first frame -- the evidence that the
-index pairing is a matched pair and not two unrelated renders.  The output
-is never overwritten.  docs/evaluation/grasp.md documents the download.
+index pairing is a matched pair and not two unrelated renders.  A video whose
+container reports no frame count is an error, because the scorer samples
+frames by that count.  The output is never overwritten.
+docs/evaluation/grasp.md documents the download.
 """
 
 from __future__ import annotations
@@ -94,6 +96,11 @@ def build_manifest(level_dir: Path, *, log=None) -> dict:
             starts = []
             for rel in (possible, impossible):
                 digest, frames = first_frame(level_dir / rel)
+                if not frames:
+                    raise ValueError(
+                        f"{rel}: the container reports no frame count, which the scorer "
+                        "needs to sample frames; re-mux the video (e.g. to MP4)"
+                    )
                 videos[rel] = {"sha256": sha256_file(level_dir / rel), "frames": frames}
                 starts.append(digest)
             pairs.append(
@@ -139,11 +146,9 @@ def main() -> None:
         parser.error(str(error))
     pairs = manifest["pairs"]
     mismatched = sum(not pair["first_frame_match"] for pair in pairs)
-    uncounted = sum(video["frames"] == 0 for video in manifest["videos"].values())
     print(
         f"Wrote {len(pairs)} pairs over {len(manifest['tests'])} tests to {args.output}; "
-        f"{mismatched} pairs differ on their first frame, "
-        f"{uncounted} videos report no frame count."
+        f"{mismatched} pairs differ on their first frame."
     )
 
 

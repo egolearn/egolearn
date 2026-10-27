@@ -140,6 +140,15 @@ def test_prepare_rejects_unknown_tests_missing_twins_and_name_mismatches(tmp_pat
         prepare.discover_pairs(tmp_path)
 
 
+def test_prepare_rejects_videos_without_a_frame_count(tmp_path):
+    level = _level2(tmp_path)
+    for kind in ("P", "IP"):  # Matroska stores no frame count
+        (level / f"{kind}_Gravity/000.mp4").unlink()
+        _write_video(level / f"{kind}_Gravity/000.mkv", [128] * 8)
+    with pytest.raises(ValueError, match=r"P_Gravity/000\.mkv: the container reports no frame"):
+        prepare.build_manifest(level)
+
+
 def test_prepare_main_writes_the_manifest_once(tmp_path, monkeypatch, capsys):
     level = _level2(tmp_path)
     output = tmp_path / "out/manifest.json"
@@ -228,6 +237,12 @@ def test_probe_filters_tests_and_guards_the_videos(tmp_path):
     probe_for(tests=["Gravity"]).prepare()  # existence only by default
     with pytest.raises(ValueError, match="1 of 4 GRASP videos differ"):
         probe_for(tests=["Gravity"], verify_videos=True).prepare()
+
+    doc = json.loads(manifest.read_text())
+    doc["videos"]["IP_Gravity/001.mp4"]["frames"] = 0
+    manifest.write_text(json.dumps(doc))
+    with pytest.raises(ValueError, match="1 of 4 GRASP videos report no frame count"):
+        probe_for(tests=["Gravity"]).prepare()
 
     other = tmp_path / "other.json"
     other.write_text(json.dumps({"benchmark": "intphys2"}))

@@ -71,7 +71,8 @@ The manifest lists the 16 tests with their concepts, the 2,048 pairs, and every
 video's SHA-256 and frame count. It holds no pixels. The command prints the
 pairs per test and the number of first-frame mismatches, and it never overwrites
 an existing output. An unexpected `P_<Test>` folder name, a missing `IP_` twin
-folder, or differing file names between twins are errors; check the unpacked
+folder, differing file names between twins, or a video whose container reports
+no frame count (the scorer samples frames by it) are errors; check the unpacked
 tree against the table above.
 
 ## Scoring contract

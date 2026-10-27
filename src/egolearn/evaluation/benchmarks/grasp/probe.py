@@ -83,6 +83,12 @@ class GRASPProbe(VoEProbe):
                 f"{len(missing)} of {len(paths)} GRASP videos are missing under {root}, "
                 f"e.g. {missing[:3]}"
             )
+        uncounted = [rel for rel in paths if not doc["videos"][rel]["frames"]]
+        if uncounted:
+            raise ValueError(
+                f"{len(uncounted)} of {len(paths)} GRASP videos report no frame count in the "
+                f"manifest and cannot be scored, e.g. {uncounted[:3]}"
+            )
         if self.verify_videos:
             altered = [
                 rel for rel in paths if sha256_file(root / rel) != doc["videos"][rel]["sha256"]
