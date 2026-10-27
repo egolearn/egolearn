@@ -59,8 +59,8 @@ records, for every pair, whether the two videos open on an identical first
 frame, and the probe reports the count of mismatches as `first_frame_mismatches`
 in its metadata. Treat a non-zero count as a reason to look at the data.
 
-Build the pair manifest once after unpacking (needs the `video` extra for
-PyAV):
+Build the pair manifest once after unpacking (needs the `train` extra:
+`uv sync --extra train`):
 
 ```bash
 egl data prepare grasp --data_root /datasets/grasp/level2 \
