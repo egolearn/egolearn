@@ -240,6 +240,16 @@ run's date and time (or your explicit `hydra.run.dir`). For a trusted full
 snapshot, also pass `trusted_snapshot=true`.
 The packaged ImageNet config exposes its protocol settings under `benchmarks.0`,
 for example `benchmarks.0.encoder=image` or `benchmarks.0.batch_size=256`.
+
+Set `benchmarks.0.prefetch_factor=1` to reduce queued batches without changing
+the batch size, sample order, or augmented inputs. The default is two batches
+per worker, and the setting has no effect when `workers=0`. This limits queued
+batches, not the total memory used by workers and the model.
+Set `benchmarks.0.persistent_workers=false` to release loader workers between
+passes, including the transition from classifier training to validation.
+The default is `true`, which keeps workers alive for reuse. Both settings
+preserve the per-image augmentation seeds.
+
 `shape_bias_eval` and `spatial_relations_eval` evaluate shape bias and the spatial
 monitoring subsets on hosted data, so they need only `checkpoint=` (see
 [Hub artifacts](#hub-artifacts-and-access-tiers)).

@@ -449,7 +449,14 @@ def test_imagenet_is_lazy_reuses_split_and_matches_shared_probe(
 
     monkeypatch.setattr(imagenet, "build_split", counted)
     settings: dict = dict(
-        name="imagenet", expected_classes=2, size=16, workers=0, batch_size=4, epochs=2
+        name="imagenet",
+        expected_classes=2,
+        size=16,
+        workers=0,
+        batch_size=4,
+        epochs=2,
+        prefetch_factor=1,
+        persistent_workers=False,
     )
     benchmark = imagenet.ImageNetLinearBenchmark(data_root=str(imagefolder), **settings)
     assert calls == []
@@ -468,6 +475,8 @@ def test_imagenet_is_lazy_reuses_split_and_matches_shared_probe(
         "split_sha256": benchmark.split.metadata()["split_sha256"],
     }
     assert first.configs["imagenet"]["view"] == "imagenet_center_crop"
+    assert first.configs["imagenet"]["prefetch_factor"] == 1
+    assert first.configs["imagenet"]["persistent_workers"] is False
     assert first.configs["imagenet"]["data_root"] == imagefolder.name
     assert str(imagefolder.parent) not in json.dumps(first.to_dict())
 

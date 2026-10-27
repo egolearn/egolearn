@@ -224,10 +224,16 @@ class LinearSGDEvaluator:
         l2_normalize: bool = True,
         seed: int = 0,
         view: str = "imagenet_center_crop",
+        prefetch_factor: int = 2,
+        persistent_workers: bool = True,
     ):
         self.name = name
         if size <= 0 or batch_size <= 0 or epochs <= 0:
             raise ValueError("linear SGD size, batch_size, and epochs must be positive")
+        if type(prefetch_factor) is not int or prefetch_factor < 1:
+            raise ValueError("linear SGD prefetch_factor must be a positive integer")
+        if not isinstance(persistent_workers, bool):
+            raise ValueError("linear SGD persistent_workers must be a boolean")
         if workers < 0:
             raise ValueError("linear SGD workers must be >= 0")
         if lr < 0.0 or weight_decay < 0.0:
@@ -244,6 +250,8 @@ class LinearSGDEvaluator:
         self.transform = VIEWS.get(view)(size=self.size)
         self.batch_size = int(batch_size)
         self.workers = int(workers)
+        self.prefetch_factor = prefetch_factor
+        self.persistent_workers = persistent_workers
         self.epochs = int(epochs)
         self.lr = float(lr)
         self.momentum = float(momentum)
@@ -263,6 +271,8 @@ class LinearSGDEvaluator:
                 "view",
                 "batch_size",
                 "workers",
+                "prefetch_factor",
+                "persistent_workers",
                 "epochs",
                 "lr",
                 "momentum",
@@ -305,7 +315,8 @@ class LinearSGDEvaluator:
             batch_size=self.batch_size,
             sampler=sampler,
             num_workers=self.workers,
-            persistent_workers=self.workers > 0,
+            prefetch_factor=self.prefetch_factor if self.workers > 0 else None,
+            persistent_workers=self.persistent_workers and self.workers > 0,
             pin_memory=device.type == "cuda",
             generator=worker_generator,
             multiprocessing_context="spawn" if self.workers > 0 else None,

@@ -8,6 +8,8 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- Linear SGD evaluation exposes batch prefetching and worker persistence to reduce memory use without changing sampled inputs.
+
 - KrishnaCam IID configs support instance-only SimCLR and temporal-only classification with fixed labels and explicit update budgets.
 
 - BabyCL supports verified lossless video caches after fixed spatial preprocessing,

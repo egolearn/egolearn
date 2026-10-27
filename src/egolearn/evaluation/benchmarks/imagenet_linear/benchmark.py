@@ -73,6 +73,8 @@ class ImageNetLinearBenchmark(Benchmark):
         l2_normalize: bool = True,
         seed: int = 0,
         view: str = "imagenet_center_crop",
+        prefetch_factor: int = 2,
+        persistent_workers: bool = True,
     ):
         self.name = name
         self.data_root = data_root
@@ -86,6 +88,8 @@ class ImageNetLinearBenchmark(Benchmark):
             size=size,
             batch_size=batch_size,
             workers=workers,
+            prefetch_factor=prefetch_factor,
+            persistent_workers=persistent_workers,
             epochs=epochs,
             lr=lr,
             momentum=momentum,
