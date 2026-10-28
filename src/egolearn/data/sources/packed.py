@@ -33,6 +33,7 @@ class PackedFrameStream(SaycamStream):
         naming: str | None = None,
         sessions: list[str] | None = None,
         include: str | None = None,
+        transcript_first: bool = False,
     ):
         """`root_dir` is a packed store directory; `fps` and the frame naming
         scheme come from its manifest, and a config that still carries them
@@ -56,6 +57,7 @@ class PackedFrameStream(SaycamStream):
             naming=self.store.naming,
             sessions=sessions,
             include=include,
+            transcript_first=transcript_first,
         )
 
     # ---- session enumeration (manifest order, not a directory scan) -------

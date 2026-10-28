@@ -1,7 +1,8 @@
 """Save and resume training snapshots.
 
 A snapshot captures everything a run needs to continue -- model, optimizer,
-clocks/RNG states, memory tables, label stores, and the LR-schedule anchor.
+clocks/RNG states, memory tables, label stores, the LR-schedule anchor, and the
+float16 loss scaler when `driver.amp` uses one.
 `load_snapshot` restores all of it AND prepares the driver (the object that
 runs the training loop) to continue:
 
@@ -75,6 +76,10 @@ def save_snapshot(path: str, driver) -> str:
         "schedule": (
             driver.schedule.state_dict() if getattr(driver, "schedule", None) is not None else None
         ),
+        # float16 amp: the loss scale and its growth counter
+        "grad_scaler": (
+            driver.scaler.state_dict() if getattr(driver, "scaler", None) is not None else None
+        ),
     }
     torch.save(state, path + ".tmp")
     os.replace(path + ".tmp", path)
@@ -127,6 +132,8 @@ def load_snapshot(path: str, driver) -> None:
     driver.optimizer.load_state_dict(state["optimizer"])
     if state.get("schedule") is not None and getattr(driver, "schedule", None) is not None:
         driver.schedule.load_state_dict(state["schedule"])
+    if state.get("grad_scaler") is not None and getattr(driver, "scaler", None) is not None:
+        driver.scaler.load_state_dict(state["grad_scaler"])
 
     # Order matters: clock first (the replay below needs to know how far to
     # go), RNG states LAST.  The replay re-runs admission from the start of

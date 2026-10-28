@@ -73,11 +73,17 @@ class SaycamStream(S.Stream):
         session_glob: str = "*",
         natural_order: bool = False,
         strict_filenames: bool = False,
+        transcript_first: bool = False,
     ):
         """`include` is an fnmatch pattern on session directory names (for
         example "S_*" selects the SAYCam S child when root_dir holds all
         three children).  If `sessions` (an explicit list) is given, it wins
-        over both `include` and the default sorted directory scan."""
+        over both `include` and the default sorted directory scan.
+
+        By default a frame surfaces before an utterance ending at the same
+        instant.  `transcript_first` reverses that tie, so the utterance is
+        already visible when its last frame arrives -- BabyCL's original
+        feeder did this (an utterance counts as seen at `max(ts) <= t`)."""
         self.root = Path(root_dir)
         self.fps = float(fps)
         if not math.isfinite(self.fps) or self.fps <= 0:
@@ -87,6 +93,7 @@ class SaycamStream(S.Stream):
         self.fps_source = (
             "declared_frame_index_fps" if naming == "frame_index" else "filename_timestamps"
         )
+        self.transcript_first = bool(transcript_first)
         self._session_ids = sessions  # explicit ordering wins; else sorted scan
         self._include = include
         self._session_glob = session_glob
@@ -187,7 +194,12 @@ class SaycamStream(S.Stream):
             channels: dict[str, S.Channel] = {"video": video}
             utts = self._utts_by_stem.get(self._stem(sid), [])
             if utts:
-                channels["transcript"] = S.SparseIntervalChannel("transcript", sid, utts)
+                transcript = S.SparseIntervalChannel("transcript", sid, utts)
+                # declaration order breaks equal-time ties (Session.observations)
+                if self.transcript_first:
+                    channels = {"transcript": transcript, "video": video}
+                else:
+                    channels["transcript"] = transcript
             yield S.Session(sid, channels)
 
     def total_observations(self) -> int | None:
@@ -241,6 +253,7 @@ class BabyViewStream(SaycamStream):
         session_glob: str = "*",
         natural_order: bool = False,
         strict_filenames: bool = False,
+        transcript_first: bool = False,
     ):
         super().__init__(
             root_dir,
@@ -252,4 +265,5 @@ class BabyViewStream(SaycamStream):
             session_glob=session_glob,
             natural_order=natural_order,
             strict_filenames=strict_filenames,
+            transcript_first=transcript_first,
         )
