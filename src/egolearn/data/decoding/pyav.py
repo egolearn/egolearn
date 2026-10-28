@@ -161,7 +161,8 @@ class PyAVDecoder(VideoDecoder):
         raise IndexError(f"video ended before frame {index}: {path}")
 
     def read_frame(self, path: str, index: int) -> Image.Image:
-        return self._read(path, index)
+        # Views may mutate images; keep the handle's cached pixels private.
+        return self._read(path, index).copy()
 
     def read_window(
         self, path: str, i0: int, i1: int, indices: list[int] | None = None
@@ -173,14 +174,14 @@ class PyAVDecoder(VideoDecoder):
         if any(not 0 <= i < i1 - i0 for i in picks):
             raise IndexError(f"frame indices outside window [{i0}, {i1})")
         decoded = {i: self._read(path, i0 + i) for i in sorted(set(picks))}
-        return [decoded[i] for i in picks]
+        return [decoded[i].copy() for i in picks]
 
     def iter_frames(self, path: str, start_index: int = 0) -> Iterator:
         _, count = self.probe(path)
         if not 0 <= start_index <= count:
             raise IndexError(f"invalid start frame {start_index}")
         for index in range(start_index, count):
-            yield index, self._read(path, index)
+            yield index, self._read(path, index).copy()
 
     def close(self) -> None:
         for handle in self._handles.values():

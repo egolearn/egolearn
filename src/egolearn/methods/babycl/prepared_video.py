@@ -7,6 +7,7 @@ import fcntl
 import hashlib
 import json
 import time
+from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from fractions import Fraction
 from pathlib import Path
@@ -227,11 +228,26 @@ class PreparedVideoDecoder(PyAVDecoder):
             ):
                 raise ValueError(f"view {alias!r} is incompatible with the prepared video cache")
 
+    def validate_paths(self, paths: Iterable[str]) -> None:
+        """Require a prepared video and verification record for every selected source."""
+        missing = []
+        for path in paths:
+            name = Path(path).resolve().relative_to(self.source_root)
+            output = self.prepared_root / name
+            if not output.is_file() or not output.with_name(output.name + ".json").is_file():
+                missing.append(str(name))
+        if missing:
+            raise ValueError(
+                f"prepared video cache is missing sessions: {', '.join(missing)}; "
+                "prepare these recordings or restrict stream.sessions to the prepared subset"
+            )
+
     def _open(self, path: str, *, metadata_only: bool = False):
         source = Path(path).resolve()
         name = source.relative_to(self.source_root)
         output = self.prepared_root / name
         if path not in self._validated:
+            self.validate_paths([path])
             record = json.loads(output.with_name(output.name + ".json").read_text())
             if (
                 record["recipe"] != self.recipe

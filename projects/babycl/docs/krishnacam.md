@@ -143,14 +143,24 @@ skips verified files whose source and output fingerprints are unchanged.
 
 Measure disk usage and GPU training throughput before preparing the full dataset.
 Lossless RGB videos can exceed the originals' size despite their smaller dimensions.
-Add `--prepared-root "$KRISHNACAM_PREPARED" --seek-gap 8` to the loading benchmark
-to reuse its original frame requests and seeds. The selected recordings must all
-have prepared counterparts.
+Add `--prepared-root "$KRISHNACAM_PREPARED" --seek-gap 8` to the loading benchmark.
+The selected recordings must all have prepared counterparts. For a partial cache, also pass
+`--session-files recording_a.mp4 recording_b.mp4` to restrict the loading benchmark
+to the recordings you prepared. Use the same session list and sampling arguments
+for raw and prepared comparisons, and confirm that their `workload_sha256` values match.
 
 For GPU training, use `projects/babycl/configs/krishnacam_prepared.yaml`. It keeps
 the original stream root and redirects decoding to the cache, so replay snapshots
 retain valid original paths. This config uses 32 loader processes; set
-`loader.workers` explicitly when comparing pool sizes. To compare against the short pilot, override
+`loader.workers` explicitly when comparing pool sizes.
+
+For a partial cache, pass
+`--override 'stream.sessions=[recording_a.mp4,recording_b.mp4]'` to the full-pipeline
+benchmark, or `'stream.sessions=[recording_a.mp4,recording_b.mp4]'` to `egl train`.
+List the prepared recordings in chronological order. The loader rejects missing
+prepared files before training, including when a metadata manifest is supplied.
+
+To compare against the short pilot, override
 `memories.segments.tiers.short.capacity=4` and
 `memories.segments.tiers.long.capacity=16` in the full-pipeline benchmark. Add
 `--gpu-log /path/to/gpu.csv` to collect one-second GPU samples with training steps;

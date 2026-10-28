@@ -119,6 +119,10 @@ patch releases for fixes during 0.x development.
 
 - Temporal IID training validates empty recordings and rejects snapshot resumes
   when the temporal-label manifest changes or its saved identity is unavailable.
+- Prepared-video loading checks cache coverage before training, and video benchmarks
+  accept explicit session lists for partial caches.
+- PyAV frame reads isolate returned images, preserving repeated requests and cached
+  pixels when views mutate their inputs.
 - Evaluation preserves completed benchmark results and provenance when a later
   benchmark fails, and rejects nonfinite metrics.
 - Evaluation restores model modes, gradient flags, and RNG states, including MPS,
