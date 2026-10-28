@@ -1,0 +1,56 @@
+# The BabyCL paper's end-of-training evaluations, each with the original's
+# protocol (mcl scripts/end_of_training/eval_ckpt_all.SBATCH plus the in-training
+# Labeled-S 4AFC).  Run on a trained checkpoint:
+#
+#   egl eval projects/babycl/configs/paper_evals.yaml checkpoint=$RUN_DIR/final.pth
+#
+# Data locations come from the environment, never this file:
+#   LABELED_S_MANIFEST       Labeled-S 4AFC trials (prepare_labeled_s_4afc)
+#   BABYCL_VOCAB             the training vocab.json
+#   LABELED_S_ROOT           Labeled-S ImageFolder root (26 category dirs)
+#   MINI_IMAGENET_ROOT       mini-ImageNet root with train/ and val/
+#   VTWT_CSV                 VTWT items (vtwt.csv)
+#   SAYCAM_TRANSCRIPT_FRAMES frames VTWT and Baby Winoground images live under
+#   BABY_WINOGROUND_CSV      Baby Winoground items
+#   BABY_WINOGROUND_NEG_DIR  Baby Winoground edited (negative-context) images
+#   BABYVIEW_4AFC_MANIFEST   BabyView 4AFC trials (babyview_4afc.prepare)
+#   BABYVIEW_LINEAR_MANIFEST BabyView 72-way split (babyview_4afc.prepare)
+defaults: [/evaluate, _self_]
+hydra:
+  searchpath: [pkg://egolearn.configs]
+_imports_:
+  - egolearn.methods.babycl
+  - egolearn.evaluation.benchmarks.labeled_s_4afc
+  - egolearn.evaluation.benchmarks.labeled_s_linear
+  - egolearn.evaluation.benchmarks.mini_imagenet_linear
+  - egolearn.evaluation.benchmarks.vtwt
+  - egolearn.evaluation.benchmarks.baby_winoground
+  - egolearn.evaluation.benchmarks.babyview_4afc
+device: cuda
+seed: 0
+checkpoint: ???
+benchmarks:
+  # in-training evaluator: squash resize to 224 (the crops are 224 already)
+  - {_target_: "probe:four_afc", name: labeled_s_4afc,
+     manifest: "${oc.env:LABELED_S_MANIFEST}", vocab_json: "${oc.env:BABYCL_VOCAB}",
+     vision_head: embed512, view: resize, size: 224}
+  # every image, per-category 80/20 (seed 42), unit-length 512-d embeddings, C=0.316
+  - {_target_: "probe:labeled_s_stratified_linear", name: labeled_s_linear,
+     data_root: "${oc.env:LABELED_S_ROOT}", head: embed512}
+  - {_target_: "probe:mini_imagenet_linear", name: mini_imagenet_linear,
+     data_root: "${oc.env:MINI_IMAGENET_ROOT}", head: embed512}
+  - {_target_: "probe:vtwt", name: vtwt,
+     csv_path: "${oc.env:VTWT_CSV}", image_dir: "${oc.env:SAYCAM_TRANSCRIPT_FRAMES}",
+     vocab_json: "${oc.env:BABYCL_VOCAB}", vision_head: embed512, image_norm: imagenet}
+  - {_target_: "probe:baby_winoground", name: baby_winoground,
+     csv_path: "${oc.env:BABY_WINOGROUND_CSV}",
+     pos_dir: "${oc.env:SAYCAM_TRANSCRIPT_FRAMES}",
+     neg_dir: "${oc.env:BABY_WINOGROUND_NEG_DIR}",
+     vocab_json: "${oc.env:BABYCL_VOCAB}", vision_head: embed512, image_norm: imagenet}
+  # --transform crop --norm imagenet
+  - {_target_: "probe:four_afc", name: babyview_4afc,
+     manifest: "${oc.env:BABYVIEW_4AFC_MANIFEST}", vocab_json: "${oc.env:BABYCL_VOCAB}",
+     vision_head: embed512, view: center_crop, size: 224}
+  # --feature_tap 2048: pooled backbone, standardized, L-BFGS l2=1e-3
+  - {_target_: "probe:linear", name: babyview_linear,
+     manifest: "${oc.env:BABYVIEW_LINEAR_MANIFEST}", view: center_crop, size: 224}

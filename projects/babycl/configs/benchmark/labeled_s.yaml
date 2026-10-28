@@ -1,6 +1,7 @@
 # @package _global_
 # BabyCL release-gate measurements, selected with +benchmark=labeled_s.
-# The canonical 26-class linear split differs from the paper's 24-class protocol.
+# The canonical 26-class linear split differs from the paper's protocol (every
+# image, per-category 80/20); paper_evals.yaml runs that one.
 _imports_:
   - egolearn.methods.babycl
   - egolearn.evaluation.benchmarks.labeled_s_4afc

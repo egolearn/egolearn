@@ -1,7 +1,26 @@
 # Streaming BabyCL defaults; shared components also serve the offline variant.
+#
+# The original (mcl ms_train.py --online) fixed its run length before training:
+# steps_needed = 3321 offline-storyboard segments x 8 repeats = 26568 steps, the
+# LR schedule indexed by that count (warmup max(100, 2%) steps, cosine to 0).
+# At that budget it had pushed 3751 segments (incl. the 406 of buffer warmup)
+# and seen about 73% of SAYCam-S; the rest of the stream never trained.  The
+# cap and the step-indexed schedule below reproduce that.  Drop both
+# (driver.max_steps=null solver.schedule.total_steps=null) to train on the whole
+# stream with the progress-driven schedule instead.
 defaults:
   - saycam_shared
   - _self_
 
 hydra:
   searchpath: [pkg://egolearn.configs]
+
+solver:
+  # total_steps equals driver.max_steps; change them together
+  schedule: {warmup_frac: 0.02, warmup_min_steps: 100, floor: 0.0, total_steps: 26568}
+
+driver:
+  max_steps: 26568
+  # the original's --amp: segment forwards and their losses in float16 with a
+  # loss scaler; the cross-modal branch was forced to float32
+  amp: {dtype: float16, fp32_slots: [pairs]}
