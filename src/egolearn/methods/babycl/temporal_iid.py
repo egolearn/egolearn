@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import bisect
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -23,7 +24,11 @@ class TemporalFrameDriver(OfflineDriver):
         super().__init__(**kwargs)
         if not isinstance(self.stream, VideoStream) or self.unit != "frame":
             raise ValueError("temporal IID requires VideoStream and unit=frame")
-        document = json.loads(Path(temporal_manifest).read_text())
+        manifest_bytes = Path(temporal_manifest).read_bytes()
+        document = json.loads(manifest_bytes)
+        self.snapshot_metadata = {
+            "temporal_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest()
+        }
         if document.get("format_version") != 1:
             raise ValueError("unsupported temporal manifest format_version")
         if document.get("num_classes") != num_classes or num_classes < 1:
@@ -36,7 +41,7 @@ class TemporalFrameDriver(OfflineDriver):
         for sid, entry in self.temporal_sessions.items():
             count = entry["num_frames"]
             fps = entry["fps"]
-            if type(count) is not int or count < 1 or not math.isfinite(fps) or fps <= 0:
+            if type(count) is not int or count < 0 or not math.isfinite(fps) or fps <= 0:
                 raise ValueError(f"invalid temporal metadata for {sid}")
             previous = 0
             ends, labels = [], []
@@ -60,7 +65,9 @@ class TemporalFrameDriver(OfflineDriver):
 
     def _build_index(self):
         refs: list[ItemRef] = []
+        visited = set()
         for session in self.stream.sessions():
+            visited.add(session.sid)
             channel = session.channels["video"]
             if not isinstance(channel, DenseFrameChannel):
                 raise ValueError("temporal IID requires a dense video channel")
@@ -71,7 +78,23 @@ class TemporalFrameDriver(OfflineDriver):
             ):
                 raise ValueError(f"temporal metadata disagrees with video {session.sid}")
             refs.extend(channel.ref_at(i) for i in range(0, len(channel), self.subsample))
+        for sid in self.temporal_sessions.keys() - visited:
+            if self.temporal_sessions[sid]["num_frames"] != 0:
+                raise ValueError(f"temporal metadata disagrees with empty video {sid}")
         return refs
+
+    def validate_snapshot(self, state: dict) -> None:
+        """Reject changed or unknown temporal targets before restoring training state."""
+        metadata = state.get("driver", {}).get("metadata") or {}
+        digest = metadata.get("temporal_manifest_sha256")
+        if digest is None:
+            # Older CLI snapshots retain this identity in their run provenance.
+            inputs = (state.get("run_provenance") or {}).get("input_provenance", {})
+            digest = inputs.get("driver.batch.temporal_manifest", {}).get("sha256")
+        if digest is None:
+            raise ValueError("snapshot lacks temporal manifest identity; start a new run")
+        if digest != self.snapshot_metadata["temporal_manifest_sha256"]:
+            raise ValueError("temporal manifest differs from the training snapshot")
 
     def _compose(self, refs, seq: int | None = None) -> dict:
         batch = super()._compose(refs, seq)

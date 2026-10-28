@@ -117,6 +117,8 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- Temporal IID training validates empty recordings and rejects snapshot resumes
+  when the temporal-label manifest changes or its saved identity is unavailable.
 - Evaluation preserves completed benchmark results and provenance when a later
   benchmark fails, and rejects nonfinite metrics.
 - Evaluation restores model modes, gradient flags, and RNG states, including MPS,

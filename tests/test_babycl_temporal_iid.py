@@ -43,7 +43,9 @@ def temporal_driver(tmp_path, toy_config):
     path.write_text(json.dumps(document))
 
     def build(prefetch=False):
-        pipe = egolearn.build(toy_config(tmp_path, dim=8))
+        config = toy_config(tmp_path, dim=8)
+        config["loader"] = {"workers": 1 if prefetch else 0}
+        pipe = egolearn.build(config)
         stream = VideoStream(str(tmp_path), SyntheticDecoder(), sessions=sessions)
         pipe.loader.stream = stream
         return TemporalFrameDriver(
@@ -138,6 +140,77 @@ def test_incompatible_temporal_manifest_fails(temporal_driver, change):
     path.write_text(json.dumps(document))
     with pytest.raises(ValueError, match="temporal"):
         build()._build_index()
+
+
+@pytest.mark.parametrize("manifest_count,video_count", [(0, 0), (8, 0), (0, 8)])
+def test_empty_sessions_are_validated(temporal_driver, manifest_count, video_count):
+    build, path, document = temporal_driver
+    entry = document["sessions"]["a.mp4"]
+    entry["num_frames"] = manifest_count
+    if manifest_count == 0:
+        entry["segments"] = []
+    path.write_text(json.dumps(document))
+    driver = build()
+    driver.stream._meta["a.mp4"] = {"fps": 2.0, "num_frames": video_count}
+    try:
+        if manifest_count != video_count:
+            with pytest.raises(ValueError, match="temporal metadata"):
+                driver._build_index()
+        else:
+            refs = driver._build_index()
+            assert len(refs) == 8
+            assert {ref.session for ref in refs} == {"b.mp4"}
+    finally:
+        driver.loader.close()
+
+
+def test_resume_rejects_changed_temporal_targets_before_loading_weights(temporal_driver, tmp_path):
+    build, path, document = temporal_driver
+    original = build()
+    with torch.no_grad():
+        next(original.model.parameters()).add_(1)
+    snapshot = str(tmp_path / "resume.pth")
+    save_snapshot(snapshot, original)
+    original.loader.close()
+    document["sessions"]["a.mp4"]["segments"][0][2] = 2
+    path.write_text(json.dumps(document))
+    resumed = build()
+    before = copy.deepcopy(resumed.model.state_dict())
+    try:
+        with pytest.raises(ValueError, match="temporal manifest"):
+            load_snapshot(snapshot, resumed)
+        for key, value in before.items():
+            assert torch.equal(value, resumed.model.state_dict()[key]), key
+    finally:
+        resumed.loader.close()
+
+
+@pytest.mark.parametrize("identity", ["matching", "changed", "missing"])
+def test_legacy_snapshot_requires_matching_temporal_provenance(temporal_driver, tmp_path, identity):
+    build, path, _ = temporal_driver
+    original = build()
+    snapshot = str(tmp_path / "legacy.pth")
+    save_snapshot(snapshot, original)
+    original.loader.close()
+    state = torch.load(snapshot, weights_only=False)
+    del state["driver"]["metadata"]
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    inputs = {"driver.batch.temporal_manifest": {"sha256": digest}}
+    if identity == "changed":
+        inputs["driver.batch.temporal_manifest"]["sha256"] = "0" * 64
+    elif identity == "missing":
+        inputs = {}
+    state["run_provenance"] = {"input_provenance": inputs}
+    torch.save(state, snapshot)
+    resumed = build()
+    try:
+        if identity == "matching":
+            load_snapshot(snapshot, resumed)
+        else:
+            with pytest.raises(ValueError, match="temporal manifest"):
+                load_snapshot(snapshot, resumed)
+    finally:
+        resumed.loader.close()
 
 
 @pytest.mark.parametrize("method,head", [("simclr", "proj128"), ("tc", "cls")])

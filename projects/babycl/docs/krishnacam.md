@@ -210,6 +210,7 @@ Replace its session name, metadata, and intervals with your complete dataset.
 Intervals use inclusive start and exclusive end frame indices, covering
 each recording exactly once without gaps or overlap. Labels are integers from
 zero through `num_classes - 1`, shared across recordings.
+Include empty recordings with `num_frames: 0` and `segments: []`.
 
 ```json
 {
@@ -232,3 +233,7 @@ uses batch-local labels. When converting an online segmenter's evolving output,
 resolve overlapping revisions explicitly and retain that rule with the manifest's
 provenance. Checkpoint evaluation uses the vision encoder, without either training
 head.
+
+Resume requires the same temporal-manifest bytes used for the saved run. New
+snapshots store this identity directly, and older snapshots can supply it through
+run provenance. Snapshots without a saved manifest identity require a new run.
