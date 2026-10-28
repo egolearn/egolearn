@@ -15,8 +15,16 @@ Config::
     probes:
       - {_target_: "probe:labeled_s_linear", name: labeled_s_linear,
          data_root: <labeled-s-root>, view: center_crop, size: 224}
+
+``probe:labeled_s_stratified_linear`` instead reproduces the BabyCL paper's
+probe: every image, a seeded per-category 80/20 split, unit-length features
+and scikit-learn's ``C=0.316`` penalty (see ``stratified.py``)::
+
+      - {_target_: "probe:labeled_s_stratified_linear", name: labeled_s_linear_paper,
+         data_root: <labeled-s-root>, head: embed512}
 """
 
 from .probe import LabeledSLinearProbe
+from .stratified import LabeledSStratifiedLinearProbe
 
-__all__ = ["LabeledSLinearProbe"]
+__all__ = ["LabeledSLinearProbe", "LabeledSStratifiedLinearProbe"]
