@@ -117,6 +117,15 @@ DATASETS = (
         "https://github.com/facebookresearch/IntPhys2",
     ),
     Dataset(
+        "grasp",
+        "upstream-licensed",
+        "GRASP Level 2 videos; download the upstream release, then prepare the pair manifest",
+        "https://github.com/i-machine-think/grasp",
+        None,
+        _BENCHMARKS + "grasp.prepare",
+        (("--data_root", "grasp/level2"), ("--output", "grasp/manifest.json")),
+    ),
+    Dataset(
         "imagenet",
         "upstream-licensed",
         "Obtain images from the licensed upstream release",

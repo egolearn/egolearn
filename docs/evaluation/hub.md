@@ -119,6 +119,7 @@ contents and do not establish which Hub repositories are available.
 | Labeled-S split metadata | Public | Split identifiers without source frames |
 | ImageNet | Upstream-licensed | Manifests without images |
 | IntPhys 2 Main split | Upstream-licensed | No hosted copy; obtain videos from the upstream release |
+| GRASP Level 2 | Upstream-licensed | Pair manifest with hashes and frame counts, without pixels; obtain videos from the upstream release |
 | SAYCam, Labeled-S frames, restricted BabyView and BabyVLM images | IRB | No uploads, including private repositories and manifests with embedded pixels |
 
 Keep full training snapshots in local run directories. Resume accepts legacy

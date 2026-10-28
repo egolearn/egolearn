@@ -57,6 +57,8 @@ patch releases for fixes during 0.x development.
   subsets, data preparation, and full-versus-monitoring comparisons.
 - `probe:intphys2` scores 506 possible/impossible video pairs with configurable
   context lengths and L1 or L2 prediction error.
+- `probe:grasp` scores GRASP Level 2 video pairs by test and concept using a
+  local manifest from `egl data prepare grasp`.
 - The `video` and `train` extras include PyAV (`av`) for benchmark video decoding.
 - Shape-bias and spatial monitoring collections have revision-pinned hosted data
   and packaged checkpoint-evaluation configurations.
@@ -76,6 +78,8 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- VoE probes report pooled-surprise AUROC alongside pairwise accuracy, with
+  optional group metrics for labeled pairs.
 - The documentation separates task guides from reference material and corrects
   stale descriptions of training concurrency, stopping conditions, and job snapshots.
 - `driver.prefetch` overlaps batch composition with training while preserving

@@ -111,6 +111,7 @@ Each preparer also runs directly as an installed Python module:
 | `shape-bias` | `python -m egolearn.evaluation.benchmarks.shape_bias.prepare` |
 | `spatial-relations` | `python -m egolearn.evaluation.benchmarks.spatial_relations.prepare` |
 | `spatial-monitoring` | `python -m egolearn.evaluation.benchmarks.spatial_relations.subset` |
+| `grasp` | `python -m egolearn.evaluation.benchmarks.grasp.prepare` |
 
 Append `--help` to a module command to see its arguments and options.
 Direct module calls do not apply the CLI's shared-root defaults or its

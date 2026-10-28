@@ -18,6 +18,7 @@ PREPARER_OPTIONS = {
     "spatial-monitoring": "--exp1-per-condition",
     "babyview-4afc": "--vocab_json",
     "labeled-s-4afc": "--trials_json",
+    "grasp": "--data_root",
 }
 
 
@@ -29,10 +30,12 @@ def test_catalog_is_unique_and_distinguishes_metadata_from_pixels(capsys):
     assert rows["labeled-s-splits"]["access"] == "public"
     assert rows["imagenet"]["access"] == "upstream-licensed"
     assert rows["intphys2"]["access"] == "upstream-licensed"
+    assert rows["grasp"]["access"] == "upstream-licensed"
+    assert rows["grasp"]["collection"] is None and rows["grasp"]["prepare_module"]
 
 
 @pytest.mark.parametrize(
-    "name", ["saycam", "babyview", "labeled-s", "imagenet", "intphys2", "unknown"]
+    "name", ["saycam", "babyview", "labeled-s", "imagenet", "intphys2", "grasp", "unknown"]
 )
 def test_unavailable_fetch_fails_without_contacting_hub(monkeypatch, name):
     def unexpected(*args, **kwargs):
