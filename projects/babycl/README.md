@@ -31,9 +31,77 @@ Visual segments and utterance pairs occupy separate memories, each with a short
 FIFO tier whose overflow enters a long reservoir tier. After a segment is
 admitted, training performs eight updates with freshly sampled batches.
 
-The configuration is a code-level port, without a numerical-parity claim.
-Training uses float32 arithmetic in one process. Automatic mixed precision,
-used by the original trainer, is not implemented.
+`saycam_default` follows the paper's run, including two choices that are
+artifacts of the original code:
+
+- **Run length.** The original fixed 26568 steps before training (3321
+  offline-storyboard segments times 8 updates) and indexed the learning-rate
+  schedule by that count. It stopped after about 73% of SAYCam-S.
+  `driver.max_steps` and `solver.schedule.total_steps` reproduce this. Set both
+  to `null` to train on the whole stream with the progress-driven schedule.
+- **Precision.** `driver.amp` runs the segment branch in float16 with a loss
+  scaler and keeps the cross-modal branch in float32, as the original did.
+
+The segment views also use the 2-D Gaussian blur (`blur_impl: torchvision`), an
+utterance that ends on a frame is visible at that frame
+(`stream.transcript_first`), and the pairs long tier holds 16868 items.
+
+## SAYCam results
+
+The table reports `saycam_default` with seeds 1337 and 2002, final checkpoints.
+All scores are percentages. The paper column is from the
+[paper](https://arxiv.org/abs/2606.05115); an updated arXiv version with these
+numbers is forthcoming.
+
+| Benchmark | Seed 1337 | Seed 2002 | Paper | Differs from the paper |
+| --- | ---: | ---: | ---: | --- |
+| Labeled-S 4AFC | 42.53 | 43.04 | 43.38 ± 1.47 | Paper: mean ± 95% CI over five seeds |
+| Labeled-S linear | 45.26 | 44.91 | 44.95 | Paper: best seed |
+| mini-ImageNet linear | 25.52 | 26.12 | 25.60 | Paper: best seed |
+| VTWT | 60.60 | 58.43 | 61.32 | Paper: best seed |
+| Baby Winoground | 15.89 | 12.05 | 14.79 | Paper: best seed |
+| BabyView 4AFC | 30.99 | 30.29 | 32.53 | Paper: best seed |
+| BabyView linear | 49.71 | 52.06 | 49.96 | Paper: best seed |
+
+Baby Winoground reports the group score, which counts an item only when both
+the original and the edited scene prefer their own caption. Every row uses the
+paper's protocol, so the remaining differences come from training.
+
+The two checkpoints were trained and evaluated with this configuration before
+it was merged with the current main branch. The merge changed nothing these
+runs depend on: the options main has added since are off in `saycam_default`
+and `paper_evals`, and its other changes are in methods BabyCL does not use.
+This revision therefore runs the same training and evaluation code as the two
+runs.
+
+### Differences from the paper
+
+- **Randomness.** EgoLearn draws its sampling, augmentation and initialization
+  randomness differently, so a seed here is not the paper's seed. The paper's
+  code is not run-to-run reproducible either: same-seed reruns of its default
+  run reach a final Labeled-S 4AFC between 42.2% and 44.5%.
+- **Segmentation.** The frozen ResNeXt-50 that segments the stream runs on a
+  GPU. Floating-point differences move a few near-tied cuts, which changes 9 of
+  the 3751 segments the run trains on.
+- **Pixel rounding.** The original converted segment frames to 8 bits by
+  truncation before augmentation, which darkens some intensities by one level.
+
+### Reproducing the table
+
+Train each seed, then evaluate its final checkpoint. The training command
+skips the in-training probes, which do not change training.
+`paper_evals.yaml` lists the environment variables that point at the
+evaluation data.
+
+```bash
+egl train projects/babycl/configs/saycam_default.yaml seed=1337 \
+  run_dir=$RUN_DIR stream.root_dir=$SAYCAM_ROOT \
+  stream.transcript_json=$SAYCAM_TRANSCRIPTS tokenizer.vocab_json=$BABYCL_VOCAB \
+  probes=[]
+egl eval projects/babycl/configs/paper_evals.yaml checkpoint=$RUN_DIR/final.pth
+```
+
+One run takes about 6 hours on an NVIDIA L40S.
 
 ## Offline BabyCL variant
 
