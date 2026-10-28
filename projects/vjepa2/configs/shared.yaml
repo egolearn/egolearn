@@ -1,0 +1,77 @@
+defaults:
+  - /config
+  - _self_
+_imports_: [egolearn.methods.vjepa2]
+seed: 0
+device: cuda
+run_dir: runs/vjepa2
+preflight: false
+record_fail_on_nonfinite: true
+loader: {workers: 4}
+wandb:
+  entity: ${oc.env:WANDB_ENTITY,null}
+  project: ${oc.env:WANDB_PROJECT,egolearn-vjepa2}
+  mode: ${oc.env:WANDB_MODE,online}
+  run_name: vjepa2-${dataset}-seed${seed}
+dataset: unspecified
+views:
+  clip: {name: clip_rrc, size: 128, scale_min: 0.3}
+model:
+  encoders:
+    video:
+      _target_: "encoder:vjepa2"
+      dim: 384
+      depth: 12
+      heads: 6
+      patch: 16
+      tubelet: 2
+    video_target:
+      _target_: "encoder:vjepa2"
+      dim: ${model.encoders.video.dim}
+      depth: ${model.encoders.video.depth}
+      heads: ${model.encoders.video.heads}
+      patch: ${model.encoders.video.patch}
+      tubelet: ${model.encoders.video.tubelet}
+      frozen: true
+  predictors:
+    pred:
+      inputs: [video]
+      _target_: "predictor:vjepa2"
+      encoder_dim: ${model.encoders.video.dim}
+      dim: 192
+      depth: 6
+      heads: 6
+      trained_mask_indices: [0]
+losses:
+  - _target_: "loss:vjepa2"
+    slot: clips
+    context: video
+    target: video_target
+    predictor: pred
+    precision: bfloat16
+    ema: [0.998, 0.998]
+solver:
+  opt: adamw
+  groups:
+    - {match: ".*", lr: 0.0001, weight_decay: 0.04, split_no_decay: true}
+  schedule: {warmup_frac: 0.0, warmup_min_steps: 100, floor: 0.0, anchor: false}
+driver:
+  mode: offline
+  max_steps: 1000
+  prefetch: true
+  grad_accumulation: 1
+  batch:
+    slot: clips
+    unit: clip
+    n: 8
+    views: [clip]
+    clip_len: 16
+    clip_stride: 1
+    max_frame_gap: 0.3
+    expected_fps: 5.0
+hooks:
+  log_every: 25
+  metrics: true
+  checkpoint_every: 250
+  snapshot_every: 250
+  snapshot_milestones: []

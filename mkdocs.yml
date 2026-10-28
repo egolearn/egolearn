@@ -19,6 +19,7 @@ watch:
   - SECURITY.md
   - projects/babycl/README.md
   - projects/storyboard/README.md
+  - projects/vjepa2/README.md
   - scripts/docs/hooks.py
 
 theme:
@@ -112,17 +113,25 @@ nav:
     - Data loading: data_loading.md
     - Start from a checkpoint: initialization.md
   - Evaluation:
-    - Evaluate a model: evaluation.md
+    - Checkpoint evaluation: evaluation.md
+    - SAYCam evaluation data: evaluation/data.md
+    - Hub artifacts: evaluation/hub.md
     - Benchmark suites: benchmark_suites.md
     - Spatial relations: evaluation/spatial_relations.md
     - IntPhys 2: evaluation/intphys2.md
     - GRASP: evaluation/grasp.md
+    - Python API: evaluation/api.md
+    - Adding benchmarks: evaluation/extending.md
   - Methods:
     - BabyCL: projects/babycl.md
     - Memory Storyboard: projects/storyboard.md
+    - V-JEPA 2: projects/vjepa2.md
   - Design:
     - Architecture: design/architecture.md
-    - Streaming: design/streaming.md
+    - Data-loading performance: design/data_loading_performance.md
+    - Streaming design history: design/streaming.md
+    - V-JEPA 2: design/vjepa2.md
+    - V-JEPA 2 full runs: design/vjepa2-full.md
   - Project:
     - Roadmap: roadmap.md
     - Changelog: changelog.md
