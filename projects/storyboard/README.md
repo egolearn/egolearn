@@ -1,40 +1,65 @@
-# Memory Storyboard (reproduction project)
+# Memory Storyboard
 
-Reproduces [Memory Storyboard](https://arxiv.org/abs/2501.12254) (streaming
-visual SSL with temporal segmentation and a two-tier memory).
+Memory Storyboard learns visual representations from a chronological stream using
+temporal segmentation and two memory tiers. This project provides the
+[Memory Storyboard](https://arxiv.org/abs/2501.12254) method and its SAYCam training
+configuration.
 
-**This project owns the paper's contribution, as 1:1 ports** (in
-`src/egolearn/methods/storyboard/`; the
-config's `_imports_` list makes them register themselves on import):
+## Training
 
-* `greedy_hierarchical_clustering` / `get_cluster_score` — **verbatim** from
-  the public repo's `utils.py`, keeping its exact quirks (forces num_clusters−1
-  cuts even when the score decreases; scans candidates over
-  `range(1, N−1, subsample)`; ties broken by the first best)
-* `admission:storyboard_recluster` — the recluster + prototype-merge logic from
-  `train_storyboard_merging.py`: triggered when the short window has fully turned
-  over, it relabels those frames retroactively through the LabelStore; prototypes
-  are sampled ≤32/class **from the long-term buffer** (the component binds
-  `memory: frames`), embedded raw, averaged, then normalized, with a dynamic
-  quantile threshold deciding merges
-* `embedder:learner` — MS segments the stream with the learner's own backbone
-
-Everything else in the config is the core toolbox: saycam adapter,
-ntxent/tcl, simclr views, resnext50, fifo/reservoir_weighted tables with
-per-tier `admit_stride` (short FIFO takes every 8th frame, long reservoir
-takes all — as in the original samplers).
-
-Run:
+Use the [SAYCam config](configs/saycam.yaml) with your frame-directory root configured
+under `stream.root_dir`. The recipe expects raw, upside-down 5 fps SAYCam frames
+and flips them during loading; BabyCL instead expects upright input frames.
+See [dataset access](../../docs/evaluation/data.md#saycam-access)
+for the source data requirements.
 
 ```bash
 egl train projects/storyboard/configs/saycam.yaml dry_run=true
 egl train projects/storyboard/configs/saycam.yaml
 ```
 
-Documented framework adaptations (algorithms untouched): label writes go
-through the LabelStore (the original's separate short-window and long-buffer
-relabel paths write the same mapping — see the `storyboard_recluster` docstring); the
-recluster trigger is checked per frame instead of per training step (fires
-at the same threshold crossing).
+Each batch draws 64 frames from the short memory and 448 from the long memory.
+Instance discrimination uses both slots together, while temporal classification
+uses the long-memory slot. The default schedule performs one training update after
+each advance of 64 stream frames.
 
-KrishnaCam: swap `stream:` for a frames-directory adapter at 10 fps.
+The configuration is a code-level port, without a numerical-parity claim.
+Training uses float32 arithmetic in one process. Automatic mixed precision,
+used by the original trainer, is not implemented.
+
+## Memory and segmentation
+
+The short FIFO tier retains every eighth frame, while the long weighted reservoir
+receives every frame. Both tiers admit directly from the stream, so the long memory
+does not depend on short-tier eviction.
+
+Segmentation uses the learner's current backbone. When the short window has fully
+turned over, the method reclusters its frames and revises their class labels.
+Prototype merging samples up to 32 frames per class from the long memory and uses
+a dynamic quantile threshold to decide which classes to merge.
+
+You can change memory capacities and training rate in the config. The default
+`driver.rate.resample: false` makes additional updates reuse the batch, matching the
+original method's repeated-gradient setting. KrishnaCam has no packaged adapter or
+training config; adapting it requires checking frame naming, timing, and preprocessing.
+
+## Evaluation
+
+Evaluate saved checkpoints with the [standalone evaluator](../../docs/evaluation.md).
+The released Memory Storyboard ImageNet evaluation uses 112-pixel inputs, while the
+packaged ImageNet evaluation defaults to 224 pixels. Set `benchmarks.0.size=112`
+when you need that resolution, and match the remaining protocol settings before
+comparing scores.
+
+## Implementation
+
+The [method package](../../src/egolearn/methods/storyboard/) contains the original
+greedy hierarchical clustering algorithm, reclustering and prototype merging, and
+the learner-backed embedding component. Component docstrings document the preserved
+clustering behavior and adaptations to the framework.
+
+Labels are resolved through a shared label store when batches are assembled.
+The recluster trigger is checked per frame rather than per training update,
+preserving the original threshold crossing within a stream advance. The
+[architecture guide](../../docs/design/architecture.md#method-differences) compares
+this design with BabyCL.

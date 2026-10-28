@@ -1,0 +1,6 @@
+defaults:
+  - shared
+  - source_babyview
+  - _self_
+hydra:
+  searchpath: [pkg://egolearn.configs]

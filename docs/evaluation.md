@@ -1,232 +1,22 @@
-# Evaluating trained models
+# Checkpoint evaluation
 
-The standalone evaluator runs benchmarks on a loaded `ComposedModel` or an
-EgoLearn checkpoint or exported model directory. It constructs no training stream, replay memory, training
-optimizer, or driver. Install the `train` extra for the PyTorch dependencies.
+Evaluate an EgoLearn checkpoint or exported model without rebuilding its training
+pipeline. Install its dependencies with `uv sync --extra train`, then choose a
+compatible benchmark and obtain access to that benchmark's data.
 
-Use `egl data prepare <name>` for benchmark preparation; the
-[CLI guide](cli.md#data) lists the equivalent installed Python module commands.
+Evaluation requires the model's construction config when the checkpoint does
+not include one, but it does not require the original training stream.
+Full training snapshots require the explicit trust setting described under
+[checkpoint compatibility](#checkpoint-compatibility).
 
-## Python API
-
-```python
-from egolearn.evaluation import evaluate, evaluate_checkpoint, load_model
-
-benchmarks = [
-    {
-        "_target_": "benchmark:imagenet_linear_sgd",
-        "name": "imagenet",
-        "data_root": "/datasets/imagenet",
-        "encoder": "image",
-    }
-]
-imports = ["egolearn.evaluation.benchmarks.imagenet_linear"]
-
-result = evaluate_checkpoint(
-    "run/final.pth",
-    benchmarks=benchmarks,
-    imports=imports,
-    device="cuda",
-    seed=0,
-)
-print(result.results)
-result.save_json("evaluation.json")
-
-# Model loading is also available separately.
-model = load_model("run/final.pth", device="cuda")
-result = evaluate(model, benchmarks=benchmarks, imports=imports, seed=0)
-```
-
-`evaluate` infers the device from the loaded model. If supplied, `device` must
-match the model's current device; move the model explicitly before evaluating.
-The runner temporarily freezes the model and restores each module's training
-mode, parameter gradient flags, and Python/NumPy/PyTorch RNG states, including
-on failure. Benchmarks must leave model weights and buffers unchanged. A linear
-decoding benchmark can enable gradients for its own newly initialized decoder;
-the pretrained encoder remains frozen.
-
-The result records metrics by benchmark name, constructor settings including
-defaults for config-driven calls, protocol versions, dataset metadata, seeds,
-package version, source commit and dirty flag, and resolved model config.
-`code_revision` reports `"unavailable"` outside a source checkout or when Git
-cannot be queried. Checkpoint evaluations record the file name, SHA-256, and
-training step when available; no checkpoint directory is stored. For exports,
-`weights_sha256` and `metadata_sha256` identify each file, while `sha256` hashes
-the concatenated hexadecimal digests (weights first), covering both files. Benchmark names
-must be unique within an evaluation.
-
-Existing small evaluations remain available with their `probe:*` configuration
-targets. Pass those configs in `benchmarks` to evaluate them after training.
-There is one scoring implementation for training probes and standalone use.
-Linear probes record their own seed (for SGD), hyperparameters, class names,
-split sizes and split SHA-256, including when passed as constructed objects.
-Generic split hashes, also recorded by ImageNet, cover ordered relative paths,
-labels and classes, not image bytes. Manifest-backed probes also record the
-manifest's byte hash; Labeled-S records the verified canonical split hash and source.
-Linear-probe path settings retain only the dataset directory or file name, so
-recorded configs do not expose machine-specific parent directories.
-For every benchmark, the runner reduces top-level absolute local path settings
-to file or directory names. This cleanup leaves relative values and structured
-metadata intact; config-driven calls retain their original top-level `hf://`
-references. Benchmarks still receive the original paths for loading data.
-
-If benchmark preparation, execution, metric conversion, or metadata collection
-fails, `EvaluationError.partial_result` retains completed benchmarks and their
-provenance; `benchmark` identifies the failed benchmark
-and `__cause__` retains its original error. Serialized results record
-`status: "partial"` and `failed_benchmark`; successful suites record
-`status: "complete"`. The CLI replaces `output_json` with this partial result
-before exiting unsuccessfully, including when no benchmark has completed.
-Non-finite metrics (NaN or infinity) fail the benchmark before it is recorded.
-Setup errors (checkpoint loading, imports, benchmark construction, or suite
-validation) propagate normally and leave any existing output file unchanged.
-Consumers must check the process exit status before using `output_json`; a file
-from an earlier run may still exist after a setup failure. In Python:
-
-```python
-from egolearn.evaluation import EvaluationError
-
-try:
-    result = evaluate_checkpoint("run/final.pth", benchmarks=benchmarks, imports=imports)
-except EvaluationError as error:
-    error.partial_result.save_json("partial-evaluation.json")
-    raise
-```
-
-CLI evaluations and the two evaluation APIs also write an automatic atomic
-`record.json` under `runs/eval/records/<id>/`. It retains run provenance and
-benchmark settings/metadata, including completed benchmarks if a later one
-fails. Use `record_json=/new/file.json` on the CLI or `record_json="/new/file.json"`
-in Python for an explicit destination; `null` on the CLI or `None` in Python
-disables recording. An explicit destination must not already exist. See
-[run records](benchmark_suites.md#run-records-and-scope) for input identity and
-checkpoint provenance.
-
-## SAYCam access
-
-SAYCam videos, SAYCam-S frames, and Labeled-S images are hosted on
-[Databrary](https://nyu.databrary.org/volume/564/). Researchers must obtain access
-with approval from their institution's IRB and follow the applicable Databrary
-data-use terms. See the [CVCL dataset notes][cvcl-data] and
-[BabyVLM preparation notes][babyvlm-preparation] for the source releases.
-
-| Benchmark | Image source | Labels and code terms | Preparation |
-| --- | --- | --- | --- |
-| Labeled-S 4AFC | Labeled-S release on Databrary | Frozen BabyCL trials; [CVCL vocabulary][cvcl-vocab] (MIT) | [Manifest and vocabulary](#labeled-s-4afc-data) |
-| VTWT | Multimodal SAYCam-S frames on Databrary | [VTWT labels][vtwt-labels]; [Apache-2.0][babyvlm-license] task code | [Frames and CSV inputs](#babyvlm-benchmark-data) |
-| Baby Winoground | SAYCam-S frames and `BabyVLM_V1` synthetic images on Databrary | [Baby Winoground labels][bw-labels]; [Apache-2.0][babyvlm-license] task code | [Frames, negatives, and CSV inputs](#babyvlm-benchmark-data) |
-
-[cvcl-data]: https://github.com/wkvong/multimodal-baby#datasets
-[babyvlm-preparation]: https://github.com/ShawnKing98/babylmms-eval#data-preparation
-[babyvlm-license]: https://github.com/ShawnKing98/babylmms-eval/blob/main/LICENSE
-
-## Labeled-S 4AFC data
-
-The Labeled-S configuration of `probe:four_afc` uses BabyCL's frozen 4,150 trials
-over 23 categories. Obtain the Labeled-S evaluation images through
-[SAYCam access](#saycam-access), retaining
-their `<category>/<filename>` layout and released 224×224 crops. These are
-separate from the SAYCam-S training frames used by VTWT below.
-
-Use the original `eval_object_categories_4150.json` from the BabyCL evaluation
-assets. The [BabyCL paper](https://arxiv.org/html/2606.05115v1) describes its code
-release as supplementary material; if you do not have the frozen metadata,
-request it from the authors. The input is a JSON object with a `data` list; each
-row has `target_category`, `target_img_filename`, and three `foil_img_filenames`.
-Converting this file preserves trial membership, foil order, and the target at
-index 0. Generating random replacement trials would give a different evaluation.
-
-For `vocab_json`, use the exact word-to-integer mapping used to train the model.
-BabyCL's CVCL vocabulary is available as
-[`multimodal/vocab.json`][cvcl-vocab] in the MIT-licensed CVCL repository (pinned
-revision `d64c1bb164ed4c25f0cad8a1c3b7a4d68efae326`). Save that file unchanged if
-your model was trained with it. A vocabulary built from the 23 evaluation labels
-would assign different embedding indices. For a model trained with a custom
-vocabulary, retain its training vocabulary and check that all target labels are
-present; the checkpoint's embedding weights alone do not recover word names.
-
-Export the paths to the category-folder root as `LABELED_S_ROOT`, the original
-trial JSON as `LABELED_S_TRIALS`, and the model's vocabulary as `VOCAB_JSON`.
-The converter checks the frozen trial/category counts, target vocabulary coverage,
-and local image paths, and refuses to overwrite an existing output:
-
-```bash
-uv run egl data prepare labeled-s-4afc \
-  --data_root "$LABELED_S_ROOT" --trials_json "$LABELED_S_TRIALS" \
-  --vocab_json "$VOCAB_JSON" --output data/labeled_s_4afc_manifest.json
-```
-
-Pass the result as `manifest`, the same vocabulary as `vocab_json`, and the
-model's image-text projection head as `vision_head` (BabyCL: `embed512`); see
-the [probe configuration](../src/egolearn/evaluation/benchmarks/labeled_s_4afc/__init__.py).
-The manifest contains absolute local paths; regenerate it if the image root
-moves. Keep it and the restricted images outside version control.
-
-[cvcl-vocab]: https://github.com/wkvong/multimodal-baby/blob/d64c1bb164ed4c25f0cad8a1c3b7a4d68efae326/multimodal/vocab.json
-
-## BabyVLM benchmark data
-
-The Visual Two-Word Test (VTWT, `probe:vtwt`) and Baby Winoground
-(`probe:baby_winoground`) come from Wang et al., *BabyVLM: Data-Efficient
-Pretraining of VLMs Inspired by Infant Learning* (2025). See the
-[paper website](https://shawnking98.github.io/BabyVLM/) and the authors'
-[evaluation repository](https://github.com/ShawnKing98/babylmms-eval).
-
-After obtaining [SAYCam access](#saycam-access), follow the
-[BabyVLM preparation notes][babyvlm-preparation]:
-
-1. Download `frames.txt` from the
-   [Multimodal SAYCam-S release](https://nyu.databrary.org/volume/564/session/67447).
-2. Rename it to `frames.zip` and extract it into a local image directory. The
-   release contains 600,285 images (about 14 GB).
-3. For Baby Winoground, also download the `BabyVLM_V1` folder from
-   [Databrary][babyvlm-images] for the synthetic negative images.
-
-The public repository supplies labels separately from these images. Its
-[license][babyvlm-license] assigns Apache-2.0 to the added multimodal tasks;
-this does not replace the image releases' access terms.
-
-For EgoLearn, configure VTWT's `csv_path` and `image_dir`; for Baby Winoground,
-configure `csv_path`, `pos_dir` (SAYCam frames), and `neg_dir` (synthetic images).
-The probes expect CSV inputs with the schemas documented in the
-[VTWT module](../src/egolearn/evaluation/benchmarks/vtwt/__init__.py) and
-[Baby Winoground module](../src/egolearn/evaluation/benchmarks/baby_winoground/__init__.py).
-Both also require the evaluated model's `vocab_json`, `vision_head`, and
-appropriate `image_norm` (`imagenet` for EgoLearn-trained BabyCL models,
-`clip` for the CVCL family).
-
-[vtwt-labels]: https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/vtwt
-[bw-labels]: https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/baby_winoground
-[babyvlm-images]: https://nyu.databrary.org/volume/564/folder/77120
-
-## Checkpoint compatibility
-
-`CheckpointHook` files (`step_*.pth`, `final.pth`) use restricted loading by
-default. Training snapshots (`snapshot_*.pth`) require an explicit
-`trusted_snapshot=True` opt-in. New files produced from a pipeline-built model
-include a versioned construction config: encoders, heads, predictors, frozen
-roles, registration imports, and resolved values such as vocabulary size.
-
-For older checkpoints, or checkpoints of manually assembled models, pass
-`model_config="outputs/<date>/<time>/.hydra/config.yaml"`. An explicit model-section mapping also
-works. Use a resolved config, not an uncomposed YAML containing Hydra defaults.
-Only model-related nodes are resolved: training dataset environment variables
-and probe data paths are not needed. An old `vocab_size: auto` setting still
-needs the original tokenizer config/file or an explicit vocabulary size.
-
-Weights load strictly, and the export contract is checked when present.
-Pretrained encoder initialization is disabled while restoring a checkpoint.
-Training RNGs, optimizer state, and stream replay are never restored. Existing
-checkpoint files still deserialize their stored contents before unrelated
-training state is released; this API does not change that file-format cost.
-Legacy checkpoints use restricted unpickling. Full snapshots need an explicit
-`trusted_snapshot=True` opt-in (Hydra: `trusted_snapshot=true`) and a trusted source.
-Exported directories from `egl export` load safetensors weights without pickle;
-their model configuration and contract are read from `model.json`. Evaluation
-records digests covering both files and retains source provenance. See
-[model export](cli.md#exporting-weights) and [checkpoint trust](../SECURITY.md#model-export-and-checkpoint-trust).
+The base `evaluate` config defaults to `device=cpu`. The `imagenet_linear_eval`
+config used below defaults to `device=cuda`. To run that example on CPU,
+replace `device=cuda` with `device=cpu`.
 
 ## Command line
+
+For ImageNet linear decoding, provide a checkpoint and an ImageFolder root with
+`train/` and `val/` directories:
 
 ```bash
 uv run egl eval imagenet_linear_eval \
@@ -234,143 +24,326 @@ uv run egl eval imagenet_linear_eval \
   device=cuda output_json=imagenet_results.json
 ```
 
-For an older checkpoint, append
-`'model_config=outputs/<date>/<time>/.hydra/config.yaml'`, substituting the training
-run's date and time (or your explicit `hydra.run.dir`). For a trusted full
-snapshot, also pass `trusted_snapshot=true`.
-The packaged ImageNet config exposes its protocol settings under `benchmarks.0`,
-for example `benchmarks.0.encoder=image` or `benchmarks.0.batch_size=256`.
-`shape_bias_eval` and `spatial_relations_eval` evaluate shape bias and the spatial
-monitoring subsets on hosted data, so they need only `checkpoint=` (see
-[Hub artifacts](#hub-artifacts-and-access-tiers)).
-`egl eval --help` lists the default evaluation configuration. Custom suites
-can use `egl eval path/to/suite.yaml`. See the [CLI guide](cli.md) for overrides
-and configuration search paths.
+Replace the example paths with your artifacts before running the command.
+The evaluator trains a fresh linear classifier on frozen image representations
+and writes metrics and provenance to `imagenet_results.json`.
+Progress lines can precede the JSON on standard output, so use `output_json`
+for machine-readable results.
+
+Protocol settings appear under `benchmarks.0` in the packaged ImageNet config.
+Set `benchmarks.0.encoder` to an encoder name or modality; its default is
+`image`. Append `benchmarks.0.batch_size=256` to reduce the batch size. The
+default image resolution is 224 pixels, while `benchmarks.0.size=112` matches
+the released Memory Storyboard evaluation resolution.
+
+Use `benchmarks.0.seed` to change ImageNet's classifier initialization, shuffle
+order, and augmentations. The top-level `seed` sets the evaluation context but
+does not replace this separate protocol seed.
+
+Use `egl eval --help` to inspect the default evaluation config.
+`egl eval path/to/suite.yaml` accepts a custom evaluation configuration with
+the search paths and overrides described in
+[command-line configuration](cli.md#configuration-and-overrides).
+For repeated runs with pinned inputs and several seeds, use
+[benchmark suites](benchmark_suites.md).
+
+## Benchmark selection
+
+Choose a protocol compatible with the model and prepare its inputs before
+running evaluation.
+
+| Evaluation | Configuration or target | Inputs and protocol | Headline metric and baseline |
+| --- | --- | --- | --- |
+| ImageNet linear decoding | `imagenet_linear_eval` | Licensed ImageNet images in matching `train/` and `val/` class folders | `top1`; 1/1,000 uniform-guess accuracy |
+| Shape bias | `shape_bias_eval` | [Prepared stimuli and scoring](#shape-bias) | `shape_bias`; 0.5 means equal shape/texture preference |
+| Spatial relations | `spatial_relations_eval` | [Monitoring subsets and scoring](evaluation/spatial_relations.md) | `<name>/accuracy`; 0.5 chance |
+| Labeled-S 4AFC | `probe:four_afc` | [4,150 frozen trials over 23 categories](evaluation/data.md#labeled-s-4afc-data) | `four_afc_acc`; 0.25 chance |
+| Labeled-S linear decoding | `probe:labeled_s_linear` | [Canonical 26-class split](evaluation/data.md#labeled-s-linear-data) | `top1`; 1/26 uniform-guess accuracy |
+| BabyView 4AFC | `probe:four_afc` | [Frozen trials on vocabulary-matched categories](#babyview-protocols) | `four_afc_acc`; 0.25 chance |
+| BabyView linear decoding | `probe:linear` | [Frozen split over all 72 categories](#babyview-protocols) | `top1`; 1/72 uniform-guess accuracy |
+| VTWT | `probe:vtwt` | [CSV labels, frames, and training vocabulary](evaluation/data.md#babyvlm-benchmark-data) | `vtwt_acc`; 0.5 chance |
+| Baby Winoground | `probe:baby_winoground` | [CSV labels, positive/negative images, and training vocabulary](evaluation/data.md#babyvlm-benchmark-data) | `bw_group_acc`; 0.25 for independent random choices |
+| IntPhys 2 | `probe:intphys2` | [Video inputs and score limitations](evaluation/intphys2.md) | `voe_acc`; 0.5 chance |
+
+Accuracies are fractions rather than percentages. Baby Winoground requires both
+image-phrase choices to be correct, so its group baseline assumes independent
+random choices for the two images.
+
+The shape-bias and spatial-relations configs supply their own Hub input paths.
+If you have repository access, only `checkpoint=` is required. Private
+collections require authentication through `HF_TOKEN`.
+
+Small evaluations use `probe:*` targets both during training and in standalone
+evaluation, where you put these configs in the `benchmarks` list. Full ImageNet
+linear decoding uses `benchmark:imagenet_linear_sgd` and runs outside the
+training loop.
+
+## Standalone probe configurations
+
+For a probe without a packaged evaluation config, save a YAML file that inherits
+`/evaluate`, imports its registration module, and places entries under
+`benchmarks`. For example, save this as `labeled_s_eval.yaml` after replacing
+the input paths:
+
+```yaml
+defaults:
+  - /evaluate
+  - _self_
+
+_imports_:
+  - egolearn.evaluation.benchmarks.labeled_s_4afc
+benchmarks:
+  - _target_: "probe:four_afc"
+    name: labeled_s_4afc
+    manifest: data/labeled_s_4afc_manifest.json
+    vocab_json: /path/to/training_vocab.json
+    vision_head: embed512
+    view: center_crop
+    size: 224
+```
+
+Select the image-text head from your model; `embed512` is BabyCL's head.
+Check configuration composition without opening the checkpoint or dataset,
+then run evaluation:
+
+```bash
+uv run egl eval labeled_s_eval.yaml checkpoint=run/final.pth --cfg job
+uv run egl eval labeled_s_eval.yaml \
+  checkpoint=run/final.pth output_json=labeled_s_results.json
+```
+
+The CLI resolves the config file relative to your current directory and searches
+its directory before the installed defaults. Relative data and output paths
+also resolve from the current directory unless you explicitly enable Hydra's
+working-directory change.
+
+Import the module for each configured protocol. The data guides provide
+complete [BabyVLM](evaluation/data.md#babyvlm-evaluation-config) and
+[IntPhys 2](evaluation/intphys2.md#registered-evaluation-probe) examples.
+
+| Protocol | Target | Registration module |
+| --- | --- | --- |
+| Labeled-S 4AFC | `probe:four_afc` | `egolearn.evaluation.benchmarks.labeled_s_4afc` |
+| Labeled-S linear | `probe:labeled_s_linear` | `egolearn.evaluation.benchmarks.labeled_s_linear` |
+| BabyView 4AFC and linear | `probe:four_afc`, `probe:linear` | `egolearn.evaluation.benchmarks.babyview_4afc` |
+| Generic fixed-feature linear | `probe:linear` | `egolearn.evaluation.linear_probe` |
+| Generic SGD linear | `probe:linear_sgd` | `egolearn.evaluation.linear_sgd_probe` |
+| VTWT | `probe:vtwt` | `egolearn.evaluation.benchmarks.vtwt` |
+| Baby Winoground | `probe:baby_winoground` | `egolearn.evaluation.benchmarks.baby_winoground` |
+| IntPhys 2 | `probe:intphys2` | `egolearn.evaluation.benchmarks.intphys2` |
+
+## Linear decoding protocols
+
+Match the split, representation, preprocessing, and classifier protocol before
+comparing linear-decoding scores. The defaults differ across implementations:
+
+| Target | Classifier input and fitting | Default view | Default size |
+| --- | --- | --- | --- |
+| `probe:linear`, `probe:labeled_s_linear` | Fixed features, train-split standardization, deterministic L-BFGS logistic regression | `center_crop` | 224 pixels |
+| `probe:linear_sgd` | Fresh stochastic training crops each epoch, SGD/LARC | `imagenet_center_crop` for evaluation | 112 pixels |
+| `benchmark:imagenet_linear_sgd` | Full ImageNet train/val splits, stochastic training crops, SGD/LARC | `imagenet_center_crop` for evaluation | 224 pixels |
+
+All classifiers leave the encoder frozen and return held-out `top1`.
+SGD protocols report final-epoch validation accuracy, plus
+`train_top1_running` from predictions collected during that epoch's updates.
+Use `top1` for the held-out score. Fixed-feature probes consume no randomness,
+while SGD protocols use their own `seed`.
+
+Set `view` and `size` explicitly for comparisons, along with the same `encoder`
+and optional `head`. Matching those settings does not make the classifier
+protocols equivalent. Labeled-S linear decoding uses 2,886 training and 2,901
+evaluation images over 26 classes. It differs from BabyCL's reported 24-class
+split and embedding representation.
+
+### BabyView protocols
+
+The BabyView evaluation uses 5,921 object crops over 72 categories.
+Its 4AFC trials include only categories present in the training vocabulary,
+which leaves 61 categories with the SAYCam vocabulary. Linear decoding uses
+all 72 categories with a frozen stratified split and no vocabulary filter.
+
+Prepare manifests from an extracted release containing `manifest.csv` and its
+crop images, using your model's training vocabulary and a new output directory:
+
+```bash
+uv run egl data prepare babyview-4afc \
+  --data_root /path/to/babyview_crops --vocab_json /path/to/training_vocab.json \
+  --out_dir data/babyview
+```
+
+Append `--download` to fetch and extract the public crops release first.
+The preparer writes `babyview_4afc_trials.json`, `babyview_linear.json`, and a
+provenance report. Use `view: center_crop` and `size: 224` for both protocols.
+The released crops have varying aspect ratios, so changing preprocessing
+changes the evaluation.
+
+With those manifests prepared, save this as `babyview_eval.yaml` and replace
+the input paths and image-text head:
+
+```yaml
+defaults:
+  - /evaluate
+  - _self_
+
+_imports_:
+  - egolearn.evaluation.benchmarks.babyview_4afc
+benchmarks:
+  - _target_: "probe:four_afc"
+    name: babyview_4afc
+    manifest: /path/to/babyview_4afc_trials.json
+    vocab_json: /path/to/training_vocab.json
+    vision_head: embed512
+    view: center_crop
+    size: 224
+  - _target_: "probe:linear"
+    name: babyview_linear
+    manifest: /path/to/babyview_linear.json
+    encoder: image
+    head: null
+    view: center_crop
+    size: 224
+```
+
+Run `uv run egl eval babyview_eval.yaml checkpoint=run/final.pth` with your
+checkpoint path. The 4AFC benchmark requires image and text representations;
+the linear benchmark only requires image representations.
+
+## Shape bias
+
+Shape bias measures a representation's preference for matching shape over
+matching texture. The probe encodes 256 prepared stimuli and compares all
+57,600 valid anchor/shape-match/texture-match triplets.
+
+`shape_bias` is the fraction whose shape match has strictly higher cosine
+similarity. Ties count as texture choices. A value of 0.5 indicates equal
+preference; this is not an object-classification accuracy.
+
+| Metric | Meaning |
+| --- | --- |
+| `shape_bias` | Shape-choice fraction |
+| `shape_bias_texture` | Texture-choice fraction, including ties |
+| `shape_bias_margin` | Mean shape-minus-texture cosine margin |
+| `shape_bias_ties` | Number of equal-similarity triplets |
+| `shape_bias_n` | Number of triplets |
+
+See [Hub collections](evaluation/hub.md#packaged-collections) for the stimuli,
+license, citation, and use of a verified local copy.
+
+## Checkpoint compatibility
+
+Use `step_*.pth`, `final.pth`, or an exported model directory as the checkpoint
+input. Pipeline-built checkpoints include the resolved model construction
+config needed to rebuild the model.
+Exports from `egl export` contain `model.safetensors` and `model.json`, which
+jointly identify the weights and construction metadata.
+
+For a checkpoint without construction metadata, append the training run's saved
+config path. Hydra writes it under
+`outputs/<date>/<time>/.hydra/config.yaml` by default, or under your explicit
+`hydra.run.dir`:
+
+```bash
+uv run egl eval imagenet_linear_eval \
+  checkpoint=run/final.pth data_root=/datasets/imagenet \
+  model_config=outputs/example/.hydra/config.yaml \
+  device=cuda output_json=imagenet_results.json
+```
+
+Use a composed training config or an explicit model mapping in Python,
+because a YAML file containing unresolved Hydra defaults is insufficient.
+Only model-related nodes are resolved, so training-data environment variables
+are unnecessary unless a model setting depends on them. An older
+`vocab_size: auto` setting still needs its tokenizer config and vocabulary file,
+or an explicit vocabulary size.
+
+The loader checks the model contract when present and loads weights strictly.
+It disables pretrained initialization and does not restore training RNGs,
+optimizer state, or stream replay. Legacy checkpoint files still deserialize
+their stored contents before unrelated training state is released.
+
+Ordinary checkpoints use restricted unpickling, while exported safetensors
+weights load without pickle. For a full `snapshot_*.pth` from a trusted source,
+append `trusted_snapshot=true` to permit unrestricted unpickling. Evaluation
+uses the model weights without restoring the snapshot's training state.
+See [model export](cli.md#exporting-weights) and
+[checkpoint trust](../SECURITY.md#model-export-and-checkpoint-trust).
+
+## Results and failures
+
+A successful result has `status: "complete"` and groups metrics by benchmark
+name, which must be unique within an evaluation. It records benchmark settings,
+versions, dataset metadata, seeds, model config, and available source and
+checkpoint provenance.
+
+If a benchmark fails during preparation or execution, the CLI writes completed
+benchmarks to `output_json` and exits unsuccessfully. The result has
+`status: "partial"` and names the failed benchmark. Non-finite metrics fail the
+benchmark before its results are recorded.
+
+Check the process exit status before using the output file. Setup failures,
+such as a missing checkpoint or invalid benchmark config, leave an existing
+`output_json` unchanged, so that file can belong to an earlier run.
+The [API reference](evaluation/api.md#evaluationerror) describes partial results
+and Python error handling.
+
+## Run records
+
+Evaluation also writes an atomic `record.json` under
+`runs/eval/records/<id>/`, relative to the process's working directory.
+The record is created before loading the checkpoint. Each attempt gets a
+separate record containing run
+provenance and benchmark settings, including completed benchmarks before a
+later failure.
+
+Set `record_json=/path/to/new-record.json` for a specific destination, which
+must not already exist, or set `record_json=null` to disable recording.
+An unwritable automatic destination aborts evaluation before checkpoint loading.
+Choose a writable explicit path or disable recording with `record_json=null`.
+See
+[run records](benchmark_suites.md#run-records-and-scope) for input identity and
+training provenance.
+
+## Python API
+
+Use [`evaluate_checkpoint()`](evaluation/api.md#evaluate_checkpoint) to load and
+evaluate a checkpoint, or [`evaluate()`](evaluation/api.md#evaluate) for a model
+already in memory. The [API reference](evaluation/api.md) covers device handling,
+model-state preservation, result metadata, and failures.
+
+## SAYCam access
+
+SAYCam and related evaluation images require approved data access. See
+[SAYCam access](evaluation/data.md#saycam-access) before preparing Labeled-S,
+VTWT, or Baby Winoground inputs.
+
+## Labeled-S 4AFC data
+
+Follow [Labeled-S preparation](evaluation/data.md#labeled-s-4afc-data) to convert
+the frozen BabyCL trials using your model's training vocabulary.
+
+## BabyVLM benchmark data
+
+Follow [BabyVLM preparation](evaluation/data.md#babyvlm-benchmark-data) for the
+VTWT and Baby Winoground images, CSV schemas, and normalization settings.
 
 ## ImageNet migration
 
-Full ImageNet linear decoding is now `benchmark:imagenet_linear_sgd`, implemented
-by `ImageNetLinearBenchmark` in `evaluation/benchmarks/imagenet_linear/benchmark.py`.
-Remove `probe:imagenet_linear_sgd` from training configs and place the new target
-under `benchmarks` in a separate evaluation config. The old ImageNet probe class
-and registry entry have been removed. Training pipelines reject standalone
-benchmark entries in their `probes` list.
+Use `benchmark:imagenet_linear_sgd` under `benchmarks` in a standalone evaluation
+config and remove `probe:imagenet_linear_sgd` entries from training configs.
+Training pipelines reject standalone benchmarks in their `probes` list.
 
-The protocol is unchanged: full ImageFolder train/val splits, frozen encoder,
+The protocol uses full ImageFolder train/val splits, a frozen encoder,
 stochastic training crops, SGD/LARC, and cosine learning-rate decay. Dataset
-enumeration happens in `prepare()` or the first `run()`, never in the constructor.
-Passing the same benchmark instance to multiple evaluations reuses its split
-metadata. Each evaluation trains a fresh classifier and recomputes features for
-the supplied model. The default remains 224 pixels; use `size: 112` for the
-released Memory Storyboard evaluation resolution.
+enumeration occurs during preparation. Reusing a benchmark instance reuses
+split metadata, while each evaluation trains a fresh classifier and recomputes
+representations for the supplied model.
 
 ## Adding benchmarks
 
-Implement `Benchmark`, register it in `BENCHMARKS`, and expose its module through
-`_imports_`. A constructor validates settings; an idempotent `prepare()` loads
-dataset metadata; `run(model, ctx)` returns scalar metrics. The evaluation context
-provides `device`, `seed`, and `derive_seed(name)`, without training clocks.
-Declare `requires_capabilities` so incompatible models fail before preparation.
-Override `configuration()` for provenance when users pass constructed instances,
-and `metadata()` for split sizes or dataset identity. Increment `version` when
-the evaluation protocol changes.
-
-A small evaluation suitable for training hooks can implement `Probe`, which
-extends `Benchmark`, or use a probe wrapper around its shared scorer. A benchmark
-implementation should receive a model; checkpoint loading belongs to the runner.
+See [benchmark development](evaluation/extending.md) for the implementation
+contract, registration, capability checks, and protocol versioning.
 
 ## Hub artifacts and access tiers
 
-`uv run egl data fetch shape-bias --revision <tag-or-commit>`
-fetches `agentic-learning-ai-lab/egolearn-shape-bias` into
-`$EGOLEARN_DATA/shape-bias` (default `data/shape-bias`). The download is staged,
-checked against `checksums.sha256`, and installed only after verification.
-`.egolearn-fetch.json` records the requested revision, resolved commit and
-verification status. Missing checksums require `--allow-unverified`; corrupt
-checksums always fail. `--repo` overrides the dataset repository. To choose the
-storage root, use `egl data --root DIR fetch shape-bias --revision <tag-or-commit>`;
-`--root` goes before `fetch`, and the collection is installed in `DIR/shape-bias`.
-
-Data paths in component configs, including benchmark manifests, may use
-`hf://<org>/<repo>@<revision>[/path/in/repo]`. Revisions are tags or commit IDs
-without slashes. `egolearn.hub.resolve` is torch-free, passes local paths through,
-and logs the resolved snapshot commit. Direct Python callers can use it before
-constructing a dataset. Config resolution downloads to the standard HF cache;
-use `fetch` when checksum verification is required. `HF_HOME` controls that cache.
-Dataset references materialize the full snapshot once so manifests can safely
-read sibling files. This can download data during `dry_run=true`; that option
-skips training-stream iteration, not artifact resolution. Model file references
-must name a file and download only that file. Filename-less model references fail
-before any download. Loading an exported checkpoint also fetches its sibling
-`model.json` at the weights' immutable commit. Materialized copies require additional cache space
-and are not tracked by `hf cache` cleanup tools. Their path is
-`<Hub cache>/datasets--<org>--<repo>/egolearn-materialized/<generation>/<commit>`;
-remove the `egolearn-materialized` directory manually when no job uses its copies.
-Existing complete copies can be reused from a read-only shared cache. First-time
-materialization needs a writable cache; alternatively use `egl data --root DIR fetch`
-to put a real-file collection on writable storage. If an offline snapshot was partial,
-newly cached files produce a new materialization rather than reusing that subset.
-
-An explicit `hf://models/<org>/<repo>@<revision>/vocab.json` lets a tokenizer or
-benchmark read vocabulary from a model repo; `hf://datasets/` forces a dataset
-repo. Without a prefix, component inputs default to datasets and checkpoint/model
-config inputs default to models. Checkpoint evaluation records the original
-reference, repo, revision and resolved commit alongside the content digest.
-
-For example, a probe's `manifest` may be
-`hf://agentic-learning-ai-lab/egolearn-shape-bias@v1/stimulus_manifest.json`.
-Checkpoint and initialization inputs use model repos with the same syntax, ending
-in an explicit filename such as `@v1/model.safetensors`; local exported directories
-and legacy checkpoint paths still work. Keep full snapshots in local run directories.
-Resume also retains support for legacy Hub snapshot references and always uses
-unrestricted pickle, so only resume snapshots you trust. Model Hub publishing now
-accepts only exported weights. Hub checksums establish file integrity, not trust
-in legacy Python pickle contents. Model config files use model repos too.
-
-| Dataset / artifact | Access tier | What may be hosted |
-| --- | --- | --- |
-| Prepared shape-bias stimuli | public | Licensed rendered stimuli, manifests and checksums |
-| Spatial-relations v1 and monitoring subsets | public | Licensed stimuli, fixed trials and manifests |
-| BabyView 4AFC and linear evaluation manifests | public | Split/trial metadata only, without pixels or restricted captions |
-| Labeled-S split metadata | public | Split identifiers only; source frames stay restricted |
-| ImageNet | upstream-licensed | Manifests only; users obtain images from the licensed upstream source |
-| IntPhys 2 Main split | upstream-licensed | Nothing; users download the CC-BY-NC videos from the upstream release |
-| SAYCam, Labeled-S frames, restricted BabyView and BabyVLM images | IRB | Never on the Hub, including private repos or pixel-embedding manifests |
-
-Two collections are published, privately until the first release, under CC BY 4.0
-with the authors' permission. Cite the papers when using them.
-
-| Repo | Contents | Packaged config |
-| --- | --- | --- |
-| [agentic-learning-ai-lab/egolearn-shape-bias](https://huggingface.co/datasets/agentic-learning-ai-lab/egolearn-shape-bias/tree/v1) | Prepared stimuli (Tartaglini, Vong & Lake, 2022) | `shape_bias_eval` |
-| [agentic-learning-ai-lab/egolearn-spatial-relation-categorization](https://huggingface.co/datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization/tree/v1) | `monitoring/` subsets (Davidson, Orhan & Lake, 2024) | `spatial_relations_eval` |
-
-Both are tagged `v1`; fetch them with `egl data fetch shape-bias --revision v1` or
-`egl data fetch spatial-relation-categorization --revision v1`. The other rows are
-publication candidates, not a claim that collections already exist. Pinned upstream
-downloads remain available.
-
-To upload a prepared directory (not a training run directory):
-
-```bash
-uv run python -m egolearn.hub push prepared/ --name shape-bias --license CC-BY-4.0
-uv run egl export runs/example/final.pth exports/babycl-saycam-seed0
-uv run python -m egolearn.hub push exports/babycl-saycam-seed0 --name babycl-saycam-seed0 \
-  --repo-type model --license MIT
-uv run egl data verify prepared/
-uv run python -m egolearn.hub checksum prepared/
-```
-
-`push` uploads a staging copy with checksums and a minimal card, leaves the source
-unchanged, and creates a **private** repo. `--public` is required to create or
-upload to a public repo; it does not change an existing repo's visibility.
-The supported license identifiers are checked before repository creation (an
-unsupported identifier reports the accepted list). Choose a license you have
-authority to grant and inspect the directory before uploading. Model repos require
-the validated `model.safetensors`/`model.json` pair from `egl export` and reject
-other payloads, including `.pth` files. Dataset uploads include non-hidden payload
-files. Do not upload IRB data, embedded
-frames, credentials or personal run metadata. Checkpoint names follow
-`egolearn-<method>-<data>-seed<n>`. SAYCam-trained weights stay in **private** model
-repos until publication rights under the Databrary agreement have been confirmed.
-Authentication uses `HF_TOKEN`; no token belongs in configs or command arguments.
+See [Hub artifacts](evaluation/hub.md) for verified downloads, `hf://` input
+paths, cache management, access tiers, and publication rules.

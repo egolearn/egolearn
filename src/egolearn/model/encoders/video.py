@@ -73,8 +73,11 @@ class VideoViTEncoder(nn.Module):
         patch: int = 16,
         tubelet: int = 2,
         mlp_ratio: float = 4.0,
+        norm_eps: float = 1e-5,
+        rope_convention: str = "paired",
     ):
         super().__init__()
+        self.rope_convention = rope_convention
         self.out_dim = int(dim)
         self.heads = int(heads)
         self.patch = int(patch)
@@ -82,8 +85,8 @@ class VideoViTEncoder(nn.Module):
         self.embed = nn.Conv3d(
             3, dim, kernel_size=(tubelet, patch, patch), stride=(tubelet, patch, patch)
         )
-        self.blocks = nn.ModuleList(Block(dim, heads, mlp_ratio) for _ in range(depth))
-        self.norm = nn.LayerNorm(dim)
+        self.blocks = nn.ModuleList(Block(dim, heads, mlp_ratio, norm_eps) for _ in range(depth))
+        self.norm = nn.LayerNorm(dim, eps=norm_eps)
 
     def forward(self, x: torch.Tensor, visible: torch.Tensor | None = None) -> EncoderOutput:
         b, t, _, h, w = x.shape
@@ -100,7 +103,7 @@ class VideoViTEncoder(nn.Module):
         else:
             pos = visible
             tokens = torch.gather(tokens, 1, visible.unsqueeze(-1).expand(-1, -1, tokens.size(-1)))
-        cos, sin = rope_3d(pos, grid, self.out_dim // self.heads)
+        cos, sin = rope_3d(pos, grid, self.out_dim // self.heads, convention=self.rope_convention)
         for blk in self.blocks:
             tokens = blk(tokens, cos, sin)
         tokens = self.norm(tokens)

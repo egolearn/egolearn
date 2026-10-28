@@ -14,8 +14,9 @@ versioned with the code they launch.
 | `bench/bench_dataloading.py` | Data-plane-only benchmark: ingest rate, batch-composition throughput, decode-vs-augment micro breakdown |
 | `bench/bench_full_pipeline.py` | N real training steps of any config + the per-stage latency ledger |
 
-Planned (see `docs/roadmap.md` phase 6): hydra+submitit launching and per-run
-code snapshotting.
+The Slurm launcher archives a clean commit for each submission and runs jobs from
+that snapshot. [Cluster setup](../docs/cluster.md) covers environment preparation,
+storage, and arrays.
 
 - `fetch_data.py`: wrapper for `python -m egolearn.hub` (fetch, push, verify, checksum); see [Hub artifacts](../docs/evaluation.md#hub-artifacts-and-access-tiers).
 

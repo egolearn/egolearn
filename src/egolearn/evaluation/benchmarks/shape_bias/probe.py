@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import numpy as np
@@ -15,9 +17,7 @@ from egolearn.evaluation.probe import Probe
 
 from .score import ShapeBiasResult, score_shape_bias
 from .stimuli import (
-    load_stimulus_manifest,
     ordered_stimulus_records,
-    sha256_file,
     validate_stimulus_manifest,
     write_json,
 )
@@ -48,7 +48,11 @@ class ShapeBiasProbe(Probe):
         self.name = name
         self.manifest_path = Path(manifest)
         self.stimulus_root = self.manifest_path.parent
-        self.manifest = load_stimulus_manifest(self.manifest_path)
+        raw_manifest = self.manifest_path.read_bytes()
+        self.manifest = json.loads(raw_manifest)
+        if not isinstance(self.manifest, dict):
+            raise ValueError(f"expected a mapping in {self.manifest_path}")
+        self.manifest_sha256 = hashlib.sha256(raw_manifest).hexdigest()
         validate_stimulus_manifest(
             self.manifest,
             self.stimulus_root,
@@ -59,6 +63,13 @@ class ShapeBiasProbe(Probe):
         view_builder = getattr(core_views, view, None) or VIEWS.get(view)
         self.transform = view_builder(size=size)
         self.output_json = output_json
+
+    def metadata(self) -> dict:
+        return {
+            "manifest_sha256": self.manifest_sha256,
+            "n_images": len(self.records),
+            "n_triplets": self.manifest["n_triplets"],
+        }
 
     @torch.no_grad()
     def evaluate(self, model, device) -> ShapeBiasResult:
@@ -104,7 +115,7 @@ class ShapeBiasProbe(Probe):
                 {
                     **result.metrics,
                     "manifest": str(self.manifest_path),
-                    "manifest_sha256": sha256_file(self.manifest_path),
+                    "manifest_sha256": self.manifest_sha256,
                     "anchors": result.anchors,
                 },
             )

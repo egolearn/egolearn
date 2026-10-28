@@ -1,0 +1,30 @@
+defaults: [shared, _self_]
+hydra:
+  searchpath: [pkg://egolearn.configs]
+dataset: synthetic
+device: cpu
+run_dir: runs/vjepa2_smoke
+wandb: {mode: disabled}
+preflight: true
+loader: {workers: 0}
+stream: {_target_: "stream:toy", n_sessions: 2, blocks_per_session: 2, block_len: 32, img_size: 64, fps: 5.0}
+views:
+  clip: {name: clip_rrc, size: 64, scale_min: 0.5}
+model:
+  encoders:
+    video: {dim: 32, depth: 2, heads: 2}
+  predictors:
+    pred: {dim: 32, depth: 2, heads: 2}
+losses:
+  - _target_: "loss:vjepa2"
+    slot: clips
+    context: video
+    target: video_target
+    predictor: pred
+    precision: float32
+    ema: [0.998, 0.998]
+driver:
+  max_steps: 4
+  prefetch: false
+  batch: {n: 2, clip_len: 4}
+hooks: {log_every: 1, checkpoint_every: 4, snapshot_every: 2}
