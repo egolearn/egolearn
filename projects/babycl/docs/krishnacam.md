@@ -110,7 +110,7 @@ artifacts outside the repository.
 
 ## Lossless prepared videos
 
-For repeated BabyCL runs, prepare smaller videos containing the exact RGB pixels
+For repeated BabyCL runs, prepare videos containing the exact RGB pixels
 after the views' fixed bicubic resize and center crop. Frames remain in MP4 files
 and are decoded on demand. H.264 RGB lossless encoding avoids another lossy color
 conversion, and a keyframe every eight frames bounds random-access decoding work.
