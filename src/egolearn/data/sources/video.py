@@ -170,5 +170,14 @@ class VideoStream(S.Stream):
     def validate_views(self, specs: dict[str, dict]) -> None:
         self.decoder.validate_views(specs)
 
+        def paths():
+            # Raw decoders can validate config without enumerating an unmounted dataset.
+            for sid in self.session_ids():
+                if sid in self._meta and int(self._session_meta(sid)["num_frames"]) == 0:
+                    continue
+                yield str(self.root / sid)
+
+        self.decoder.validate_paths(paths())
+
     def close(self) -> None:
         self.decoder.close()

@@ -25,7 +25,7 @@ backend remains a placeholder for integration with the lab's video pipeline.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 
 class VideoDecoder:
@@ -55,3 +55,6 @@ class VideoDecoder:
 
     def validate_views(self, specs: dict[str, dict]) -> None:
         """Reject views incompatible with any preprocessing already applied to pixels."""
+
+    def validate_paths(self, paths: Iterable[str]) -> None:
+        """Check required prepared files; raw decoders leave the iterable unconsumed."""

@@ -128,18 +128,20 @@ def prepare_jpegs(batches: list[list[tuple]], root: Path, workers: int = 4) -> d
     }
 
 
+def _view_specs(size: int) -> dict[str, dict]:
+    return {
+        f"v{i + 1}": {"name": "babycl_ms_aug", "size": size, "view_idx": i, "scale_min": 0.2}
+        for i in range(2)
+    }
+
+
 def measure(
     stream: Stream, batches: list[list[tuple]], *, workers: int, warmup: int, size: int = 224
 ) -> dict:
     """Measure loader-call latency after warmup, recording a batch tensor digest."""
     import egolearn.methods.babycl  # noqa: F401
 
-    views = ViewBank(
-        {
-            "v1": {"name": "babycl_ms_aug", "size": size, "view_idx": 0, "scale_min": 0.2},
-            "v2": {"name": "babycl_ms_aug", "size": size, "view_idx": 1, "scale_min": 0.2},
-        }
-    )
+    views = ViewBank(_view_specs(size))
     loader = Loader(stream, views, workers=workers, imports=["egolearn.methods.babycl"])
     latencies = []
     digest = hashlib.sha256()
@@ -180,6 +182,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--batches", type=int, default=12)
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--sessions", type=int, default=8)
+    parser.add_argument(
+        "--session-files", nargs="+", help="restrict sampling to these source files"
+    )
     parser.add_argument("--segments", type=int, default=4)
     parser.add_argument("--frames", type=int, default=32)
     parser.add_argument("--seconds", type=float, default=180)
@@ -197,8 +202,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("workers must be nonnegative and seconds positive")
     torch.set_num_threads(1)
     output = Path(args.output_dir)
-    output.mkdir(parents=True, exist_ok=False)
-    stream = VideoStream(args.root, PyAVDecoder(), manifest_json=args.manifest)
+    stream = VideoStream(
+        args.root, PyAVDecoder(), manifest_json=args.manifest, sessions=args.session_files
+    )
     batches, selected = sample_batches(
         stream,
         batches=args.batches + args.warmup,
@@ -208,6 +214,19 @@ def main(argv: list[str] | None = None) -> int:
         seconds=args.seconds,
         seed=args.seed,
     )
+    if args.prepared_root:
+        from egolearn.methods.babycl.prepared_video import PreparedVideoDecoder
+
+        prepared = PreparedVideoDecoder(
+            source_root=args.root,
+            prepared_root=args.prepared_root,
+            cache_handles=args.cache_handles,
+            seek_gap=args.seek_gap,
+            device=args.device,
+        )
+        prepared.validate_views(_view_specs(args.size))
+        prepared.validate_paths(str(stream.root / sid) for sid in selected)
+    output.mkdir(parents=True, exist_ok=False)
     workload = [
         [[list(ref.locator), index, seed] for _, ref, index, _, seed in batch] for batch in batches
     ]
@@ -254,8 +273,6 @@ def main(argv: list[str] | None = None) -> int:
             )
             decoder = PyAVDecoder(**decoder_kwargs)
             if args.prepared_root:
-                from egolearn.methods.babycl.prepared_video import PreparedVideoDecoder
-
                 decoder = PreparedVideoDecoder(
                     source_root=args.root, prepared_root=args.prepared_root, **decoder_kwargs
                 )
@@ -263,6 +280,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.root,
                 decoder,
                 manifest_json=args.manifest,
+                sessions=selected,
             )
         print(f"Measuring {name}, workers={workers}", flush=True)
         result = {

@@ -78,6 +78,25 @@ def test_seek_windows_sequential_cache_and_pickle(videos):
     assert not decoder._handles
 
 
+@pytest.mark.parametrize("access", ["frame", "window", "iterator"])
+def test_returned_frames_cannot_mutate_repeated_or_cached_reads(videos, access):
+    path = str(videos / "20140901.mp4")
+    expected = _reference(path)[3]
+    decoder = PyAVDecoder()
+    try:
+        if access == "frame":
+            images = [decoder.read_frame(path, 3) for _ in range(2)]
+        elif access == "window":
+            images = decoder.read_window(path, 3, 4, [0, 0])
+        else:
+            images = [next(decoder.iter_frames(path, 3))[1] for _ in range(2)]
+        images[0].paste((0, 0, 0), (0, 0, images[0].width, images[0].height))
+        np.testing.assert_array_equal(images[1], expected)
+        np.testing.assert_array_equal(decoder.read_frame(path, 3), expected)
+    finally:
+        decoder.close()
+
+
 def test_variable_rate_is_rejected(tmp_path):
     path = tmp_path / "variable.mp4"
     _write_video(path, variable=True)
@@ -170,6 +189,106 @@ def test_prepared_videos_preserve_refs_pixels_and_worker_augmentations(videos, t
     restored = pickle.loads(pickle.dumps(decoder))
     with pytest.raises(ValueError, match="stale or modified"):
         restored.read_frame(str(videos / "20140901.mp4"), 0)
+
+
+def test_prepared_subset_must_cover_selected_sessions(videos, tmp_path, monkeypatch):
+    import json
+
+    from egolearn.data import video_benchmark
+    from egolearn.methods.babycl.prepared_video import PreparedVideoDecoder, prepare
+
+    cache = tmp_path.with_name(tmp_path.name + "_prepared")
+    prepare(str(videos), str(cache), sessions=["20140901.mp4"], size=32)
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                name: {"fps": 30000 / 1001, "num_frames": 48}
+                for name in ["20140901.mp4", "20140902.mp4"]
+            }
+        )
+    )
+    decoder = PreparedVideoDecoder(str(videos), str(cache))
+    views = ViewBank({"eval": {"name": "center_crop", "size": 32}})
+    stream = VideoStream(str(videos), decoder, manifest_json=str(manifest))
+    with pytest.raises(ValueError, match=r"20140902\.mp4"):
+        Loader(stream, views)
+    with pytest.raises(ValueError, match=r"20140902\.mp4.*stream.sessions"):
+        VideoStream(str(videos), decoder).total_observations()
+
+    def no_jpeg_work(*args):
+        pytest.fail("cache coverage must be checked before preparing JPEGs")
+
+    monkeypatch.setattr(video_benchmark, "prepare_jpegs", no_jpeg_work)
+    output = tmp_path / "invalid_benchmark"
+    with pytest.raises(ValueError, match=r"20140902\.mp4"):
+        video_benchmark.main(
+            [
+                "--root",
+                str(videos),
+                "--manifest",
+                str(manifest),
+                "--prepared-root",
+                str(cache),
+                "--output-dir",
+                str(output),
+                "--size",
+                "32",
+                "--jpeg-reference",
+            ]
+        )
+    assert not output.exists()
+    assert (
+        video_benchmark.main(
+            [
+                "--root",
+                str(videos),
+                "--manifest",
+                str(manifest),
+                "--prepared-root",
+                str(cache),
+                "--output-dir",
+                str(output),
+                "--session-files",
+                "20140901.mp4",
+                "--size",
+                "32",
+                "--workers",
+                "0",
+                "--batches",
+                "1",
+                "--warmup",
+                "1",
+                "--segments",
+                "1",
+                "--frames",
+                "2",
+            ]
+        )
+        == 0
+    )
+    assert json.loads((output / "report.json").read_text())["sessions"] == ["20140901.mp4"]
+    subset = VideoStream(
+        str(videos), decoder, manifest_json=str(manifest), sessions=["20140901.mp4"]
+    )
+    loader = Loader(subset, views)
+    try:
+        channel = next(iter(subset.sessions())).channels["video"]
+        assert loader.frame_views(channel.ref_at(0), 0, ["eval"]).shape == (1, 3, 32, 32)
+    finally:
+        loader.close()
+    # Empty recordings are skipped by VideoStream and need no prepared pixels.
+    metadata = json.loads(manifest.read_text())
+    metadata["20140902.mp4"]["num_frames"] = 0
+    (videos / "20140902.mp4").write_bytes(b"")
+    manifest.write_text(json.dumps(metadata))
+    with_empty = VideoStream(str(videos), decoder, manifest_json=str(manifest))
+    Loader(with_empty, views).close()
+    assert with_empty.total_observations() == 48
+    # Raw-video config validation must still work before a dataset is mounted.
+    raw = VideoStream(str(tmp_path / "unavailable"), PyAVDecoder())
+    Loader(raw, views).close()
+    assert raw._session_ids is None
 
 
 def test_preparation_rejects_variable_rate_and_nested_output(tmp_path):
@@ -335,6 +454,8 @@ def test_video_benchmark_compares_identical_requests_and_bounded_jpegs(videos, t
                 "1",
                 "--sessions",
                 "2",
+                "--session-files",
+                "20140901.mp4",
                 "--segments",
                 "2",
                 "--frames",
@@ -350,6 +471,7 @@ def test_video_benchmark_compares_identical_requests_and_bounded_jpegs(videos, t
     )
     report = json.loads((output / "report.json").read_text())
     assert report["status"] == "completed"
+    assert report["sessions"] == ["20140901.mp4"]
     individual, grouped, jpeg = report["variants"]
     assert individual["first_measured_batch_sha256"] == grouped["first_measured_batch_sha256"]
     assert jpeg["kind"] == "jpeg"
