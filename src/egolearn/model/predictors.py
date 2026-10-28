@@ -74,15 +74,23 @@ class VJEPAPredictor(nn.Module):
         depth: int = 6,
         heads: int = 6,
         mlp_ratio: float = 4.0,
+        norm_eps: float = 1e-5,
+        rope_convention: str = "paired",
+        num_mask_tokens: int = 1,
+        zero_init_mask_tokens: bool = False,
     ):
         super().__init__()
+        if num_mask_tokens < 1:
+            raise ValueError("num_mask_tokens must be positive")
+        self.rope_convention = rope_convention
         self.heads = int(heads)
         self.dim = int(dim)
         self.embed = nn.Linear(encoder_dim, dim)
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, dim))
-        nn.init.trunc_normal_(self.mask_token, std=0.02)
-        self.blocks = nn.ModuleList(Block(dim, heads, mlp_ratio) for _ in range(depth))
-        self.norm = nn.LayerNorm(dim)
+        self.mask_token = nn.Parameter(torch.zeros(num_mask_tokens, 1, dim))
+        if not zero_init_mask_tokens:
+            nn.init.trunc_normal_(self.mask_token, std=0.02)
+        self.blocks = nn.ModuleList(Block(dim, heads, mlp_ratio, norm_eps) for _ in range(depth))
+        self.norm = nn.LayerNorm(dim, eps=norm_eps)
         self.proj = nn.Linear(dim, encoder_dim)
 
     def forward(
@@ -92,12 +100,23 @@ class VJEPAPredictor(nn.Module):
         ctx_pos: torch.Tensor,
         tgt_pos: torch.Tensor,
         grid: tuple[int, int, int],
+        mask_index: int = 0,
         **_,
     ) -> torch.Tensor:
+        if not 0 <= mask_index < self.mask_token.size(0):
+            raise ValueError("mask_index is out of range")
         b, kc, _d = tokens.shape
         kt = tgt_pos.size(1)
-        x = torch.cat([self.embed(tokens), self.mask_token.expand(b, kt, -1)], dim=1)
-        cos, sin = rope_3d(torch.cat([ctx_pos, tgt_pos], dim=1), grid, self.dim // self.heads)
+        x = torch.cat(
+            [self.embed(tokens), self.mask_token[mask_index : mask_index + 1].expand(b, kt, -1)],
+            dim=1,
+        )
+        cos, sin = rope_3d(
+            torch.cat([ctx_pos, tgt_pos], dim=1),
+            grid,
+            self.dim // self.heads,
+            convention=self.rope_convention,
+        )
         for blk in self.blocks:
             x = blk(x, cos, sin)
         return self.proj(self.norm(x[:, kc:]))

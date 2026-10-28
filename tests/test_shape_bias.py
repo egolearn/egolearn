@@ -167,6 +167,43 @@ def test_probe_writes_compact_artifact(tmp_path: Path, monkeypatch) -> None:
     assert artifact["n_stimuli"] == 256
     assert artifact["n_triplets"] == 57_600
     assert len(artifact["anchors"]) == 256
+    metadata = probe.metadata()
+    assert metadata["n_images"] == 256
+    assert metadata["n_triplets"] == 57600
+    assert metadata["manifest_sha256"] == artifact["manifest_sha256"]
+    # Metadata identifies the bytes actually loaded, even if the file changes later.
+    with probe.manifest_path.open("a") as handle:
+        handle.write("\n")
+    assert probe.metadata() == metadata
+
+
+def test_shape_bias_runs_through_static_clip_wrapper(tmp_path: Path, monkeypatch) -> None:
+    from egolearn.evaluation import evaluate
+    from egolearn.methods.vjepa2 import VJEPA2Encoder
+    from egolearn.methods.vjepa2.evaluation import VJEPA2ImageBenchmark
+    from egolearn.model.model import ComposedModel
+
+    assets = tmp_path / "assets"
+    _make_source_assets(assets, monkeypatch)
+    stimulus_root = tmp_path / "stimuli"
+    prepare_shape_bias_stimuli(assets, stimulus_root, seed=1)
+    model = ComposedModel(
+        {"video_target": VJEPA2Encoder(dim=32, depth=1, heads=2, patch=8, tubelet=2)},
+        frozen=("video_target",),
+    )
+    benchmark = VJEPA2ImageBenchmark(
+        name="shape_bias",
+        probe="shape_bias",
+        num_frames=4,
+        probe_kwargs={"manifest": str(stimulus_root / "stimulus_manifest.json"), "size": 16},
+    )
+    result = evaluate(model, benchmarks=[benchmark], record_json=None)
+    assert result.results["shape_bias"]["shape_bias_n"] == 57600
+    assert result.metadata["shape_bias"]["n_images"] == 256
+    assert result.metadata["shape_bias"]["encoder_frozen"] is True
+    assert result.metadata["shape_bias"]["manifest_sha256"] == sha256_file(
+        stimulus_root / "stimulus_manifest.json"
+    )
 
 
 def test_packaged_eval_config_uses_hosted_stimuli(tmp_path: Path, monkeypatch) -> None:

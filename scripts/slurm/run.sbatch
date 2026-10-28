@@ -30,4 +30,26 @@ case "${CUDA_VISIBLE_DEVICES:-}" in
 esac
 if [[ ${SLURM_GPUS_ON_NODE:-0} != 0 ]]; then nv=(--nv); fi
 echo "job=${SLURM_JOB_ID} node=$(hostname) cmd: $*"
-apptainer exec "${nv[@]}" --home "$APPTAINER_HOME" "$SIF" "$@"
+if [[ ${EGOLEARN_REQUEUE_ON_PAUSE:-0} != 1 ]]; then
+  exec apptainer exec "${nv[@]}" --home "$APPTAINER_HOME" "$SIF" "$@"
+fi
+# Opt-in for runners that save state before returning 75. A new allocation
+# gets a fresh wall-clock budget; never restart inside the expiring one.
+container_pid= interrupted=0 pause_requested=0
+trap 'interrupted=1; pause_requested=1; if [[ -n "$container_pid" ]]; then kill -USR1 "$container_pid" 2>/dev/null || true; fi' USR1
+apptainer exec "${nv[@]}" --home "$APPTAINER_HOME" "$SIF" "$@" &
+container_pid=$!
+if [[ $pause_requested = 1 ]]; then kill -USR1 "$container_pid" 2>/dev/null || true; fi
+set +e
+while true; do
+  interrupted=0
+  wait "$container_pid"
+  result=$?
+  [[ $interrupted = 1 ]] || break
+done
+set -e
+if [[ $result = 75 ]]; then
+  scontrol requeue "${SLURM_JOB_ID:?requeue needs a Slurm job}"
+  exit 0
+fi
+exit "$result"

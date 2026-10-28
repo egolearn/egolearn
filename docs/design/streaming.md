@@ -1,16 +1,13 @@
-# Streaming, data, and modeling design notes
+# Streaming design history
 
-Contracts for code arriving via triage (see ../roadmap.md). Each is a cleanup of
-something that already exists in memory-storyboard, lifelong-memory, poodle, or
-midway-network — not a new invention.
+These August 2026 notes record the proposed contracts for consolidating
+memory-storyboard, lifelong-memory, poodle, and midway-network. They explain the
+original design choices, rather than specifying today's interfaces.
 
-> **Status (2026-08):** the streaming/replay/modeling side of these contracts is
-> now implemented — see [architecture.md](architecture.md) for the shipped
-> interfaces. Where the implementation refines a sketch below (e.g. labels are
-> revised through a batch-time LabelStore lookup instead of shared-memory
-> arrays, so parallel loader workers never need to see labels at all), the
-> architecture doc is the current reference. §5 text interfaces and §6 QA evals
-> remain design-only.
+Use the [architecture guide](architecture.md) for current behavior and the
+[roadmap](../roadmap.md) for pending work. In particular, the implementation resolves
+labels through a batch-time `LabelStore` instead of the shared-memory arrays
+proposed below. The text-model and QA interfaces below remain proposals.
 
 ## Access-pattern premise
 

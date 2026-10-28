@@ -244,7 +244,10 @@ def test_stream_groups_files_and_preserves_refs(videos, monkeypatch):
     stream.close()
 
 
-def test_loader_workers_preserve_augmented_frames_and_padded_clips(videos):
+@pytest.mark.parametrize(
+    "options", [{}, {"packed": True}, {"packed": True, "affinity": True, "cache_frames": 64}]
+)
+def test_loader_workers_preserve_augmented_frames_and_padded_clips(videos, options):
     stream = VideoStream(str(videos), PyAVDecoder())
     channel = next(iter(stream.sessions())).channels["video"]
     views = ViewBank(
@@ -257,16 +260,19 @@ def test_loader_workers_preserve_augmented_frames_and_padded_clips(videos):
     items.insert(3, ("clip", channel.interval_ref(46, 48), 0, ["clip"], 4, 1, 81))
     serial = Loader(stream, views)
     expected = serial.views_batch(items)
-    pooled = Loader(stream, views, workers=2)
+    pooled = Loader(stream, views, workers=2, **options)
     try:
         actual = pooled.views_batch(items)
         assert all(torch.equal(a, b) for a, b in zip(actual, expected, strict=True))
         assert actual[3].shape == (1, 4, 3, 32, 32)
         assert torch.equal(actual[3][:, 1], actual[3][:, 3])
+        assert serial.frame_requests == pooled.frame_requests == 52
+        frames = [item for item in items if item[0] == "frame"]
+        assert torch.equal(pooled.tensor_batch(frames), serial.tensor_batch(frames))
     finally:
         pooled.close()
         serial.close()
-    assert serial.frame_requests == pooled.frame_requests == 52
+    assert serial.frame_requests == pooled.frame_requests == 100
     assert not stream.decoder._handles
 
 

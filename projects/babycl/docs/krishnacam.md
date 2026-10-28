@@ -25,7 +25,7 @@ containers instead. The supplied archive contains 436 recordings at approximatel
 
 The config trains a ResNeXt-50 from scratch with equally weighted NT-Xent and
 TCL losses. Each step draws four visual segments and samples 32 frames from each,
-with two augmented views per frame. A frozen ImageNet ResNeXt-50 supplies features
+producing two augmented views per frame. A frozen ImageNet ResNeXt-50 supplies features
 for segmentation, with weights downloaded into `TORCH_HOME` on first use.
 
 Frames retain their native timestamps and frame indices throughout segmentation
@@ -111,9 +111,9 @@ artifacts outside the repository.
 ## Lossless prepared videos
 
 For repeated BabyCL runs, prepare smaller videos containing the exact RGB pixels
-after the views' fixed bicubic resize and center crop. Frames remain in MP4 files
-and are decoded on demand. H.264 RGB lossless encoding avoids another lossy color
-conversion, and a keyframe every eight frames bounds random-access decoding work.
+after the views' fixed bicubic resize and center crop. Frames remain in MP4 files for decoding on demand, with H.264 RGB lossless
+encoding avoiding another lossy color conversion. A keyframe every eight frames
+bounds random-access decoding work.
 These lossless RGB videos require CPU decoding, so use `--device cpu` in the
 loading benchmark and `stream.decoder.device=cpu` for GPU training.
 
@@ -135,8 +135,8 @@ uv run python -m egolearn.methods.babycl.prepare_video \
 Replace the session names with filenames from the source directory. Omit
 `--sessions` to convert all MP4s directly under that directory. Each complete
 output is decoded and checked against a hash of every preprocessed source frame.
-Frame counts, frame rates, and source-relative frame times must also match.
-Output container timestamps start at zero. Repeating preparation
+Frame counts, frame rates, and source-relative frame times must also match,
+while output container timestamps start at zero. Repeating preparation
 skips verified files whose source and output fingerprints are unchanged.
 
 ### Cache benchmarks
@@ -163,7 +163,7 @@ from a clean commit. After configuring and sourcing your local `env.sh`, launch
 three independent seeds with an appropriate GPU partition:
 
 ```bash
-scripts/slurm/submit --sweep --max-parallel 3 \
+scripts/slurm/submit --sweep \
     --job-name babycl-krishnacam --partition "$GPU_PARTITION" \
     --gres=gpu:1 --cpus-per-task=16 --mem=64G --time=24:00:00 -- \
     egl train projects/babycl/configs/krishnacam.yaml seed=0,1,2 \
@@ -184,7 +184,7 @@ Use `krishnacam_iid_simclr.yaml` for instance loss alone, or `krishnacam_iid_tc.
 for temporal loss alone. Both configs shuffle all native-rate frames and use the
 verified lossless cache, the same ResNeXt-50, and two BabyCL augmentations per frame.
 Each update contains 128 frames from a global shuffled order, with no replay memory.
-The active loss has weight 1.0. Only its corresponding head is constructed.
+Each config sets its active loss weight to 1.0 and constructs only the corresponding head.
 
 Set `driver.max_steps` to the completed streaming run's update count for each
 seed. The default is 11,900 steps, and the cosine schedule spans that budget.
@@ -207,8 +207,8 @@ egl train projects/babycl/configs/krishnacam_iid_tc.yaml \
 
 The example below describes one eight-frame recording with two temporal classes.
 Replace its session name, metadata, and intervals with your complete dataset.
-Intervals use inclusive start and exclusive end frame indices. They must cover
-each recording exactly once, without gaps or overlap. Labels are integers from
+Intervals use inclusive start and exclusive end frame indices, covering
+each recording exactly once without gaps or overlap. Labels are integers from
 zero through `num_classes - 1`, shared across recordings.
 
 ```json
