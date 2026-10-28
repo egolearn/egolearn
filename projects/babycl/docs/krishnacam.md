@@ -210,7 +210,7 @@ Replace its session name, metadata, and intervals with your complete dataset.
 Intervals use inclusive start and exclusive end frame indices, covering
 each recording exactly once without gaps or overlap. Labels are integers from
 zero through `num_classes - 1`, shared across recordings.
-Include empty recordings with `num_frames: 0` and `segments: []`.
+Include empty recordings with their `fps`, `num_frames: 0`, and `segments: []`.
 
 ```json
 {
