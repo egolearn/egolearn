@@ -1,7 +1,7 @@
 # IntPhys 2
 
 The IntPhys 2 probe measures violation-of-expectation on synthetic physics
-videos. It reports pairwise accuracy, with higher scores better and 50% chance
+videos. It reports pairwise accuracy and AUROC, with higher scores better and 50% chance
 performance.
 
 Scores from this probe are not directly comparable to the paper's tables.

@@ -109,7 +109,7 @@ reports accuracy with equal component weights; see the
 
 IntPhys 2 evaluates intuitive physics by violation of expectation: a video model
 should find each physically impossible video more surprising than its matched
-possible twin. The registered `probe:intphys2` reports pairwise accuracy from
+possible twin. The registered `probe:intphys2` reports pairwise accuracy and AUROC from
 V-JEPA prediction error; see the
 [task definition, pinned data download, and probe configuration](docs/evaluation/intphys2.md).
 
