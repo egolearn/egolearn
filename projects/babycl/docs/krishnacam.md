@@ -25,7 +25,7 @@ containers instead. The supplied archive contains 436 recordings at approximatel
 
 The config trains a ResNeXt-50 from scratch with equally weighted NT-Xent and
 TCL losses. Each step draws four visual segments and samples 32 frames from each,
-producing two augmented views per frame. A frozen ImageNet ResNeXt-50 supplies features
+with two augmented views per frame. A frozen ImageNet ResNeXt-50 supplies features
 for segmentation, with weights downloaded into `TORCH_HOME` on first use.
 
 Frames retain their native timestamps and frame indices throughout segmentation
@@ -110,10 +110,10 @@ artifacts outside the repository.
 
 ## Lossless prepared videos
 
-For repeated BabyCL runs, prepare smaller videos containing the exact RGB pixels
-after the views' fixed bicubic resize and center crop. Frames remain in MP4 files for decoding on demand, with H.264 RGB lossless
-encoding avoiding another lossy color conversion. A keyframe every eight frames
-bounds random-access decoding work.
+For repeated BabyCL runs, prepare videos containing the exact RGB pixels
+after the views' fixed bicubic resize and center crop. Frames remain in MP4 files
+and are decoded on demand. H.264 RGB lossless encoding avoids another lossy color
+conversion, and a keyframe every eight frames bounds random-access decoding work.
 These lossless RGB videos require CPU decoding, so use `--device cpu` in the
 loading benchmark and `stream.decoder.device=cpu` for GPU training.
 
@@ -135,8 +135,8 @@ uv run python -m egolearn.methods.babycl.prepare_video \
 Replace the session names with filenames from the source directory. Omit
 `--sessions` to convert all MP4s directly under that directory. Each complete
 output is decoded and checked against a hash of every preprocessed source frame.
-Frame counts, frame rates, and source-relative frame times must also match,
-while output container timestamps start at zero. Repeating preparation
+Frame counts, frame rates, and source-relative frame times must also match.
+Output container timestamps start at zero. Repeating preparation
 skips verified files whose source and output fingerprints are unchanged.
 
 ### Cache benchmarks

@@ -9,8 +9,8 @@ copies the encoded frames into shards, so allow space for another copy of the
 selected frames. The commands below use placeholder paths for your local data.
 
 For direct MP4 decoding, use `stream:video` with `decoder:pyav`. The
-[KrishnaCam experiment guide](../projects/krishnacam/README.md) covers dataset
-setup, streaming and offline configurations, and loading measurements.
+[KrishnaCam guide](../projects/babycl/docs/krishnacam.md) covers lossless prepared
+videos and matched-request loading benchmarks without extracted JPEGs.
 
 ## Packed frame store (`stream:packed_frames`)
 

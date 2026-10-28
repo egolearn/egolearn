@@ -9,12 +9,17 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
-- KrishnaCam supports direct video loading with streaming and offline pilot configurations.
-- BabyCL supports visual KrishnaCam training and matched-request video-versus-JPEG loading benchmarks.
-- PyAV supports exact-frame NVDEC decoding and verified lossless BabyCL preprocessing caches.
 - KrishnaCam IID configurations support instance-only SimCLR and temporal-only classification with explicit update budgets.
 - Linear SGD evaluation exposes batch prefetching and worker persistence without changing sampled inputs.
 
+- BabyCL supports verified lossless video caches after fixed spatial preprocessing,
+  retaining original replay references and decoding requested frames on demand.
+- PyAV supports optional NVDEC decoding, keeping intermediate frames on the GPU
+  while preserving sampled frame indices.
+- BabyCL supports visual KrishnaCam training, with GPU pilots and matched-request
+  video-versus-JPEG loading benchmarks.
+- `decoder:pyav` supports direct video batches, with streaming and offline
+  KrishnaCam pilot configurations and deterministic worker loading.
 - V-JEPA 2 provides pretraining components, matched IID and chronological streaming
   recipes, resumable runs, collapse diagnostics, throughput logs, and IntPhys evaluation.
 - V-JEPA 2 evaluates static clips with existing Labeled-S, BabyView, and shape-bias

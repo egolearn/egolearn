@@ -193,12 +193,8 @@ def _pool_chunk(items: list[WorkItem]) -> torch.Tensor:
 def _pool_items(items: list[WorkItem]) -> list[torch.Tensor]:
     if _WORKER["cache_frames"]:
         return [_pool_task(item) for item in items]
-    out = []
-    for start in range(0, len(items), 16):
-        batch = items[start : start + 16]
-        images = _batch_images(_WORKER["stream"], batch)
-        out.extend(_pool_task(item, images.get(i)) for i, item in enumerate(batch))
-    return out
+    images = _batch_images(_WORKER["stream"], items)
+    return [_pool_task(item, images.get(i)) for i, item in enumerate(items)]
 
 
 def _work_key(item: WorkItem) -> tuple:
@@ -457,11 +453,6 @@ class Loader:
                 (len(items), *first.shape), dtype=first.dtype, pin_memory=self.pin_memory
             )
             return torch.stack(tensors, out=out)
-        result = self._tensor_batch(items)
-        self.frame_requests += sum(item[4] if item[0] == "clip" else 1 for item in items)
-        return result
-
-    def _tensor_batch(self, items: list[WorkItem]) -> torch.Tensor:
         with self.timer.measure("data.load") if self.timer else nullcontext():
             if self.affinity:
                 pending = self._submit_affinity(items, packed=True)
@@ -476,6 +467,7 @@ class Loader:
                         )
                     packed_out.index_copy_(0, torch.tensor(indices), chunk)
                 assert packed_out is not None
+                self.frame_requests += sum(item[4] if item[0] == "clip" else 1 for item in items)
                 return packed_out
             size = max(1, (len(items) + 2 * self.workers - 1) // (2 * self.workers))
             chunks = list(
@@ -487,7 +479,9 @@ class Loader:
             out = torch.empty(
                 (len(items), *first.shape[1:]), dtype=first.dtype, pin_memory=self.pin_memory
             )
-            return torch.cat(chunks, out=out)
+            result = torch.cat(chunks, out=out)
+            self.frame_requests += sum(item[4] if item[0] == "clip" else 1 for item in items)
+            return result
 
     def clip_views(
         self,
