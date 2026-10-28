@@ -423,8 +423,11 @@ def test_krishnacam_configs_train_from_video(videos, tmp_path, config_name):
 
 
 def test_discovery_and_manifest_validation(videos, tmp_path):
-    parent = VideoStream(str(videos.parent), PyAVDecoder(), recursive=True)
-    assert all(name.endswith(".mp4") for name in parent.session_ids())
+    nested = videos / "nested"
+    nested.mkdir()
+    (nested / "other.MOV").touch()
+    parent = VideoStream(str(videos), PyAVDecoder(), recursive=True)
+    assert parent.session_ids() == ["20140901.mp4", "20140902.mp4", "nested/other.MOV"]
     empty = tmp_path / "empty"
     empty.mkdir()
     with pytest.raises(ValueError, match="no video files"):
