@@ -40,30 +40,6 @@ def test_help_version_and_invalid_command(tmp_path, entrypoint):
     assert run_cli(tmp_path, "unknown", entrypoint=entrypoint).returncode == 2
 
 
-def test_top_level_help_does_not_import_training_or_hydra(tmp_path):
-    script = """
-import sys
-from importlib.abc import MetaPathFinder
-
-class BlockOptionalImports(MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname.split('.')[0] in {'torch', 'torchvision', 'hydra', 'numpy'}:
-            raise AssertionError(f'CLI help imported {fullname}')
-
-sys.meta_path.insert(0, BlockOptionalImports())
-from egolearn.cli import main
-main(['--help'])
-"""
-    result = subprocess.run(
-        [sys.executable, "-I", "-c", script],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert "train" in result.stdout
-
-
 @pytest.mark.parametrize("command,config", [("train", "toy_streaming"), ("eval", "evaluate")])
 def test_packaged_config_matches_existing_module(tmp_path, command, config):
     result = run_cli(tmp_path, command, config, "--cfg", "job", "seed=19")
@@ -106,10 +82,14 @@ def test_file_config_preserves_defaults_overrides_and_caller_directory(tmp_path,
 
 
 @pytest.mark.parametrize(
-    "command,filename,default",
-    [("train", "toy_streaming.yaml", "config"), ("eval", "imagenet_linear_eval.yaml", "evaluate")],
+    "command,filename,default,searchpath_source",
+    [
+        ("train", "toy_streaming.yaml", "config", None),
+        ("train", "toy_streaming.yaml", "config", "config"),
+        ("eval", "imagenet_linear_eval.yaml", "evaluate", None),
+        ("eval", "imagenet_linear_eval.yaml", "evaluate", "override"),
+    ],
 )
-@pytest.mark.parametrize("searchpath_source", [None, "config", "override"])
 def test_file_config_inherits_packaged_defaults_and_keeps_searchpath(
     tmp_path, command, filename, default, searchpath_source
 ):

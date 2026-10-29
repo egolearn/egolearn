@@ -89,6 +89,7 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- The test suite trims repetitive validation matrices and consolidates training, CLI, recording, and import checks.
 - VoE probes report pooled-surprise AUROC alongside pairwise accuracy, with
   optional group metrics for labeled pairs.
 - The documentation separates task guides from reference material and corrects

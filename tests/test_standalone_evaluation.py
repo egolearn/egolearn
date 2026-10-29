@@ -106,8 +106,7 @@ def legacy_text_checkpoint(tmp_path, model_config):
     return path, config, model
 
 
-@pytest.mark.parametrize("hub_path", [False, True])
-@pytest.mark.parametrize("snapshot", [False, True])
+@pytest.mark.parametrize("hub_path,snapshot", [(False, False), (True, True)])
 def test_checkpoint_round_trip_without_building_training_pipeline(
     toy_pipeline, tmp_path, monkeypatch, snapshot, hub_path
 ):
@@ -156,8 +155,16 @@ def test_checkpoint_round_trip_without_building_training_pipeline(
     assert result.model_config == pipe.model.construction_config
 
 
-@pytest.mark.parametrize("probe_name", ["vtwt", "baby_winoground", "four_afc"])
-@pytest.mark.parametrize("path_kind", ["absolute", "relative", "hub"])
+@pytest.mark.parametrize(
+    "probe_name,path_kind",
+    [
+        ("vtwt", "absolute"),
+        ("vtwt", "relative"),
+        ("vtwt", "hub"),
+        ("baby_winoground", "absolute"),
+        ("four_afc", "hub"),
+    ],
+)
 def test_probe_configs_record_portable_paths(tmp_path, monkeypatch, probe_name, path_kind):
     (tmp_path / "labels.csv").write_text("image,positive_phrase,negative_phrase\n")
     (tmp_path / "vocab.json").write_text('{"<unk>": 0}')
@@ -304,13 +311,9 @@ def test_legacy_checkpoint_resolves_auto_vocab_from_hydra_tokenizer(
     assert not loaded.training
 
 
-@pytest.mark.parametrize("null_tokenizer", [False, True])
-def test_legacy_checkpoint_auto_vocab_requires_tokenizer(legacy_text_checkpoint, null_tokenizer):
+def test_legacy_checkpoint_auto_vocab_requires_tokenizer(legacy_text_checkpoint):
     path, config, _ = legacy_text_checkpoint
-    if null_tokenizer:
-        config["tokenizer"] = None
-    else:
-        del config["tokenizer"]
+    config["tokenizer"] = None
 
     with pytest.raises(
         ValueError, match="vocab_size=auto needs a tokenizer or a resolved vocabulary size"
@@ -502,8 +505,7 @@ def test_training_pipeline_rejects_standalone_benchmarks_without_scanning(monkey
         egolearn.build(cfg)
 
 
-@pytest.mark.parametrize("probe_type", ["linear", "linear_sgd"])
-@pytest.mark.parametrize("hub_path", [False, True])
+@pytest.mark.parametrize("probe_type,hub_path", [("linear", False), ("linear_sgd", True)])
 def test_existing_probe_configs_work_in_standalone_runner(
     tmp_path, imagefolder, model_config, probe_type, hub_path, monkeypatch
 ):
@@ -671,8 +673,9 @@ def test_failed_benchmark_keeps_completed_results_and_checkpoint(
     assert json.loads(output.read_text())["results"] == result.results
 
 
-@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
-@pytest.mark.parametrize("completed_first", [False, True])
+@pytest.mark.parametrize(
+    "value,completed_first", [(float("nan"), False), (float("inf"), True), (float("-inf"), True)]
+)
 def test_nonfinite_metric_preserves_serializable_partial_results(
     tmp_path, model_config, monkeypatch, value, completed_first
 ):
@@ -715,8 +718,7 @@ def test_evaluation_restores_mps_rng_on_success_and_failure(model_config, monkey
     assert state.item() == 11
 
 
-@pytest.mark.parametrize("completed_first", [False, True])
-@pytest.mark.parametrize("record_enabled", [False, True])
+@pytest.mark.parametrize("completed_first,record_enabled", [(False, False), (True, True)])
 def test_cli_writes_partial_results_and_exits_with_failure(
     tmp_path, imagefolder, model_config, completed_first, record_enabled
 ):

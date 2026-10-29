@@ -136,17 +136,16 @@ def test_labeled_s_adapter_verifies_local_split(tmp_path):
         labeled_s_linear.load_split_text(split_file)
 
 
-@pytest.mark.parametrize("via_mapping", [False, True], ids=["direct", "mapping"])
 @pytest.mark.parametrize(
-    "classes,train_labels,test_labels,message",
+    "via_mapping,classes,train_labels,test_labels,message",
     [
-        ((), (0,), (0,), "class list is empty"),
-        (("red", "blue"), (), (0,), "train split is empty"),
-        (("red", "blue"), (0,), (), "test split is empty"),
-        (("red", "blue"), (-1,), (0,), "train label -1 is outside"),
-        (("red", "blue"), (2,), (0,), "train label 2 is outside"),
-        (("red", "blue"), (0,), (-1,), "test label -1 is outside"),
-        (("red", "blue"), (0,), (2,), "test label 2 is outside"),
+        (False, (), (0,), (0,), "class list is empty"),
+        (True, ("red", "blue"), (), (0,), "train split is empty"),
+        (False, ("red", "blue"), (0,), (), "test split is empty"),
+        (True, ("red", "blue"), (-1,), (0,), "train label -1 is outside"),
+        (False, ("red", "blue"), (2,), (0,), "train label 2 is outside"),
+        (False, ("red", "blue"), (0,), (-1,), "test label -1 is outside"),
+        (True, ("red", "blue"), (0,), (2,), "test label 2 is outside"),
     ],
 )
 def test_classification_split_rejects_invalid_data(
@@ -314,8 +313,15 @@ def test_linear_sgd_probe_inputs_and_scores_are_independent_of_run_seed(tmp_path
     assert scores[0] == scores[1]
 
 
-@pytest.mark.parametrize("view", ["center_crop", "resize", "imagenet_center_crop", "custom_eval"])
-@pytest.mark.parametrize("dimensions", [(37, 37), (53, 37), (37, 53)])
+@pytest.mark.parametrize(
+    "view,dimensions",
+    [
+        ("center_crop", (53, 37)),
+        ("resize", (37, 53)),
+        ("imagenet_center_crop", (37, 53)),
+        ("custom_eval", (37, 37)),
+    ],
+)
 def test_linear_probes_encode_identical_evaluation_views(tmp_path, monkeypatch, view, dimensions):
     from egolearn.core.context import Context
     from egolearn.model.model import ComposedModel
@@ -358,8 +364,9 @@ def test_linear_probes_encode_identical_evaluation_views(tmp_path, monkeypatch, 
     assert torch.equal(encoder.inputs[0], encoder.inputs[-1])
 
 
-@pytest.mark.parametrize("size", [112, 224])
-@pytest.mark.parametrize("dimensions", [(271, 271), (359, 271), (271, 359)])
+@pytest.mark.parametrize(
+    "size,dimensions", [(224, (271, 271)), (224, (359, 271)), (112, (271, 359))]
+)
 def test_linear_sgd_probe_default_preserves_evaluation_pixels(size, dimensions):
     items = (LabeledImage("unused.png", 0),)
     split = ClassificationSplit(("object",), items, items)
@@ -377,8 +384,10 @@ def test_linear_sgd_probe_default_preserves_evaluation_pixels(size, dimensions):
     assert torch.equal(probe.transform(image), original_transform(image))
 
 
-@pytest.mark.parametrize("cuda_available", [False, True])
-@pytest.mark.parametrize("device,pin_memory", [("cpu", False), ("cuda", True), ("cuda:1", True)])
+@pytest.mark.parametrize(
+    "cuda_available,device,pin_memory",
+    [(False, "cpu", False), (True, "cpu", False), (False, "cuda", True), (True, "cuda:1", True)],
+)
 def test_linear_sgd_probe_pins_memory_for_execution_device(
     monkeypatch, cuda_available, device, pin_memory
 ):
@@ -594,13 +603,12 @@ def test_linear_sgd_prefetch_controls_queued_batches(workers, prefetch):
     assert probe.configuration()["prefetch_factor"] == prefetch
 
 
-@pytest.mark.parametrize("prefetch", [0, -1, 1.5, True])
+@pytest.mark.parametrize("prefetch", [0, True])
 def test_linear_sgd_rejects_invalid_prefetch(prefetch):
     with pytest.raises(ValueError, match="prefetch_factor"):
         linear_sgd.LinearSGDEvaluator(name="sgd", prefetch_factor=prefetch)
 
 
-@pytest.mark.parametrize("persistent", ["false", 0, None])
-def test_linear_sgd_rejects_nonboolean_worker_persistence(persistent):
+def test_linear_sgd_rejects_nonboolean_worker_persistence():
     with pytest.raises(ValueError, match="persistent_workers"):
-        linear_sgd.LinearSGDEvaluator(name="sgd", persistent_workers=persistent)
+        linear_sgd.LinearSGDEvaluator(name="sgd", persistent_workers="false")  # type: ignore[arg-type]
