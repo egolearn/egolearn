@@ -12,6 +12,9 @@ sizes, and published MD5 checksums used by the preparer.
 
 With FFmpeg and the training dependencies installed, prepare the videos once for
 both methods. Set `WALKINGTOURS_ROOT` to a new directory for the extracted frames.
+The release includes H.264, AV1, and VP9 video, so FFmpeg needs software decoders
+for all three. For AV1, use a build with `libdav1d`. If you install a separate
+FFmpeg build, put its `ffmpeg` and `ffprobe` binaries first on `PATH` during preparation.
 
 ```bash
 uv run python -m egolearn.data.prepare_walkingtours \
