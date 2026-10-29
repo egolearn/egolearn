@@ -21,6 +21,7 @@ _PATH_KEYS = {
     "neg_dir",
     "manifest",
     "manifest_json",
+    "temporal_manifest",
     "abstract_2d_manifest",
     "rendered_3d_manifest",
     "vocab_json",
@@ -31,7 +32,7 @@ _PATH_KEYS = {
     "metadata_csv",
     "trials_json",
 }
-_INPUT_SECTIONS = {"stream", "tokenizer", "probes", "benchmarks", "init_from"}
+_INPUT_SECTIONS = {"stream", "tokenizer", "probes", "benchmarks", "init_from", "driver"}
 
 
 def input_identity(

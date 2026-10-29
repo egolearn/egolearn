@@ -87,6 +87,9 @@ def _pool_init(
         importlib.import_module(mod)
     _WORKER["stream"] = stream
     _WORKER["views"] = ViewBank(view_specs)
+    from multiprocessing.util import Finalize
+
+    Finalize(stream, stream.close, exitpriority=10)
     _WORKER["cache"] = OrderedDict()
     _WORKER["cache_frames"] = cache_frames
 
@@ -150,7 +153,7 @@ def _decode_clip(
     return torch.stack([TF.to_tensor(frame) for frame in frames])
 
 
-def _pool_task(item: WorkItem) -> torch.Tensor:
+def _pool_task(item: WorkItem, pil=None) -> torch.Tensor:
     # worker processes own their RNGs, so plain seeding is race-free here
     if item[0] == "clip":
         _, ref, start, view_names, clip_len, stride, seed = item
@@ -169,10 +172,17 @@ def _pool_task(item: WorkItem) -> torch.Tensor:
     _, ref, index, view_names, seed = item
     torch.manual_seed(seed)
     random.seed(seed)
-    pil = _open_frame(_WORKER["stream"], ref, index, _WORKER["cache"], _WORKER["cache_frames"])
+    if pil is None:
+        pil = _open_frame(_WORKER["stream"], ref, index, _WORKER["cache"], _WORKER["cache_frames"])
     if _WORKER["cache_frames"]:
         pil = pil.copy()  # frame views may mutate their input
     return _WORKER["views"].apply(pil, view_names)
+
+
+def _batch_images(stream: Stream, items: list[WorkItem]) -> dict:
+    rows = [i for i, item in enumerate(items) if item[0] == "frame"]
+    images = stream.open_frame_batch([(items[i][1], items[i][2]) for i in rows])
+    return dict(zip(rows, images, strict=True))
 
 
 def _pool_chunk(items: list[WorkItem]) -> torch.Tensor:
@@ -181,7 +191,10 @@ def _pool_chunk(items: list[WorkItem]) -> torch.Tensor:
 
 
 def _pool_items(items: list[WorkItem]) -> list[torch.Tensor]:
-    return [_pool_task(item) for item in items]
+    if _WORKER["cache_frames"]:
+        return [_pool_task(item) for item in items]
+    images = _batch_images(_WORKER["stream"], items)
+    return [_pool_task(item, images.get(i)) for i, item in enumerate(items)]
 
 
 def _work_key(item: WorkItem) -> tuple:
@@ -205,6 +218,7 @@ class Loader:
     ):
         self.stream = stream
         self.views = views
+        stream.validate_views(views.specs)
         self.workers = int(workers)
         self.imports = list(imports or [])  # modules workers import to register views
         self.pin_memory = bool(pin_memory) and torch.cuda.is_available()
@@ -217,6 +231,7 @@ class Loader:
             raise ValueError("loader cache_frames and affinity require workers")
         self.flush_denormal = bool(flush_denormal)  # worker-only CPU arithmetic mode
         self._pool: ProcessPoolExecutor | None = None
+        self.frame_requests = 0  # successful logical frames, including repeated clip positions
         self._affinity_pools: list[ProcessPoolExecutor] = []
         self._owners: dict[tuple, int] = {}
         # optional StageTimer (egolearn.training.profiling); the driver attaches it
@@ -306,6 +321,7 @@ class Loader:
             pool.shutdown(wait=True, cancel_futures=True)
         self._affinity_pools.clear()
         self._owners.clear()
+        self.stream.close()
 
     # ---- frame selection --------------------------------------------------
     def pick_frame_indices(self, ref, k: int, rng: random.Random) -> list[int]:
@@ -355,11 +371,17 @@ class Loader:
         contract that makes worker-pool loading reproducible."""
         if self.timer is not None:
             with self.timer.measure("data.load"):
-                return self._one_frame(ref, index, view_names, seed)
-        return self._one_frame(ref, index, view_names, seed)
+                result = self._one_frame(ref, index, view_names, seed)
+        else:
+            result = self._one_frame(ref, index, view_names, seed)
+        self.frame_requests += 1
+        return result
 
     def _one_frame(self, ref, index: int, view_names: list[str], seed: int | None):
         pil = self.stream.open_frame(ref, index)
+        return self._frame_views(pil, view_names, seed)
+
+    def _frame_views(self, pil, view_names: list[str], seed: int | None):
         if seed is None:
             return self.views.apply(pil, view_names)
         with torch.random.fork_rng(devices=[]):
@@ -379,29 +401,42 @@ class Loader:
         process pool.  Same items, same tensors, either way."""
         if not items:
             return []
-        if self.workers <= 0:
-            out = []
-            for item in items:
-                if item[0] == "clip":
-                    _, ref, start, views, clip_len, stride, seed = item
-                    out.append(self._one_clip(ref, start, views, clip_len, stride, seed))
-                else:
-                    _, ref, index, views, seed = item
-                    out.append(self.frame_views(ref, index, views, seed=seed))
-            return out
-        if self.affinity:
-            with self.timer.measure("data.load") if self.timer else nullcontext():
-                pending = self._submit_affinity(items, packed=False)
-                ordered: dict[int, torch.Tensor] = {}
-                for indices, future in pending:
-                    ordered.update(zip(indices, future.result(), strict=True))
-                return [ordered[i] for i in range(len(items))]
-        pool = self._ensure_pool()
-        chunk = max(1, len(items) // (self.workers * 4))
         if self.timer is not None:
             with self.timer.measure("data.load"):
-                return list(pool.map(_pool_task, items, chunksize=chunk))
-        return list(pool.map(_pool_task, items, chunksize=chunk))
+                result = self._views_batch(items)
+        else:
+            result = self._views_batch(items)
+        self.frame_requests += sum(item[4] if item[0] == "clip" else 1 for item in items)
+        return result
+
+    def _views_batch(self, items: list[WorkItem]) -> list[torch.Tensor]:
+        # Bound decoded RGB memory while giving video backends nearby requests
+        # together. Worker count changes scheduling, never item seeds or order.
+        workers = max(1, self.workers)
+        chunk = min(16, (len(items) + workers - 1) // workers)
+        batches = [items[i : i + chunk] for i in range(0, len(items), chunk)]
+        if self.workers <= 0:
+            out = []
+            for batch in batches:
+                images = _batch_images(self.stream, batch)
+                for i, item in enumerate(batch):
+                    if item[0] == "clip":
+                        _, ref, start, views, clip_len, stride, seed = item
+                        out.append(
+                            self._one_clip(ref, start, views, clip_len, stride, seed, timed=False)
+                        )
+                    else:
+                        _, _ref, _index, views, seed = item
+                        out.append(self._frame_views(images[i], views, seed))
+            return out
+        if self.affinity:
+            pending = self._submit_affinity(items, packed=False)
+            ordered: dict[int, torch.Tensor] = {}
+            for indices, future in pending:
+                ordered.update(zip(indices, future.result(), strict=True))
+            return [ordered[i] for i in range(len(items))]
+        pool = self._ensure_pool()
+        return [tensor for batch in pool.map(_pool_items, batches) for tensor in batch]
 
     def tensor_batch(self, items: list[WorkItem]) -> torch.Tensor:
         """Collate homogeneous rows into one optionally pinned host allocation.
@@ -432,6 +467,7 @@ class Loader:
                         )
                     packed_out.index_copy_(0, torch.tensor(indices), chunk)
                 assert packed_out is not None
+                self.frame_requests += sum(item[4] if item[0] == "clip" else 1 for item in items)
                 return packed_out
             size = max(1, (len(items) + 2 * self.workers - 1) // (2 * self.workers))
             chunks = list(
@@ -443,7 +479,9 @@ class Loader:
             out = torch.empty(
                 (len(items), *first.shape[1:]), dtype=first.dtype, pin_memory=self.pin_memory
             )
-            return torch.cat(chunks, out=out)
+            result = torch.cat(chunks, out=out)
+            self.frame_requests += sum(item[4] if item[0] == "clip" else 1 for item in items)
+            return result
 
     def clip_views(
         self,
@@ -472,10 +510,19 @@ class Loader:
         read and the frame-dir adapters as T opens.
         """
         start = self.pick_clip_start(ref, clip_len, stride, rng)
-        return self._one_clip(ref, start, view_names, clip_len, stride, seed)
+        result = self._one_clip(ref, start, view_names, clip_len, stride, seed)
+        self.frame_requests += clip_len
+        return result
 
     def _one_clip(
-        self, ref, start: int, view_names: list[str], clip_len: int, stride: int, seed: int | None
+        self,
+        ref,
+        start: int,
+        view_names: list[str],
+        clip_len: int,
+        stride: int,
+        seed: int | None,
+        timed: bool = True,
     ) -> torch.Tensor:
         def _load() -> torch.Tensor:
             clip = _decode_clip(self.stream, ref, start, clip_len, stride)
@@ -490,7 +537,7 @@ class Loader:
                 finally:
                     random.setstate(py_state)
 
-        if self.timer is not None:
+        if self.timer is not None and timed:
             with self.timer.measure("data.load"):
                 return _load()
         return _load()

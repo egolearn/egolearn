@@ -64,6 +64,7 @@ def save_snapshot(path: str, driver) -> str:
             if p.grad is not None
         },
         "driver": {
+            "metadata": getattr(driver, "snapshot_metadata", None),
             "exhausted": bool(getattr(driver, "_exhausted", False)),
             "skipped_steps": getattr(driver, "skipped_steps", 0),
             "nonfinite_steps": getattr(driver, "nonfinite_steps", 0),
@@ -115,6 +116,8 @@ def load_snapshot(path: str, driver) -> None:
         if record is not None:
             record.value["input_provenance"]["resume"] = identity
     state = torch.load(resolve(path, repo_type="model"), map_location="cpu", weights_only=False)
+    if validate := getattr(driver, "validate_snapshot", None):
+        validate(state)
     if identity is not None:
         identity["training_provenance"] = state.get("run_provenance") or "unavailable"
 

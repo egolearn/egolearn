@@ -1,7 +1,7 @@
 # IntPhys 2
 
 The IntPhys 2 probe measures violation-of-expectation on synthetic physics
-videos. It reports pairwise accuracy, with higher scores better and 50% chance
+videos. It reports pairwise accuracy and AUROC, with higher scores better and 50% chance
 performance.
 
 Scores from this probe are not directly comparable to the paper's tables.
@@ -70,7 +70,9 @@ per video.
 A pair is correct when the impossible video is strictly more surprising than
 the possible one. `voe_acc_ctx<C>` scores each context length alone. `voe_acc`
 first averages each video's surprise over all context lengths, then compares
-once per pair.
+once per pair. `voe_auroc` ranks every video by that pooled surprise without
+pairing. It measures the probability that an impossible video is more surprising
+than a possible one, counting ties as one half (chance 50%).
 
 ## Registered evaluation probe
 
@@ -113,7 +115,7 @@ uv run egl eval intphys2_eval.yaml \
 The evaluator defaults to CPU if you omit `device=cuda`.
 
 For training, use the same entry under the training config's `probes` list and
-retain its registration module in `_imports_`. Metrics are `voe_acc` and one
+retain its registration module in `_imports_`. Metrics are `voe_acc`, `voe_auroc`, and one
 `voe_acc_ctx<C>` per context length, and the evaluator records the full probe
 configuration, including defaults, with the results. Before scoring, the probe
 checks that all 1,012 videos exist.

@@ -1,0 +1,20 @@
+defaults:
+  - krishnacam_iid_shared
+  - _self_
+
+hydra:
+  searchpath: [pkg://egolearn.configs]
+
+run_dir: ${oc.env:EGOLEARN_ARTIFACTS,runs}/iid_tc_krishnacam/seed_${seed}
+temporal_classes: ???
+model:
+  heads:
+    cls: {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, "${temporal_classes}"]}
+losses:
+  - {_target_: "loss:tcl", name: temporal, slots: [frames], head: cls,
+     num_classes: "${temporal_classes}", filter_unseen: false, weight: 1.0}
+driver:
+  _target_: egolearn.methods.babycl.temporal_iid.TemporalFrameDriver
+  batch:
+    temporal_manifest: ${oc.env:KRISHNACAM_TEMPORAL_MANIFEST,/path/to/temporal_labels.json}
+    num_classes: ${temporal_classes}

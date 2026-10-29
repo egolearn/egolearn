@@ -9,6 +9,17 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- KrishnaCam IID configurations support instance-only SimCLR and temporal-only classification with explicit update budgets.
+- Linear SGD evaluation exposes batch prefetching and worker persistence without changing sampled inputs.
+
+- BabyCL supports verified lossless video caches after fixed spatial preprocessing,
+  retaining original replay references and decoding requested frames on demand.
+- PyAV supports optional NVDEC decoding, keeping intermediate frames on the GPU
+  while preserving sampled frame indices.
+- BabyCL supports visual KrishnaCam training, with GPU pilots and matched-request
+  video-versus-JPEG loading benchmarks.
+- `decoder:pyav` supports direct video batches, with streaming and offline
+  KrishnaCam pilot configurations and deterministic worker loading.
 - V-JEPA 2 provides pretraining components, matched IID and chronological streaming
   recipes, resumable runs, collapse diagnostics, throughput logs, and IntPhys evaluation.
 - V-JEPA 2 evaluates static clips with existing Labeled-S, BabyView, and shape-bias
@@ -57,6 +68,8 @@ patch releases for fixes during 0.x development.
   subsets, data preparation, and full-versus-monitoring comparisons.
 - `probe:intphys2` scores 506 possible/impossible video pairs with configurable
   context lengths and L1 or L2 prediction error.
+- `probe:grasp` scores GRASP Level 2 video pairs by test and concept using a
+  local manifest from `egl data prepare grasp`.
 - The `video` and `train` extras include PyAV (`av`) for benchmark video decoding.
 - Shape-bias and spatial monitoring collections have revision-pinned hosted data
   and packaged checkpoint-evaluation configurations.
@@ -90,6 +103,8 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- VoE probes report pooled-surprise AUROC alongside pairwise accuracy, with
+  optional group metrics for labeled pairs.
 - The documentation separates task guides from reference material and corrects
   stale descriptions of training concurrency, stopping conditions, and job snapshots.
 - `driver.prefetch` overlaps batch composition with training while preserving
@@ -120,6 +135,14 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- Temporal IID training validates empty recordings and rejects snapshot resumes
+  when the temporal-label manifest changes or its saved identity is unavailable.
+- Video benchmarks fall back to the CPU count on platforms without CPU affinity
+  support, including macOS.
+- Prepared-video loading checks cache coverage before training, and video benchmarks
+  accept explicit session lists for partial caches.
+- PyAV frame reads isolate returned images, preserving repeated requests and cached
+  pixels when views mutate their inputs.
 - Evaluation preserves completed benchmark results and provenance when a later
   benchmark fails, and rejects nonfinite metrics.
 - Evaluation restores model modes, gradient flags, and RNG states, including MPS,

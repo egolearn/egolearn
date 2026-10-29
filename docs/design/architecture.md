@@ -192,8 +192,9 @@ run as probes at configured training intervals using the same scoring implementa
 Full ImageNet decoding runs through the standalone evaluator.
 
 The [evaluation guide](../evaluation.md) covers checkpoint loading, commands, and
-benchmark metrics. Dedicated pages describe the spatial-relations and IntPhys 2
-protocols and their comparison limits. Matching a model's capabilities does not ensure that
+benchmark metrics. Dedicated pages describe the spatial-relations, IntPhys 2, and
+[GRASP](../evaluation/grasp.md) protocols and their comparison limits.
+Matching a model's capabilities does not ensure that
 its preprocessing and evaluation protocol match a published result.
 
 ## Checkpoints and continuation

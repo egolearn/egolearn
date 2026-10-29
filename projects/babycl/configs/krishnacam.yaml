@@ -1,0 +1,6 @@
+defaults:
+  - krishnacam_shared
+  - _self_
+
+hydra:
+  searchpath: [pkg://egolearn.configs]

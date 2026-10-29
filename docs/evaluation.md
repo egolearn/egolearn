@@ -36,6 +36,13 @@ Set `benchmarks.0.encoder` to an encoder name or modality; its default is
 default image resolution is 224 pixels, while `benchmarks.0.size=112` matches
 the released Memory Storyboard evaluation resolution.
 
+Set `benchmarks.0.prefetch_factor=1` to reduce queued batches without changing
+batch size, sample order, or augmented inputs. The default is two batches per
+worker; this setting has no effect when `workers=0` and does not cap total RAM.
+Set `benchmarks.0.persistent_workers=false` to release workers between training
+and validation passes. The default, `true`, keeps workers alive for reuse.
+Both settings preserve per-image augmentation seeds.
+
 Use `benchmarks.0.seed` to change ImageNet's classifier initialization, shuffle
 order, and augmentations. The top-level `seed` sets the evaluation context but
 does not replace this separate protocol seed.
@@ -65,7 +72,8 @@ running evaluation.
 | BabyView linear decoding | `probe:linear` | [Frozen split over all 72 categories](#babyview-protocols) | `top1`; 1/72 uniform-guess accuracy |
 | VTWT | `probe:vtwt` | [CSV labels, frames, and training vocabulary](evaluation/data.md#babyvlm-benchmark-data) | `vtwt_acc`; 0.5 chance |
 | Baby Winoground | `probe:baby_winoground` | [CSV labels, positive/negative images, and training vocabulary](evaluation/data.md#babyvlm-benchmark-data) | `bw_group_acc`; 0.25 for independent random choices |
-| IntPhys 2 | `probe:intphys2` | [Video inputs and score limitations](evaluation/intphys2.md) | `voe_acc`; 0.5 chance |
+| IntPhys 2 | `probe:intphys2` | [Video inputs and score limitations](evaluation/intphys2.md) | `voe_acc`, `voe_auroc`; 0.5 chance |
+| GRASP Level 2 | `probe:grasp` | [Pair manifest and score limitations](evaluation/grasp.md) | `voe_acc`, `voe_auroc`; 0.5 chance |
 
 Accuracies are fractions rather than percentages. Baby Winoground requires both
 image-phrase choices to be correct, so its group baseline assumes independent
@@ -134,6 +142,7 @@ complete [BabyVLM](evaluation/data.md#babyvlm-evaluation-config) and
 | VTWT | `probe:vtwt` | `egolearn.evaluation.benchmarks.vtwt` |
 | Baby Winoground | `probe:baby_winoground` | `egolearn.evaluation.benchmarks.baby_winoground` |
 | IntPhys 2 | `probe:intphys2` | `egolearn.evaluation.benchmarks.intphys2` |
+| GRASP | `probe:grasp` | `egolearn.evaluation.benchmarks.grasp` |
 
 ## Linear decoding protocols
 

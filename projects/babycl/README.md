@@ -4,6 +4,9 @@ BabyCL learns visual and verbal representations from SAYCam in a single
 chronological pass. This project provides the BabyCLIP training recipe, an offline
 variant, and configuration controls for memory and objective ablations.
 
+For silent KrishnaCam videos, use the
+[visual BabyCL training and benchmark guide](docs/krishnacam.md).
+
 ## Training
 
 Use the [default config](configs/saycam_default.yaml) for streaming training.

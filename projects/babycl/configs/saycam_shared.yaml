@@ -53,11 +53,11 @@ stream:
   # see docs/data_loading.md):
   #   _target_: "stream:packed_frames"
   #   root_dir: /path/to/saycam_5fps_packed
-  # Video-first alternative (same refs, no pre-extracted frames; blocked on
-  # the Poodle integration -- see egolearn/data/decoding/poodle.py):
+  # Direct-video alternative for constant-rate recordings; use source frame
+  # rates and adjust admission strides rather than assuming extracted 5 fps:
   #   _target_: "stream:video"
   #   root_dir: /path/to/saycam_videos
-  #   decoder: {_target_: "decoder:poodle"}
+  #   decoder: {_target_: "decoder:pyav"}
 
 tokenizer:
   vocab_json: /path/to/vocab.json
