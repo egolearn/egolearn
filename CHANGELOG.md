@@ -9,6 +9,7 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- Full-network fine-tuning supports deferred metrics, optional GPU kernel optimizations, and warmed throughput comparisons across batch sizes.
 - KrishnaCam IID configurations support instance-only SimCLR and temporal-only classification with explicit update budgets.
 - Linear SGD evaluation exposes batch prefetching and worker persistence without changing sampled inputs.
 

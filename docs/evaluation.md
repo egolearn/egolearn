@@ -54,6 +54,67 @@ the search paths and overrides described in
 For repeated runs with pinned inputs and several seeds, use
 [benchmark suites](benchmark_suites.md).
 
+## Full-network fine-tuning performance
+
+Use `scripts/eval/full_finetune.py` with an existing full-network JSON or YAML
+configuration to train the encoder and classifier together. This runner accepts
+the standalone fine-tuning configuration, not the Hydra linear-probe configuration
+shown above. Run it inside a compute allocation with the training extra installed:
+
+```bash
+uv run python scripts/eval/full_finetune.py "$FINETUNE_CONFIG"
+```
+
+Four optional fields control execution without changing the configured optimizer,
+augmentation recipe, or epoch count:
+
+```yaml
+defer_metrics: true
+channels_last: true
+cudnn_benchmark: true
+compile_mode: null
+```
+
+All three boolean options default to `false`. Set `compile_mode` to `default`
+to enable `torch.compile`; `null` leaves compilation disabled. Compilation preserves
+checkpoint keys. Channels-last applies to both model weights and input images.
+
+Deferred metrics stay on the GPU until a progress report or epoch boundary.
+Training rejects nonfinite losses, nonfinite gradient norms, and zero gradient
+norms before each optimizer update. Validation checks for nonfinite logits at
+the end of its pass. Kernel choices can change numerical rounding, and cuDNN
+autotuning can choose different algorithms between runs.
+
+Set a new `output_dir` when changing options or runner code. Resume verifies
+the configuration and runner digest against the saved checkpoint provenance.
+
+### Throughput comparisons
+
+Supply the original runner and one or more existing
+JSON configs with an effective batch size of 256:
+
+```bash
+uv run python scripts/bench/bench_imagenet_finetune.py "$FINETUNE_CONFIG" \
+  --runner scripts/eval/full_finetune.py \
+  --baseline-runner "$BASELINE_RUNNER" \
+  --output "$BENCHMARK_OUTPUT"
+```
+
+The output directory must not exist. The benchmark reads the full image subset
+once before timing, so the first baseline also benefits from cached file reads.
+It then uses that subset for each variant, excludes 16 warm-up updates, and
+measures three windows of 64 updates each.
+
+It records individual timings, peak GPU memory, model-state
+differences, and throughput-based training-time estimates in `results.json`.
+Warm-up includes initial compilation; validation and checkpoint writes are excluded
+from throughput. A repeated baseline helps detect performance drift during the run.
+Short validation passes check execution and do not establish converged accuracy.
+
+The 128×2 and 256×1 trials retain the effective batch of the 64×4 baseline.
+Larger physical batches change BatchNorm statistics and MixUp/CutMix grouping,
+so compare their final accuracy before adopting them as an evaluation protocol.
+
 ## Benchmark selection
 
 Choose a protocol compatible with the model and prepare its inputs before
