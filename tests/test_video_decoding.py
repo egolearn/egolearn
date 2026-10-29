@@ -436,10 +436,20 @@ def test_discovery_and_manifest_validation(videos, tmp_path):
     assert explicit.session_ids() == ["20140902.mp4"]
 
 
-def test_video_benchmark_compares_identical_requests_and_bounded_jpegs(videos, tmp_path):
+@pytest.mark.parametrize("has_affinity", [True, False])
+def test_video_benchmark_compares_identical_requests_and_bounded_jpegs(
+    videos, tmp_path, monkeypatch, has_affinity
+):
     import json
+    import os
 
     from egolearn.data.video_benchmark import main
+
+    monkeypatch.setattr(os, "cpu_count", lambda: 8)
+    if has_affinity:
+        monkeypatch.setattr(os, "sched_getaffinity", lambda pid: {1, 3}, raising=False)
+    else:
+        monkeypatch.delattr(os, "sched_getaffinity", raising=False)
 
     output = tmp_path / "benchmark"
     assert (
@@ -474,6 +484,7 @@ def test_video_benchmark_compares_identical_requests_and_bounded_jpegs(videos, t
     )
     report = json.loads((output / "report.json").read_text())
     assert report["status"] == "completed"
+    assert report["cpu_affinity"] == (2 if has_affinity else 8)
     assert report["sessions"] == ["20140901.mp4"]
     individual, grouped, jpeg = report["variants"]
     assert individual["first_measured_batch_sha256"] == grouped["first_measured_batch_sha256"]
