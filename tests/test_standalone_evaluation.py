@@ -718,7 +718,9 @@ def test_evaluation_restores_mps_rng_on_success_and_failure(model_config, monkey
     assert state.item() == 11
 
 
-@pytest.mark.parametrize("completed_first,record_enabled", [(False, False), (True, True)])
+@pytest.mark.parametrize(
+    "completed_first,record_enabled", [(False, False), (False, True), (True, True)]
+)
 def test_cli_writes_partial_results_and_exits_with_failure(
     tmp_path, imagefolder, model_config, completed_first, record_enabled
 ):
