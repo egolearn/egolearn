@@ -173,7 +173,7 @@ from a clean commit. After configuring and sourcing your local `env.sh`, launch
 three independent seeds with an appropriate GPU partition:
 
 ```bash
-scripts/slurm/submit --sweep --max-parallel 3 \
+scripts/slurm/submit --sweep \
     --job-name babycl-krishnacam --partition "$GPU_PARTITION" \
     --gres=gpu:1 --cpus-per-task=16 --mem=64G --time=24:00:00 -- \
     egl train projects/babycl/configs/krishnacam.yaml seed=0,1,2 \
@@ -187,3 +187,63 @@ Checkpoints and resumable snapshots are saved every 500 optimizer steps, with
 additional snapshots at configured stream milestones. Choose the wall-time
 request from pilot measurements and use `resume=auto` with the same absolute
 `run_dir` when continuing an interrupted run.
+
+## IID visual baselines
+
+Use `krishnacam_iid_simclr.yaml` for instance loss alone, or `krishnacam_iid_tc.yaml`
+for temporal loss alone. Both configs shuffle all native-rate frames and use the
+verified lossless cache, the same ResNeXt-50, and two BabyCL augmentations per frame.
+Each update contains 128 frames from a global shuffled order, with no replay memory.
+Each config sets its active loss weight to 1.0 and constructs only the corresponding head.
+
+Set `driver.max_steps` to the completed streaming run's update count for each
+seed. The default is 11,900 steps, and the cosine schedule spans that budget.
+This matches updates and batch size, but does not match which frames each model
+sees. The run can stop before completing one shuffled epoch.
+
+```bash
+egl train projects/babycl/configs/krishnacam_iid_simclr.yaml \
+    seed=0 driver.max_steps=11904
+```
+
+TC requires fixed labels covering every frame before training begins. Supply
+`KRISHNACAM_TEMPORAL_MANIFEST` and set `temporal_classes` to its class count:
+
+```bash
+export KRISHNACAM_TEMPORAL_MANIFEST=/path/to/temporal_labels.json
+egl train projects/babycl/configs/krishnacam_iid_tc.yaml \
+    temporal_classes=2 seed=0 driver.max_steps=11904
+```
+
+The example below describes one eight-frame recording with two temporal classes.
+Replace its session name, metadata, and intervals with your complete dataset.
+Intervals use inclusive start and exclusive end frame indices, covering
+each recording exactly once without gaps or overlap. Labels are integers from
+zero through `num_classes - 1`, shared across recordings.
+Include empty recordings with their `fps`, `num_frames: 0`, and `segments: []`.
+
+```json
+{
+  "format_version": 1,
+  "num_classes": 2,
+  "sessions": {
+    "recording.mp4": {
+      "fps": 30.0,
+      "num_frames": 8,
+      "segments": [[0, 3, 0], [3, 8, 1]]
+    }
+  }
+}
+```
+
+The driver checks session names, frame counts, timestamps, and label coverage
+before training. TC uses the same fixed target for a frame regardless of batch
+order, with all classes active from the first update. Streaming BabyCL instead
+uses batch-local labels. When converting an online segmenter's evolving output,
+resolve overlapping revisions explicitly and retain that rule with the manifest's
+provenance. Checkpoint evaluation uses the vision encoder, without either training
+head.
+
+Resume requires the same temporal-manifest bytes used for the saved run. New
+snapshots store this identity directly, and older snapshots can supply it through
+run provenance. Snapshots without a saved manifest identity require a new run.

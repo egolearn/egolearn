@@ -36,6 +36,13 @@ Set `benchmarks.0.encoder` to an encoder name or modality; its default is
 default image resolution is 224 pixels, while `benchmarks.0.size=112` matches
 the released Memory Storyboard evaluation resolution.
 
+Set `benchmarks.0.prefetch_factor=1` to reduce queued batches without changing
+batch size, sample order, or augmented inputs. The default is two batches per
+worker; this setting has no effect when `workers=0` and does not cap total RAM.
+Set `benchmarks.0.persistent_workers=false` to release workers between training
+and validation passes. The default, `true`, keeps workers alive for reuse.
+Both settings preserve per-image augmentation seeds.
+
 Use `benchmarks.0.seed` to change ImageNet's classifier initialization, shuffle
 order, and augmentations. The top-level `seed` sets the evaluation context but
 does not replace this separate protocol seed.

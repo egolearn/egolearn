@@ -427,7 +427,12 @@ def test_linear_sgd_probe_augmentations_are_run_seed_and_worker_count_invariant(
     initial_children = set(active_children())
 
     def collect(
-        workers: int, num_epochs: int, run_seed: int, probe_seed: int = 5
+        workers: int,
+        num_epochs: int,
+        run_seed: int,
+        probe_seed: int = 5,
+        prefetch_factor: int = 2,
+        persistent_workers: bool = True,
     ) -> tuple[int, list[tuple[list[int], dict[int, torch.Tensor]]]]:
         ctx = Context(seed=run_seed, device="cpu")
         probe = linear_sgd_probe.LinearSGDProbe(
@@ -436,6 +441,8 @@ def test_linear_sgd_probe_augmentations_are_run_seed_and_worker_count_invariant(
             size=16,
             batch_size=2,
             workers=workers,
+            prefetch_factor=prefetch_factor,
+            persistent_workers=persistent_workers,
             epochs=2,
             seed=probe_seed,
         )
@@ -462,7 +469,7 @@ def test_linear_sgd_probe_augmentations_are_run_seed_and_worker_count_invariant(
                 )
             # The same processes stay alive after each epoch, including while idle.
             active_pool = set(active_children()) - initial_children
-            assert len(active_pool) == workers
+            assert len(active_pool) == (workers if persistent_workers else 0)
             if worker_pool is not None:
                 assert active_pool == worker_pool
             worker_pool = active_pool
@@ -473,13 +480,15 @@ def test_linear_sgd_probe_augmentations_are_run_seed_and_worker_count_invariant(
     other_run_worker_seed, other_run = collect(0, 2, run_seed=18)
     pooled_worker_seed, pooled = collect(2, 2, run_seed=18)
     other_probe_worker_seed, other_probe = collect(0, 2, run_seed=18, probe_seed=6)
+    _, shallow = collect(2, 2, run_seed=18, prefetch_factor=1)
+    _, released = collect(2, 2, run_seed=18, prefetch_factor=1, persistent_workers=False)
     # Releasing the local loader also releases its persistent worker pool.
     # Pre-existing children from other tests may have finished in the meantime.
     assert not (set(active_children()) - initial_children)
 
     assert serial_worker_seed == other_run_worker_seed == pooled_worker_seed
     assert other_probe_worker_seed != serial_worker_seed
-    for result in (other_run, pooled):
+    for result in (other_run, pooled, shallow, released):
         for epoch, (order, views) in enumerate(result):
             serial_order, serial_views = serial[epoch]
             assert serial_order == order
@@ -564,3 +573,34 @@ def test_split_metadata_accepts_numpy_integer_labels():
         )
 
     assert split(np.int64(0)).metadata() == split(0).metadata()
+
+
+@pytest.mark.parametrize("workers,prefetch", [(0, 1), (2, 1), (2, 3)])
+def test_linear_sgd_prefetch_controls_queued_batches(workers, prefetch):
+    items = (LabeledImage("unused.png", 0),)
+    split = ClassificationSplit(("object",), items, items)
+    probe = linear_sgd_probe.LinearSGDProbe(
+        name="sgd", split=split, workers=workers, prefetch_factor=prefetch
+    )
+    loader = probe._loader(
+        split.test,
+        probe.transform,
+        False,
+        torch.Generator().manual_seed(0),
+        "test",
+        device=torch.device("cpu"),
+    )
+    assert loader.prefetch_factor == (prefetch if workers else None)
+    assert probe.configuration()["prefetch_factor"] == prefetch
+
+
+@pytest.mark.parametrize("prefetch", [0, -1, 1.5, True])
+def test_linear_sgd_rejects_invalid_prefetch(prefetch):
+    with pytest.raises(ValueError, match="prefetch_factor"):
+        linear_sgd.LinearSGDEvaluator(name="sgd", prefetch_factor=prefetch)
+
+
+@pytest.mark.parametrize("persistent", ["false", 0, None])
+def test_linear_sgd_rejects_nonboolean_worker_persistence(persistent):
+    with pytest.raises(ValueError, match="persistent_workers"):
+        linear_sgd.LinearSGDEvaluator(name="sgd", persistent_workers=persistent)

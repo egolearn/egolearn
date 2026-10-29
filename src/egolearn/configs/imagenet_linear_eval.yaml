@@ -17,6 +17,8 @@ benchmarks:
     size: 224
     batch_size: 1024
     workers: 16
+    prefetch_factor: 2
+    persistent_workers: true
     epochs: 10
     lr: 3.0
     momentum: 0.9

@@ -9,6 +9,9 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- KrishnaCam IID configurations support instance-only SimCLR and temporal-only classification with explicit update budgets.
+- Linear SGD evaluation exposes batch prefetching and worker persistence without changing sampled inputs.
+
 - BabyCL supports verified lossless video caches after fixed spatial preprocessing,
   retaining original replay references and decoding requested frames on demand.
 - PyAV supports optional NVDEC decoding, keeping intermediate frames on the GPU
@@ -118,6 +121,8 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- Temporal IID training validates empty recordings and rejects snapshot resumes
+  when the temporal-label manifest changes or its saved identity is unavailable.
 - Video benchmarks fall back to the CPU count on platforms without CPU affinity
   support, including macOS.
 - Prepared-video loading checks cache coverage before training, and video benchmarks
