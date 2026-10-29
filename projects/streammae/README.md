@@ -5,10 +5,9 @@ Continuous Video**, Ivan Martinović, Lukas Knobel, Yuki M. Asano, 2026
 ([paper](https://arxiv.org/abs/2609.40333)). Work is tracked in
 [issue #48](https://github.com/agentic-learning-ai-lab/egolearn/issues/48).
 
-This project currently implements standard image
-[MAE (He et al., CVPR 2022)](https://arxiv.org/abs/2111.06377).
-StreamMAE regularization, DataDrop, and motion-biased cropping remain follow-up
-work. No downstream performance or paper reproduction is claimed.
+This project implements standard image
+[MAE (He et al., CVPR 2022)](https://arxiv.org/abs/2111.06377) and the StreamMAE
+training method. No downstream performance or paper reproduction is claimed.
 
 ## Run
 
@@ -154,3 +153,145 @@ plus `MAE_SOURCE`, `MAE_PYTHON`, `MAE_IMAGE`, `MAE_BINDPATH`, `MAE_OVERLAY_LIST`
 Hydra overrides, including the mounted `stream.root_dir`. Set `MAE_REQUEUE=0`
 for preflights. Use a frozen source tree and a non-editable installation for
 long runs so later development cannot alter a queued or resumed job.
+
+
+## StreamMAE on SAYCam and BabyView
+
+The `full_saycam_streammae` and `full_babyview_streammae` recipes use the same
+full-pass runner and Slurm launcher as MAE:
+
+```bash
+uv run python -m egolearn.methods.mae.train \
+    --config-dir projects/streammae/configs --config-name full_saycam_streammae \
+    stream.root_dir="$SAYCAM_ROOT"
+uv run python -m egolearn.methods.mae.train \
+    --config-dir projects/streammae/configs --config-name full_babyview_streammae \
+    stream.root_dir="$BABYVIEW_ROOT"
+```
+
+They start ViT-S/16 from scratch with an unchanged MAE decoder and reconstruction
+objective. The encoder has per-example stochastic depth on both residual
+branches, increasing linearly across blocks to 0.25. Color jitter uses brightness,
+contrast, saturation and hue strengths `(0.4, 0.4, 0.2, 0.1)` with probability 0.5.
+The zero-drop-path encoder retains existing MAE parameter names and behavior.
+
+DataDrop uses a **fixed-cardinality binary mask**: sample 512 distinct frames
+uniformly from the current 2,048-frame FIFO. Dropped examples receive no training
+view or model forward. This retains exactly 25% each step, rather than drawing
+independent Bernoulli masks with variable cardinality. The learning rate remains
+1.6e-4, scaled for the retained batch of 512. `run_control.window_size` controls
+the window and `batch_size` controls retained examples. The runner validates
+capacity, slot size, stride and initial fill. Update count is
+`ceil((N - window_size + stride) / stride)`; the tail consumes all source frames.
+With stride 32, this is 48 fewer updates than the 512-window MAE baseline because
+of the longer initial fill. For stride 1, set both `run_control.stride=1` and
+`driver.warmup.admitted=2047`; `driver.advance.n` follows the stride interpolation.
+
+`admission:streammae_frames` computes RGB L1 differences against the immediately
+preceding frame in that recording, before DataDrop or random augmentation.
+Averaging each complete 16x16 patch produces a small motion map cached in the
+FIFO metadata. A session start or frame-size change produces a zero map.
+`view:streammae` samples four patch-aligned first-stage regions and chooses the
+one with the highest average motion. This two-stage branch is used with
+probability 0.5; otherwise ordinary full-frame random resized cropping applies.
+The selected region receives the standard MAE crop/flip plus color jitter.
+Equal scores select the first uniformly sampled candidate.
+
+The prepared datasets have different geometry from WT++. These recipes keep
+native RGB dimensions and select first-stage regions with height fraction
+336/720 and width fraction 592/1280, rounded to complete patches. Partial patches
+at the right/bottom edges are excluded from first-stage candidates. The ordinary
+full-frame branch can still use those edges. At 224x224 this produces 96x112 (width x height)
+regions; at 270x480 (width x height), 128x224 regions. Explicit `crop_size` uses
+`[height, width]` pixels. To use the paper geometry, set `frame_size: [720, 1280]`
+in both admission and the view, and set view `crop_size: [336, 592]`.
+
+Motion uses the prepared stream's actual sampling rate. The `fps` field only
+labels timestamps and never resamples files. No additional orientation transform
+is applied. Changing geometry is a new scientific recipe and requires a new run.
+
+For ablations: set encoder `drop_path_rate=0`, view `jitter_probability=0`,
+`motion_candidates=1` for random two-stage crops, or `crop_probability=0` for
+ordinary cropping. Disable DataDrop with `run_control.window_size=512` and
+`driver.warmup.admitted=480` at stride 32. These switches are independent.
+
+Motion maps are stored in snapshots with the FIFO. Resume replays frame refs
+without decoding historical pixels and reloads only the preceding frame before
+live ingestion resumes. Metadata-only replay requires memory-backed recipe slots;
+`stream_head` slots are rejected for this admission component. Augmented crops
+are always regenerated from seeded randomness; worker caches contain raw images.
+Synthetic tests cover moving regions, uint8 subtraction, session boundaries,
+worker equality, per-example stochastic depth, DataDrop membership, and exact
+interrupted-versus-uninterrupted CPU training.
+
+## WalkingTours and WT++
+
+`full_wt_original_streammae` uses all ten videos in the original WalkingTours
+release. Follow the [shared WT preparation guide](../walkingtours/README.md) to
+download and resample those videos, or compare StreamMAE with visual BabyCL.
+
+`full_wtpp_london_streammae` trains ViT-S/16 on the paper's default 12-hour London
+stream using the authors' source video or prepared frames supplied by you.
+WT++ extends the original WalkingTours collection, whose released video list does
+not contain London. The [project page](https://martinovicivan.github.io/StreamMAE/)
+currently marks the WT++ release as pending. Use the exact source when it becomes
+available or when you have a local copy.
+
+### Prepared frames
+
+Prepare the 60 FPS video by retaining frames 0, 16, 32, and so on, at 1280×720.
+The following command writes high-quality JPEGs to a new session directory. Set
+`WALKINGTOURS_VIDEO` to the video path and `WALKINGTOURS_ROOT` to your frame root.
+Before extraction, use `ffprobe` to check that your input video has a frame rate of 60 FPS:
+
+```bash
+ffprobe -v error -select_streams v:0 -show_entries stream=avg_frame_rate \
+    -of default=noprint_wrappers=1:nokey=1 "$WALKINGTOURS_VIDEO"
+mkdir -p "$WALKINGTOURS_ROOT"
+mkdir "$WALKINGTOURS_ROOT/london"
+ffmpeg -nostdin -n -i "$WALKINGTOURS_VIDEO" -an \
+    -vf "select='not(mod(n,16))',scale=1280:720" -fps_mode vfr \
+    -q:v 2 -start_number 1 "$WALKINGTOURS_ROOT/london/frame_%08d.jpg"
+```
+
+The adapter also accepts PNGs, requires consecutive indices starting at 1, and
+rejects empty or missing sessions. A truncated extraction
+can still have consecutive indices, so set `run_control.expected_frames` from an
+independent source inventory. The adapter uses `stream.fps=3.75` for timestamps
+without resampling the prepared frames. Keep the prepared data unchanged throughout training and
+resume.
+
+### Training
+
+Set `WALKINGTOURS_FRAMES` to the expected extracted frame count from your independent
+source inventory, then start the full-pass runner:
+
+```bash
+uv run python -m egolearn.methods.mae.train \
+    --config-dir projects/streammae/configs --config-name full_wtpp_london_streammae \
+    stream.root_dir="$WALKINGTOURS_ROOT" \
+    run_control.expected_frames="$WALKINGTOURS_FRAMES"
+```
+
+Run a preflight with `run_control.stop_after_steps=10`, then set it to zero to
+resume the same run. The existing `mae.sbatch` launcher accepts the WalkingTours
+config names and retains its pause/requeue behavior. For extracted files on a
+normal filesystem, provide an empty `MAE_OVERLAY_LIST` file and bind the frame root.
+
+The recipe uses stride 1, a 2,048-frame FIFO, and 512 retained examples per update.
+Both motion scoring and cropping use 720×1280 frames with a 336×592 first-stage
+region, expressed as height × width. Learning rate, model, seed, and
+regularization match the SAYCam/BabyView StreamMAE recipes. DataDrop retains the
+existing fixed-cardinality sampling implementation. These settings follow the
+[paper's training protocol](https://arxiv.org/html/2609.40333v1#S5), but do not
+establish numerical equivalence to the authors' implementation.
+
+The loader caches 256 decoded frames per worker to limit full-resolution memory
+use. Training saves a rolling snapshot every 5,000 updates and archives snapshots
+at 20%, 40%, 60%, 80%, and completion, with equivalent IID epoch archiving disabled.
+
+For another ordered collection, use `full_walkingtours_streammae` and set
+`stream.sessions=[first_video,second_video,...]` to your directory names in training
+order. For the paper's WT++95h stride of 2, set `run_control.stride=2` and
+`driver.warmup.admitted=2046` together. Use a new run directory when changing the
+collection or scientific settings.

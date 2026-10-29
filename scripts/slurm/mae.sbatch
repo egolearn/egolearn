@@ -19,10 +19,10 @@ set -euo pipefail
 : "${MAE_OVERLAY_LIST:?file containing one read-only archive path per line}"
 : "${MAE_RUN_ROOT:?output root}"
 : "${CUDA_VISIBLE_DEVICES:?GPU allocation required}"
-config=${1:?full_saycam_streaming, full_saycam_iid, full_babyview_streaming, or full_babyview_iid}
+config=${1:?full-pass MAE or StreamMAE config name}
 shift
 case "$config" in
-  full_saycam_streaming|full_saycam_iid|full_babyview_streaming|full_babyview_iid) ;;
+  full_saycam_streaming|full_saycam_iid|full_babyview_streaming|full_babyview_iid|full_saycam_streammae|full_babyview_streammae|full_walkingtours_streammae|full_wtpp_london_streammae|full_wt_original_streammae) ;;
   *) echo "unsupported MAE config: $config" >&2; exit 2 ;;
 esac
 mkdir -p "$MAE_RUN_ROOT/$config"

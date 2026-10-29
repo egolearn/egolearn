@@ -1,6 +1,6 @@
 """Resumable full-pass MAE runs, with IID matched to streaming update counts.
 
-Invoke with the four full_* project configs. SIGUSR1 or the wall-clock budget
+Invoke with the full_* project configs. SIGUSR1 or the wall-clock budget
 pauses at an optimizer boundary, writes an atomic snapshot, and exits 75.
 A scheduler may requeue only that exit code; other errors must remain failures.
 """
@@ -45,9 +45,10 @@ def prepare(cfg: dict):
     driver = cfg["driver"]
     control = cfg["run_control"]
     batch = int(control["batch_size"])
+    window = int(control.get("window_size", batch))
     stride = int(control.get("stride", 1))
-    if not 1 <= stride <= batch:
-        raise ValueError("stride must be between 1 and batch_size")
+    if not 1 <= stride <= window or not 2 <= batch <= window:
+        raise ValueError("need 2 <= batch_size <= window_size and 1 <= stride <= window_size")
     if batch < 2 or int(driver.get("grad_accumulation", 1)) != 1:
         raise ValueError("full-pass MAE requires batch_size >= 2 and grad_accumulation=1")
     offline = driver.get("mode", "streaming") == "offline"
@@ -55,11 +56,15 @@ def prepare(cfg: dict):
         raise ValueError("full-pass streaming requires prefetch=false (one update per advance)")
     if driver.get("max_steps") is not None or driver.get("epochs") is not None:
         raise ValueError("full-pass budget is derived from the dataset; omit max_steps and epochs")
-    if cfg["stream"]["_target_"] not in ("stream:saycam", "stream:babyview"):
-        raise ValueError("full-pass runner supports the SAYCam and BabyView frame sources")
+    if cfg["stream"]["_target_"] not in ("stream:saycam", "stream:babyview", "stream:walkingtours"):
+        raise ValueError(
+            "full-pass runner supports SAYCam, BabyView and WalkingTours frame sources"
+        )
     if cfg["stream"].get("transcript_json"):
         raise ValueError("full-pass MAE counts frames only; omit transcript_json")
     if offline:
+        if window != batch:
+            raise ValueError("IID has no sliding window; window_size must equal batch_size")
         if driver.get("subsample", 1) != 1 or driver["batch"] != {
             "slot": "frames",
             "n": batch,
@@ -73,16 +78,14 @@ def prepare(cfg: dict):
         expected = {
             "advance": {"kind": "events", "schema": "RawFrame", "n": stride},
             "rate": {"steps_per_admit": 1, "resample": True},
-            "warmup": {"admitted": batch - stride},
+            "warmup": {"admitted": window - stride},
         }
         if any(driver.get(k) != v for k, v in expected.items()):
             raise ValueError(
-                "streaming advance must equal stride; warmup must equal batch - stride"
+                "streaming advance must equal stride; warmup must equal window - stride"
             )
-        if cfg["admission"] != [{"_target_": "admission:frame_emitter", "subsample": 1}]:
-            raise ValueError("full-pass streaming requires a frame emitter without subsampling")
-        if cfg["memories"]["frames"]["tiers"]["window"] != {"capacity": batch, "update": "fifo"}:
-            raise ValueError("streaming FIFO capacity must equal batch_size")
+        if cfg["memories"]["frames"]["tiers"]["window"] != {"capacity": window, "update": "fifo"}:
+            raise ValueError("streaming FIFO capacity must equal window_size")
         slots = cfg["recipe"]["slots"]
         if slots != [
             {
@@ -94,7 +97,7 @@ def prepare(cfg: dict):
                 "strict": True,
             }
         ] or cfg["routes"] != {"RawFrame": "frames"}:
-            raise ValueError("streaming must train on the entire filled window")
+            raise ValueError("streaming must select batch_size frames from the filled FIFO window")
     if str(cfg.get("device", "cuda")).startswith("cuda") and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but no GPU is visible")
     if (
@@ -104,14 +107,21 @@ def prepare(cfg: dict):
     ):
         raise RuntimeError("BF16 training requires a GPU with native BF16 support")
     pipe = egolearn.build(cfg)
+    if not offline and (
+        len(pipe.admission) != 1
+        or not getattr(pipe.admission[0], "emits_each_frame", False)
+        or pipe.admission[0].emits != ("RawFrame",)
+    ):
+        pipe.loader.close()
+        raise ValueError("full-pass streaming requires a frame emitter without subsampling")
     frames = pipe.ctx.clock.total_observations
-    if frames is None or frames < batch:
-        raise ValueError("full-pass MAE needs a finite dataset with at least one batch")
+    if frames is None or frames < window:
+        raise ValueError("full-pass MAE needs a finite dataset with at least one window")
     if control.get("expected_frames") is not None and frames != int(control["expected_frames"]):
         raise ValueError(f"expected {control['expected_frames']} frames, found {frames}")
-    # The first update sees exactly B frames. The final partial advance still
-    # trains a full FIFO window, so every source frame participates.
-    updates = math.ceil((frames - batch + stride) / stride)
+    # DataDrop changes selection, never admission or the stream advance.
+    # The final partial advance still trains from a complete FIFO window.
+    updates = math.ceil((frames - window + stride) / stride)
     driver["max_steps"] = updates
     pipe.driver.max_steps = updates
     return (
@@ -123,6 +133,11 @@ def prepare(cfg: dict):
             "batch_size": batch,
             "stride": stride,
             "updates_per_epoch": frames // batch,
+            **(
+                {"window_size": window, "drop_fraction": 1 - batch / window}
+                if window != batch
+                else {}
+            ),
         },
     )
 

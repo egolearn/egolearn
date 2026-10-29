@@ -631,3 +631,92 @@ def test_uncertain_prep_submission_preserves_its_code(cluster):
     assert len(calls) == 1
     assert "Submission outcome uncertain" in result.stderr
     assert list(Path(env["EGOLEARN_JOB_ROOT"]).glob("run-*/code/scripts/slurm/prep.sbatch"))
+
+
+@pytest.mark.parametrize(
+    ("status", "opt_in", "requeued"),
+    [
+        (75, True, True),
+        (75, False, False),
+        (76, True, False),
+        (1, True, False),
+        (0, True, False),
+    ],
+)
+def test_run_requeues_only_explicit_checkpointed_pause(cluster, status, opt_in, requeued):
+    checkout, env = cluster
+    _, calls = submit(cluster, "--", "true")
+    call = calls[-1]
+    ready(call)
+    bindir = Path(env["TEST_SUBMIT_LOG"]).parent / "bin"
+    (bindir / "apptainer").write_text(f"#!/bin/bash\nexit {status}\n")
+    (bindir / "apptainer").chmod(0o755)
+    log = checkout.parent / "requeues.txt"
+    (bindir / "scontrol").write_text(
+        f"#!/bin/bash\nprintf '%s\\n' \"$*\" > {shlex.quote(str(log))}\n"
+    )
+    (bindir / "scontrol").chmod(0o755)
+    child_env = {
+        **call["env"],
+        "SLURM_JOB_ID": "912",
+        "EGOLEARN_REQUEUE_ON_PAUSE": str(int(opt_in)),
+    }
+    job = Path(child_env["EGOLEARN_RUN_DIR"])
+    result = run(
+        ["bash", str(job / "code/scripts/slurm/run.sbatch"), "true"], cwd=checkout, env=child_env
+    )
+    assert result.returncode == (0 if requeued else status), result.stderr
+    assert log.exists() == requeued
+    if requeued:
+        assert log.read_text().strip() == "requeue 912"
+
+
+@pytest.mark.parametrize("late_signal", [False, True])
+def test_run_forwards_pause_signal_and_preserves_collected_exit_status(cluster, late_signal):
+    import signal
+    import time
+
+    checkout, env = cluster
+    _, calls = submit(cluster, "--", "true")
+    call = calls[-1]
+    ready(call)
+    bindir = Path(env["TEST_SUBMIT_LOG"]).parent / "bin"
+    marker, requeues = checkout.parent / "ready", checkout.parent / "requeues"
+    (bindir / "apptainer").write_text(
+        f"#!{sys.executable}\nimport os,signal,time\nfrom pathlib import Path\n"
+        "def pause(*args):\n"
+        " signal.signal(signal.SIGUSR1,signal.SIG_IGN)\n"
+        + (" os.kill(os.getppid(),signal.SIGUSR1)\n" if late_signal else "")
+        + " raise SystemExit(75)\n"
+        "signal.signal(signal.SIGUSR1,pause)\n"
+        f"Path({str(marker)!r}).touch()\n"
+        "while True: time.sleep(.01)\n"
+    )
+    (bindir / "apptainer").chmod(0o755)
+    (bindir / "scontrol").write_text(
+        f"#!/bin/bash\nprintf '%s\\n' \"$*\" > {shlex.quote(str(requeues))}\n"
+    )
+    (bindir / "scontrol").chmod(0o755)
+    child_env = {**call["env"], "SLURM_JOB_ID": "912", "EGOLEARN_REQUEUE_ON_PAUSE": "1"}
+    job = Path(child_env["EGOLEARN_RUN_DIR"])
+    process = subprocess.Popen(
+        ["bash", str(job / "code/scripts/slurm/run.sbatch"), "true"],
+        cwd=checkout,
+        env=child_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 15
+        while not marker.exists() and process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert marker.exists()
+        process.send_signal(signal.SIGUSR1)
+        _, errors = process.communicate(timeout=15)
+        assert process.returncode == 0, errors
+        assert requeues.read_text().strip() == "requeue 912"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()

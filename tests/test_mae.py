@@ -217,7 +217,7 @@ def test_streaming_resume_and_evaluation_reload_match_uninterrupted(config, tmp_
     for name, want in reference.model.state_dict().items():
         torch.testing.assert_close(restored.model.state_dict()[name], want, rtol=0, atol=0)
     # Standalone load uses saved construction metadata, including method imports.
-    loaded = load_model(checkpoint, device="cpu")
+    loaded = load_model(checkpoint, device="cpu", trusted_snapshot=True)
     images = torch.randn(2, 3, 32, 32)
     interrupted.model.eval()
     with torch.no_grad():

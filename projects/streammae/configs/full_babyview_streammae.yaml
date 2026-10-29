@@ -1,0 +1,12 @@
+defaults:
+  - streammae_shared
+  - _self_
+hydra:
+  searchpath: [pkg://egolearn.configs]
+run_dir: runs/streammae_babyview
+stream:
+  _target_: "stream:babyview"
+  root_dir: ${oc.env:BABYVIEW_ROOT,???}
+  include: null
+  natural_order: true
+  session_glob: "*/*"

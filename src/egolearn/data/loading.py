@@ -54,6 +54,7 @@ if TYPE_CHECKING:
 
 # WorkItem: what one output row of views_batch needs, tagged by kind:
 #   ("frame", ref, frame_index, view_names, seed)              -> [V, C, H, W]
+#   ("frame", ref, frame_index, view_names, seed, context)     -> [V, C, H, W]
 #   ("clip", ref, start, view_names, clip_len, stride, seed)   -> [V, T, C, H, W]
 # The seed pins the item's augmentation randomness; the frame index / clip
 # start were already picked sequentially by the caller.
@@ -63,8 +64,11 @@ _WORKER: dict = {}  # per-process state, filled by _pool_init in each worker
 
 
 def _pool_init(
-    stream: Stream, view_specs: dict, imports: list[str],
-    flush_denormal: bool = True, cache_frames: int = 0
+    stream: Stream,
+    view_specs: dict,
+    imports: list[str],
+    flush_denormal: bool = True,
+    cache_frames: int = 0,
 ) -> None:
     import importlib
 
@@ -97,11 +101,11 @@ def _pool_task(item: WorkItem) -> torch.Tensor:
     if item[0] == "clip":
         _, ref, start, view_names, clip_len, stride, seed = item
         clip = _decode_clip(_WORKER["stream"], ref, start, clip_len, stride)
-        torch.manual_seed(seed)
+        torch.random.default_generator.manual_seed(seed)
         random.seed(seed)
         return _WORKER["views"].apply_clip(clip, view_names)
-    _, ref, index, view_names, seed = item
-    torch.manual_seed(seed)
+    _, ref, index, view_names, seed, *extra = item
+    torch.random.default_generator.manual_seed(seed)
     random.seed(seed)
     cache = _WORKER["cache"]
     key = (ref.key, index)
@@ -114,7 +118,8 @@ def _pool_task(item: WorkItem) -> torch.Tensor:
             cache.popitem(last=False)
         # A view may mutate its input. Cache only pristine decoded pixels.
         pil = pil.copy()
-    return _WORKER["views"].apply(pil, view_names)
+    kwargs = {"context": extra[0]} if extra else {}
+    return _WORKER["views"].apply(pil, view_names, **kwargs)
 
 
 def _pool_chunk(items: list[WorkItem]) -> torch.Tensor:
@@ -160,7 +165,13 @@ class Loader:
                 max_workers=self.workers,
                 mp_context=mp.get_context("spawn"),
                 initializer=_pool_init,
-                initargs=(self.stream, self.views.specs, self.imports, self.flush_denormal, self.cache_frames),
+                initargs=(
+                    self.stream,
+                    self.views.specs,
+                    self.imports,
+                    self.flush_denormal,
+                    self.cache_frames,
+                ),
             )
         return self._pool
 
@@ -245,7 +256,14 @@ class Loader:
         )
         return torch.stack(rows, out=out)
 
-    def frame_views(self, ref, index: int, view_names: list[str], seed: int | None = None):
+    def frame_views(
+        self,
+        ref,
+        index: int,
+        view_names: list[str],
+        seed: int | None = None,
+        context: dict | None = None,
+    ):
         """Decode one frame of `ref` and apply the named views (augmentation
         pipelines), returning a [V,C,H,W] tensor with one row per view.
 
@@ -254,19 +272,22 @@ class Loader:
         contract that makes worker-pool loading reproducible."""
         if self.timer is not None:
             with self.timer.measure("data.load"):
-                return self._one_frame(ref, index, view_names, seed)
-        return self._one_frame(ref, index, view_names, seed)
+                return self._one_frame(ref, index, view_names, seed, context)
+        return self._one_frame(ref, index, view_names, seed, context)
 
-    def _one_frame(self, ref, index: int, view_names: list[str], seed: int | None):
+    def _one_frame(
+        self, ref, index: int, view_names: list[str], seed: int | None, context: dict | None = None
+    ):
         pil = self.stream.open_frame(ref, index)
+        kwargs = {"context": context} if context is not None else {}
         if seed is None:
-            return self.views.apply(pil, view_names)
+            return self.views.apply(pil, view_names, **kwargs)
         with torch.random.fork_rng(devices=[]):
-            torch.manual_seed(seed)
+            torch.random.default_generator.manual_seed(seed)
             py_state = random.getstate()
             random.seed(seed)
             try:
-                return self.views.apply(pil, view_names)
+                return self.views.apply(pil, view_names, **kwargs)
             finally:
                 random.setstate(py_state)
 
@@ -285,8 +306,12 @@ class Loader:
                     _, ref, start, views, clip_len, stride, seed = item
                     out.append(self._one_clip(ref, start, views, clip_len, stride, seed))
                 else:
-                    _, ref, index, views, seed = item
-                    out.append(self.frame_views(ref, index, views, seed=seed))
+                    _, ref, index, views, seed, *extra = item
+                    out.append(
+                        self.frame_views(
+                            ref, index, views, seed=seed, context=extra[0] if extra else None
+                        )
+                    )
             return out
         pool = self._ensure_pool()
         chunk = max(1, len(items) // (self.workers * 4))
@@ -332,7 +357,7 @@ class Loader:
             if seed is None:
                 return self.views.apply_clip(clip, view_names)
             with torch.random.fork_rng(devices=[]):
-                torch.manual_seed(seed)
+                torch.random.default_generator.manual_seed(seed)
                 py_state = random.getstate()
                 random.seed(seed)
                 try:

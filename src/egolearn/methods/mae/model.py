@@ -31,10 +31,31 @@ def _positions(side: int, dim: int) -> torch.Tensor:
     return torch.cat([torch.zeros(1, dim), patches.float()], 0).unsqueeze(0)
 
 
-def _transformer(dim: int, depth: int, heads: int, mlp_ratio: float) -> nn.Sequential:
+class DropPath(nn.Dropout):
+    """Independently gate each example's residual branch during training."""
+
+    def __init__(self, probability: float = 0.0):
+        super().__init__(p=probability)
+        if not 0 <= probability < 1:
+            raise ValueError("drop-path probability must be in [0, 1)")
+        self.probability = float(probability)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if not self.training or self.probability == 0:
+            return x
+        keep = 1 - self.probability
+        gate = x.new_empty((x.size(0),) + (1,) * (x.ndim - 1)).bernoulli_(keep)
+        return x * gate / keep
+
+
+def _transformer(
+    dim: int, depth: int, heads: int, mlp_ratio: float, drop_path_rate: float = 0.0
+) -> nn.Sequential:
     if depth < 1 or heads < 1 or dim % heads or mlp_ratio <= 0 or int(dim * mlp_ratio) < 1:
         raise ValueError("MAE needs positive depth, heads and MLP width; heads must divide dim")
-    return nn.Sequential(
+    if not 0 <= drop_path_rate < 1:
+        raise ValueError("drop_path_rate must be in [0, 1)")
+    layers = nn.Sequential(
         *[
             nn.TransformerEncoderLayer(
                 dim,
@@ -49,6 +70,15 @@ def _transformer(dim: int, depth: int, heads: int, mlp_ratio: float) -> nn.Seque
             for _ in range(depth)
         ]
     )
+
+    if drop_path_rate:
+        for index, layer in enumerate(layers):
+            probability = drop_path_rate * index / max(1, depth - 1)
+            # These modules gate the attention and MLP residual branches.
+            # The feed-forward dropout remains zero; eval gates are identity.
+            layer.dropout1 = DropPath(probability)
+            layer.dropout2 = DropPath(probability)
+    return layers
 
 
 def _initialize(module: nn.Module) -> None:
@@ -87,6 +117,7 @@ class MAEEncoder(nn.Module):
         heads: int = 12,
         mlp_ratio: float = 4.0,
         pooling: str = "cls",
+        drop_path_rate: float = 0.0,
     ):
         super().__init__()
         self.grid_size = _grid_size(image_size, patch_size)
@@ -100,7 +131,7 @@ class MAEEncoder(nn.Module):
         self.register_buffer("pos_embed", _positions(self.grid_size, dim))
         self.patch_embed = nn.Conv2d(3, dim, kernel_size=patch_size, stride=patch_size)
         self.cls_token = nn.Parameter(torch.empty(1, 1, dim))
-        self.blocks = _transformer(dim, depth, heads, mlp_ratio)
+        self.blocks = _transformer(dim, depth, heads, mlp_ratio, drop_path_rate)
         self.norm = nn.LayerNorm(dim, eps=1e-6)
         self.apply(_initialize)
         nn.init.xavier_uniform_(self.patch_embed.weight.flatten(1))

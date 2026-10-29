@@ -1,0 +1,9 @@
+# WT++12h: use the authors' London video, prepared at 3.75 FPS.
+defaults:
+  - walkingtours_shared
+  - _self_
+hydra:
+  searchpath: [pkg://egolearn.configs]
+run_dir: runs/streammae_wtpp_london
+stream:
+  sessions: [london]

@@ -1,0 +1,129 @@
+"""Validate the shared WT input, visual BabyCL recipe, and frame preparation."""
+
+import hashlib
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+import torch
+from hydra import compose, initialize_config_dir
+from omegaconf import OmegaConf
+from PIL import Image
+
+import egolearn
+from egolearn.data.prepare_walkingtours import prepare_video
+from egolearn.methods.babycl.data import FrozenResNeXt50Embedder
+
+
+def recipe(project, name, root):
+    directory = Path(__file__).resolve().parents[1] / "projects" / project / "configs"
+    with initialize_config_dir(config_dir=str(directory), version_base="1.3"):
+        cfg = compose(config_name=name, overrides=[f"stream.root_dir={root}"])
+    return OmegaConf.to_container(cfg, resolve=True)
+
+
+def test_wt_recipes_share_all_ten_videos_and_sampling(tmp_path):
+    mae = recipe("streammae", "full_wt_original_streammae", tmp_path)
+    baby = recipe("babycl", "walkingtours", tmp_path)
+    source = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "projects/walkingtours/source_manifest.json"
+        ).read_text()
+    )
+    assert mae["stream"] == baby["stream"]
+    assert baby["stream"]["sessions"] == [v["session"] for v in source["videos"]]
+    assert len(baby["stream"]["sessions"]) == 10
+    assert baby["stream"]["sessions"][-1] == "wildlife"
+    assert baby["admission"][0]["fps"] == 3.75
+    assert baby["admission"][0]["embed_stride"] / 3.75 == 12
+    assert [loss["_target_"] for loss in baby["losses"]] == ["loss:ntxent", "loss:tcl"]
+    assert baby["driver"]["max_steps"] is None
+    assert mae["run_control"]["stride"] == 1
+
+
+def test_babycl_wt_trains_without_transcripts(tmp_path, monkeypatch):
+    torch.set_num_threads(1)
+    folder = tmp_path / "frames" / "venice"
+    folder.mkdir(parents=True)
+    for index in range(1, 49):
+        Image.new("RGB", (48, 32), (index * 4, 70, 120)).save(folder / f"frame_{index:08d}.png")
+    cfg = recipe("babycl", "walkingtours", folder.parent)
+    cfg.update(
+        device="cpu",
+        run_dir=str(tmp_path / "run"),
+        record_json=None,
+        loader={"workers": 0},
+        hooks={"log_every": 1000, "checkpoint_every": 1000},
+    )
+    cfg["stream"]["sessions"] = ["venice"]
+    cfg["admission"][0].update(
+        avg_seg_frames=4,
+        window_scale=2,
+        embed_stride=1,
+        compute_stride_frames=1,
+        seg_extend_min_sec=0,
+        seg_extend_max_sec=0,
+    )
+    cfg["memories"]["segments"]["tiers"]["short"]["capacity"] = 2
+    cfg["memories"]["segments"]["tiers"]["long"]["capacity"] = 4
+    cfg["recipe"]["slots"][0].update(n=2, frames_per_item=2)
+    cfg["driver"]["prefetch"] = False
+    cfg["driver"]["rate"]["steps_per_admit"] = 1
+    for view in cfg["views"].values():
+        view["size"] = 32
+    cfg["model"]["encoders"]["vision"] = {"_target_": "encoder:toy_cnn", "dim": 16}
+    for head in cfg["model"]["heads"].values():
+        head["sizes"][:2] = [16, 16]
+    monkeypatch.setattr(
+        FrozenResNeXt50Embedder,
+        "_lazy_model",
+        lambda self: torch.nn.Sequential(torch.nn.AdaptiveAvgPool2d(1), torch.nn.Flatten()),
+    )
+    pipe = egolearn.build(cfg)
+    pipe.driver.fit()
+    assert pipe.driver._exhausted
+    assert pipe.ctx.clock.step > 0
+    assert pipe.driver.nonfinite_steps == 0
+    assert (tmp_path / "run/final.pth").is_file()
+
+
+@pytest.mark.video
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="requires FFmpeg")
+def test_wt_preparation_resamples_checksums_and_reuses_complete_output(tmp_path):
+    source = tmp_path / "synthetic.mkv"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x90:rate=30",
+            "-frames:v",
+            "64",
+            "-c:v",
+            "ffv1",
+            str(source),
+        ],
+        check=True,
+    )
+    video = {
+        "session": "synthetic",
+        "filename": source.name,
+        "bytes": source.stat().st_size,
+        "md5": hashlib.md5(source.read_bytes()).hexdigest(),
+    }
+    output = tmp_path / "frames"
+    record = prepare_video(tmp_path, output, video, 1)
+    assert record["frames"] == 8
+    assert record["source_fps"] == 30
+    assert prepare_video(tmp_path, output, video, 1) == record
+    (output / "synthetic/frame_00000008.jpg").unlink()
+    with pytest.raises(ValueError, match="incomplete"):
+        prepare_video(tmp_path, output, video, 1)
+    with pytest.raises(ValueError, match="checksum"):
+        prepare_video(tmp_path, tmp_path / "other", {**video, "md5": "0" * 32}, 1)

@@ -7,6 +7,16 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 ## [Unreleased]
 ### Added
 
+- Original WalkingTours recipes train StreamMAE and visual BabyCL on shared, checksum-verified frames from all ten released videos.
+- The Slurm launcher optionally requeues runners that save state and return pause exit code 75.
+- StreamMAE supports ordered WalkingTours frames and WT++ London training with the paper's sampling, crop geometry, and stride.
+
+- StreamMAE training on SAYCam and BabyView: encoder stochastic depth, color
+  jitter, fixed-cardinality DataDrop, and patch-aligned two-stage motion-biased
+  crops. Temporal scores are cached before example selection and survive
+  resumable training. Full-pass recipes separate FIFO window size from the
+  retained batch, preserve native prepared-frame geometry, and use stride 32.
+
 - Automatic atomic run records for CLI and Python training/evaluation, with input
   identities, checkpoint lineage, preserved failed attempts, and a pinned-input
   three-seed BabyCL SAYCam suite for Labeled-S 4AFC and linear decoding.
@@ -148,6 +158,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   clip's frames in one call. See `docs/data_loading.md`.
 
 ### Changed
+
+- Serial augmentation (`loader.workers=0`) now seeds only the CPU generator,
+  preserving CUDA randomness for model training. GPU runs that previously
+  relied on augmentation reseeding CUDA will produce different trajectories.
 
 - Remove the `scripts/prepare_shape_bias.py`, `scripts/prepare_spatial_relations.py`,
   and `scripts/prepare_spatial_monitoring.py` wrappers. Use `egl data prepare`
