@@ -89,9 +89,8 @@ def test_babycl_wt_trains_without_transcripts(tmp_path, monkeypatch):
     assert (tmp_path / "run/final.pth").is_file()
 
 
-@pytest.mark.video
-@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="requires FFmpeg")
-def test_wt_preparation_resamples_checksums_and_reuses_complete_output(tmp_path):
+@pytest.fixture
+def synthetic_video(tmp_path):
     source = tmp_path / "synthetic.mkv"
     subprocess.run(
         [
@@ -111,12 +110,18 @@ def test_wt_preparation_resamples_checksums_and_reuses_complete_output(tmp_path)
         ],
         check=True,
     )
-    video = {
+    return {
         "session": "synthetic",
         "filename": source.name,
         "bytes": source.stat().st_size,
         "md5": hashlib.md5(source.read_bytes()).hexdigest(),
     }
+
+
+@pytest.mark.video
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="requires FFmpeg")
+def test_wt_preparation_resamples_checksums_and_reuses_complete_output(tmp_path, synthetic_video):
+    video = synthetic_video
     output = tmp_path / "frames"
     record = prepare_video(tmp_path, output, video, 1)
     assert record["frames"] == 8
@@ -127,3 +132,43 @@ def test_wt_preparation_resamples_checksums_and_reuses_complete_output(tmp_path)
         prepare_video(tmp_path, output, video, 1)
     with pytest.raises(ValueError, match="checksum"):
         prepare_video(tmp_path, tmp_path / "other", {**video, "md5": "0" * 32}, 1)
+
+
+@pytest.mark.video
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="requires FFmpeg")
+def test_known_source_truncation_keeps_duration_and_checksum_checks(
+    tmp_path, synthetic_video, monkeypatch
+):
+    check_output = subprocess.check_output
+
+    def long_header(command, **kwargs):
+        result = check_output(command, **kwargs)
+        if command[0] == "ffprobe":
+            probe = json.loads(result)
+            probe["streams"][0]["duration"] = "12.133333"
+            result = json.dumps(probe).encode()
+        return result
+
+    monkeypatch.setattr(subprocess, "check_output", long_header)
+    with pytest.raises(ValueError, match="found 8, expected about 45"):
+        prepare_video(tmp_path, tmp_path / "unannotated", synthetic_video, 1)
+    video = {
+        **synthetic_video,
+        "usable_duration_seconds": 64 / 30,
+        "duration_note": "Test source has a known incorrect container duration.",
+    }
+    output = tmp_path / "annotated"
+    record = prepare_video(tmp_path, output, video, 1)
+    assert record["frames"] == 8
+    assert record["duration_seconds"] == 64 / 30
+    assert record["reported_duration_seconds"] == 12.133333
+    assert record["duration_note"] == video["duration_note"]
+    assert prepare_video(tmp_path, output, video, 1) == record
+    with pytest.raises(ValueError, match="checksum"):
+        prepare_video(tmp_path, tmp_path / "bad-source", {**video, "md5": "0" * 32}, 1)
+    with pytest.raises(ValueError, match="frame count disagrees"):
+        prepare_video(
+            tmp_path, tmp_path / "bad-duration", {**video, "usable_duration_seconds": 6}, 1
+        )
+    with pytest.raises(ValueError, match="requires a duration_note"):
+        prepare_video(tmp_path, tmp_path / "no-note", {**video, "duration_note": ""}, 1)

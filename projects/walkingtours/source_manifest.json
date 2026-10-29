@@ -56,7 +56,9 @@
       "filename": "Walking Tour Zurich.mp4",
       "url": "https://ndownloader.figshare.com/files/44509200",
       "bytes": 5244977152,
-      "md5": "7517bf85ecaaf89d58efeda62e25fe86"
+      "md5": "7517bf85ecaaf89d58efeda62e25fe86",
+      "usable_duration_seconds": 1589.283,
+      "duration_note": "Published file ends at 1589.283 s; its header claims 3899.650 s."
     },
     {
       "session": "chiang_mai",

@@ -33,6 +33,12 @@ Each completed session has consecutive filenames beginning with
 `inventory.json` after all ten sessions finish. Rerunning the command reuses
 completed sessions whose preparation settings and frame counts match.
 
+The published Zurich file ends after about 26.5 minutes despite a 65-minute
+container duration. Its size and MD5 match the release, and the final complete
+video packet ends at 1589.283 seconds. The manifest records this usable duration
+for that exact file, and both recipes use its available frames. Preparation
+checks the shorter duration and retains both durations in its output metadata.
+
 The shared order is Venice, Amsterdam, Singapore, Istanbul, Bangkok, Stockholm,
 Kuala Lumpur, Zurich, Chiang Mai, and Wildlife. This includes Wildlife from the
 original release, while WT++ London is a separate collection excluded here.

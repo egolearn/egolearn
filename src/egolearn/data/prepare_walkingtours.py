@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -60,7 +61,17 @@ def prepare_video(source_root: Path, output_root: Path, video: dict, threads: in
         )
     )
     stream = probe["streams"][0]
-    duration = float(stream.get("duration", probe["format"]["duration"]))
+    reported_duration = float(stream.get("duration") or probe["format"]["duration"])
+    duration = float(video.get("usable_duration_seconds", reported_duration))
+    if "usable_duration_seconds" in video:
+        # Only a documented, checksum-pinned source defect may override its header.
+        note = video.get("duration_note")
+        if not isinstance(note, str) or not note.strip():
+            raise ValueError("usable_duration_seconds requires a duration_note in the manifest")
+        if not math.isfinite(duration) or not 0 < duration < reported_duration:
+            raise ValueError(
+                "usable_duration_seconds must be positive and below the header duration"
+            )
     source_fps = float(Fraction(stream["avg_frame_rate"]))
     output_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f".{video['session']}-", dir=output_root) as temp:
@@ -94,7 +105,11 @@ def prepare_video(source_root: Path, output_root: Path, video: dict, threads: in
         subprocess.run(command, check=True)
         files = sorted(staging.glob("frame_*.jpg"))
         if not files or abs(len(files) - duration * 3.75) > 2:
-            raise ValueError(f"frame count disagrees with source duration: {source}")
+            raise ValueError(
+                f"frame count disagrees with source duration: {source}; "
+                f"found {len(files)}, expected about {duration * 3.75:.0f} "
+                f"from {duration:.3f} seconds (header: {reported_duration:.3f})"
+            )
         for index, path in enumerate(files, 1):
             if path.name != f"frame_{index:08d}.jpg" or path.stat().st_size == 0:
                 raise ValueError(f"invalid extracted frame: {path}")
@@ -112,6 +127,9 @@ def prepare_video(source_root: Path, output_root: Path, video: dict, threads: in
             "duration_seconds": duration,
             "source_geometry": [stream["height"], stream["width"]],
         }
+        if "usable_duration_seconds" in video:
+            record["reported_duration_seconds"] = reported_duration
+            record["duration_note"] = video["duration_note"]
         (staging / "preparation.json").write_text(json.dumps(record, indent=2) + "\n")
         staging.rename(output)
     print(f"Prepared {video['session']}: {record['frames']} frames", flush=True)

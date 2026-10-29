@@ -8,6 +8,7 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 ### Added
 
 - Original WalkingTours recipes train StreamMAE and visual BabyCL on shared, checksum-verified frames from all ten released videos.
+- WalkingTours preparation supports documented usable durations for checksum-pinned truncated releases, including the published Zurich video.
 - The Slurm launcher optionally requeues runners that save state and return pause exit code 75.
 - StreamMAE supports ordered WalkingTours frames and WT++ London training with the paper's sampling, crop geometry, and stride.
 
