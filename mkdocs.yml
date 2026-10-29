@@ -119,6 +119,7 @@ nav:
     - Benchmark suites: benchmark_suites.md
     - Spatial relations: evaluation/spatial_relations.md
     - IntPhys 2: evaluation/intphys2.md
+    - GRASP: evaluation/grasp.md
     - Python API: evaluation/api.md
     - Adding benchmarks: evaluation/extending.md
   - Methods:

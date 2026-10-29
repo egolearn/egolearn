@@ -235,7 +235,9 @@ def main(argv: list[str] | None = None) -> int:
     report: dict = {
         "status": "running",
         "hostname": platform.node(),
-        "cpu_affinity": len(os.sched_getaffinity(0)),
+        "cpu_affinity": (
+            len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
+        ),
         "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
         "args": vars(args),
         "sessions": selected,

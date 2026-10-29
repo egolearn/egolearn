@@ -60,8 +60,8 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
       `probe:linear_sgd` provides a stochastic-view, L2-normalized SGD/LARC/cosine
       decoder while isolating its RNG. Frozen adapters cover
       BabyView and Labeled-S; ImageNet supports stochastic-view SGD decoding.
-- [x] Violation-of-expectation probe: IntPhys 2 pairwise accuracy from V-JEPA
-      surprise (`probe:intphys2`)
+- [x] Violation-of-expectation probes: IntPhys 2 and GRASP Level 2 pairwise
+      accuracy and AUROC from V-JEPA surprise (`probe:intphys2`, `probe:grasp`)
 - [ ] kNN/SVM readout with explicit split files and validation-based selection
 
 ## Phase 5 — Memory & QA
