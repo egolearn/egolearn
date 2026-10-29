@@ -113,6 +113,7 @@ def test_parallel_loading_matches_serial_and_reuses_live_clips(tmp_path, packed,
         assert torch.equal(
             pooled.tensor_batch(items(seed=401)), serial.tensor_batch(items(seed=401))
         )
+        assert serial.frame_requests == pooled.frame_requests == 73
     finally:
         pooled.close()
         serial.close()

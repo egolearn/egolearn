@@ -8,6 +8,10 @@ You need an existing frame directory and access to its source data. Packing
 copies the encoded frames into shards, so allow space for another copy of the
 selected frames. The commands below use placeholder paths for your local data.
 
+For direct MP4 decoding, use `stream:video` with `decoder:pyav`. The
+[KrishnaCam guide](../projects/babycl/docs/krishnacam.md) covers lossless prepared
+videos and matched-request loading benchmarks without extracted JPEGs.
+
 ## Packed frame store (`stream:packed_frames`)
 
 A packed store replaces per-frame files with shard files and an index,

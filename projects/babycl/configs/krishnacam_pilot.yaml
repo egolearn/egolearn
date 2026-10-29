@@ -1,0 +1,21 @@
+# Same model and batch; a short replay warmup for throughput experiments.
+defaults:
+  - krishnacam_shared
+  - _self_
+
+hydra:
+  searchpath: [pkg://egolearn.configs]
+
+run_dir: ${oc.env:EGOLEARN_ARTIFACTS,runs}/babycl_krishnacam_pilot/seed_${seed}
+memories:
+  segments:
+    tiers:
+      short: {capacity: 4}
+      long: {capacity: 16}
+driver:
+  max_steps: 32
+hooks:
+  log_every: 1
+  checkpoint_every: 32
+  snapshot_every: 0
+  snapshot_milestones: []

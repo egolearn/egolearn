@@ -9,6 +9,14 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- BabyCL supports verified lossless video caches after fixed spatial preprocessing,
+  retaining original replay references and decoding requested frames on demand.
+- PyAV supports optional NVDEC decoding, keeping intermediate frames on the GPU
+  while preserving sampled frame indices.
+- BabyCL supports visual KrishnaCam training, with GPU pilots and matched-request
+  video-versus-JPEG loading benchmarks.
+- `decoder:pyav` supports direct video batches, with streaming and offline
+  KrishnaCam pilot configurations and deterministic worker loading.
 - V-JEPA 2 provides pretraining components, matched IID and chronological streaming
   recipes, resumable runs, collapse diagnostics, throughput logs, and IntPhys evaluation.
 - V-JEPA 2 evaluates static clips with existing Labeled-S, BabyView, and shape-bias
@@ -110,6 +118,12 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- Video benchmarks fall back to the CPU count on platforms without CPU affinity
+  support, including macOS.
+- Prepared-video loading checks cache coverage before training, and video benchmarks
+  accept explicit session lists for partial caches.
+- PyAV frame reads isolate returned images, preserving repeated requests and cached
+  pixels when views mutate their inputs.
 - Evaluation preserves completed benchmark results and provenance when a later
   benchmark fails, and rejects nonfinite metrics.
 - Evaluation restores model modes, gradient flags, and RNG states, including MPS,
