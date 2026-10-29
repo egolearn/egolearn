@@ -59,6 +59,9 @@ The SAYCam videos used in BabyCL and Memory Storyboard are hosted on
 See the [evaluation guide](docs/evaluation.md#saycam-access) for IRB approval,
 access requirements, and benchmark data preparation.
 
+For image masked autoencoding, see the [MAE baseline](projects/streammae/README.md).
+`uv run python -m egolearn.train --config-name toy_mae` runs a synthetic CPU example.
+
 ## What's here
 
 The streaming learning framework. In plain terms: dataset adapters read

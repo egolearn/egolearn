@@ -1,0 +1,26 @@
+# Used by egolearn.methods.mae.train; computes max_steps from the source.
+losses:
+  - {_target_: "loss:mae", slot: frames, encoder: vision,
+     predictor: reconstruction, mask_ratio: 0.75, norm_pix_loss: true,
+     precision: bfloat16}
+run_control:
+  batch_size: 512
+  stride: 32  # about 16 IID epochs, exactly matched to a full streaming pass
+  expected_frames: null  # set from an independent archive inventory at submission
+  max_seconds: 165600  # pause after 46 hours, leaving margin for a 48-hour allocation
+  stop_after_steps: 0 # optional preflight pause; does not shorten the scientific budget
+hooks:
+  log_every: 100
+  snapshot_milestones: []
+  snapshot_each_epoch: true
+loader:
+  workers: 8
+  packed: true
+  pin_memory: true
+  cache_frames: 1024  # bounded decoded-image cache per worker (streaming overlap)
+views:
+  reconstruction:
+    uint8: true  # same PIL crops/flips; normalize after transferring to the device
+driver:
+  advance: {kind: events, schema: RawFrame, n: 32}
+  warmup: {admitted: 480}

@@ -5,7 +5,6 @@ All notable changes are documented here, following
 Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fixes).
 
 ## [Unreleased]
-
 ### Added
 
 - Automatic atomic run records for CLI and Python training/evaluation, with input
@@ -75,6 +74,15 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
   before optimizer construction, with strict tensor checks and source provenance.
   Training rejects simultaneous `init_from` and `resume` before pipeline construction;
   snapshot resume preserves initialization provenance in subsequent checkpoints.
+
+- Standard image MAE (`egolearn.methods.mae`): visible-patch ViT encoder,
+  reconstruction decoder, seeded random masking, masked pixel MSE, and a
+  single-crop view. Includes a synthetic CPU example and SAYCam ViT-S/16 and
+  ViT-B/16 starting configs under `projects/streammae/`. Adam/AdamW betas are
+  configurable through `solver.betas`, preserving existing defaults. Includes
+  BF16 training, full-pass SAYCam/BabyView streaming and matched-update IID
+  configs, atomic pause/resume, bounded checkpoint retention, and Slurm requeue.
+  BabyView supports nested child/recording directories with natural ordering.
 
 - Standalone evaluation API (`evaluate`, `evaluate_checkpoint`, `load_model`) and
   `python -m egolearn.evaluate`, with benchmark configs, structured JSON results,
@@ -158,6 +166,10 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 - Run `scripts/slurm/train.sbatch` and `bench.sbatch` directly on the login node;
   passing either wrapper to `sbatch` now fails with migration instructions.
   Benchmark JSON is written to the isolated run's `work/bench.json`.
+
+- Reduce the full-pass MAE configs to stride 32 (about 16 matched IID epochs),
+  with a checkpoint every epoch; pack and pin loader batches, cache streaming
+  decodes, and transfer byte crops for device normalization with safe IID prefetch.
 
 - Full ImageNet evaluation moves from `probe:imagenet_linear_sgd` to standalone
   `benchmark:imagenet_linear_sgd`. Dataset enumeration is deferred to preparation

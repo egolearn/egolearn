@@ -1,0 +1,7 @@
+# Standard MAE ViT-S/16 on SAYCam, initialized from scratch.
+defaults:
+  - mae_shared
+  - _self_
+
+hydra:
+  searchpath: [pkg://egolearn.configs]
