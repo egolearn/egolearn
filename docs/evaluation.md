@@ -165,8 +165,9 @@ while SGD protocols use their own `seed`.
 Set `view` and `size` explicitly for comparisons, along with the same `encoder`
 and optional `head`. Matching those settings does not make the classifier
 protocols equivalent. Labeled-S linear decoding uses 2,886 training and 2,901
-evaluation images over 26 classes. It differs from BabyCL's reported 24-class
-split and embedding representation.
+evaluation images over 26 classes. The BabyCL paper's protocol,
+`probe:labeled_s_stratified_linear`, uses the same 26 classes but splits all
+57,727 images 80/20 per class and probes a different embedding.
 
 ### BabyView protocols
 
