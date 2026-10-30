@@ -71,11 +71,11 @@ the original and the edited scene prefer their own caption. Every row uses the
 paper's protocol, so the remaining differences come from training.
 
 The two checkpoints were trained and evaluated with this configuration before
-it was merged with the current main branch. The merge changed nothing these
-runs depend on: the options main has added since are off in `saycam_default`
-and `paper_evals`, and its other changes are in methods BabyCL does not use.
-This revision therefore runs the same training and evaluation code as the two
-runs.
+it was merged with the current main branch. Nothing since then changes what
+these runs computed: the options main has added are off in `saycam_default`
+and `paper_evals`, its other changes are in methods BabyCL does not use, and
+the later driver and stream fixes affect only resuming from a snapshot and
+packed frame stores, which neither run used.
 
 ### Differences from the paper
 
