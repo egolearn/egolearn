@@ -191,16 +191,21 @@ class SaycamStream(S.Stream):
                 continue
             times = self.frame_times(files)
             video = S.DenseFrameChannel("video", sid, times, [(sid, i) for i in range(len(files))])
-            channels: dict[str, S.Channel] = {"video": video}
-            utts = self._utts_by_stem.get(self._stem(sid), [])
-            if utts:
-                transcript = S.SparseIntervalChannel("transcript", sid, utts)
-                # declaration order breaks equal-time ties (Session.observations)
-                if self.transcript_first:
-                    channels = {"transcript": transcript, "video": video}
-                else:
-                    channels["transcript"] = transcript
-            yield S.Session(sid, channels)
+            yield self._session(sid, video)
+
+    def _session(self, sid: str, video: S.DenseFrameChannel) -> S.Session:
+        """The session over `video` and its utterances, shared by every
+        storage backend so they break equal-time ties the same way."""
+        channels: dict[str, S.Channel] = {"video": video}
+        utts = self._utts_by_stem.get(self._stem(sid), [])
+        if utts:
+            transcript = S.SparseIntervalChannel("transcript", sid, utts)
+            # declaration order breaks equal-time ties (Session.observations)
+            if self.transcript_first:
+                channels = {"transcript": transcript, "video": video}
+            else:
+                channels["transcript"] = transcript
+        return S.Session(sid, channels)
 
     def total_observations(self) -> int | None:
         if self._total is None:

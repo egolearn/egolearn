@@ -92,7 +92,7 @@ patch releases for fixes during 0.x development.
 - `driver.amp` runs encoder forwards and losses under float16 or bfloat16
   autocast, with named slots kept in float32.
 - `stream.transcript_first` surfaces an utterance before a frame with the same
-  timestamp.
+  timestamp, on frame directories and packed frame stores alike.
 - `paper_evals.yaml` runs the BabyCL paper's seven end-of-training evaluations
   with the paper's protocols.
 - `probe:labeled_s_stratified_linear` and `probe:mini_imagenet_linear` follow the

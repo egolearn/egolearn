@@ -88,11 +88,7 @@ class PackedFrameStream(SaycamStream):
             span = self.store.span(sid)
             times = self.store.session_times(sid).tolist()
             video = S.DenseFrameChannel("video", sid, times, [(sid, i) for i in range(span.count)])
-            channels: dict[str, S.Channel] = {"video": video}
-            utts = self._utts_by_stem.get(self._stem(sid), [])
-            if utts:
-                channels["transcript"] = S.SparseIntervalChannel("transcript", sid, utts)
-            yield S.Session(sid, channels)
+            yield self._session(sid, video)
 
     def total_observations(self) -> int | None:
         if self._total is None:
