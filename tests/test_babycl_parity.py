@@ -191,6 +191,38 @@ def test_float16_loss_scaler_travels_in_snapshots(toy_config, tmp_path):
     assert resumed.driver.scaler.state_dict()["_growth_tracker"] == 5
 
 
+@pytest.mark.parametrize("stop", ["max_steps", "stream_end"])
+def test_float16_resume_applies_a_pending_window_once(toy_config, tmp_path, stop):
+    # grad_accumulation=2 over an odd number of steps leaves one backward
+    # pending when the stream ends.  Resuming with nothing left to train must
+    # apply it under the restored loss scale (stop=max_steps), and must not
+    # apply it again when the first run had already done so (stop=stream_end).
+    def config(path, max_steps):
+        cfg = _amp_config(toy_config, path, dtype="float16")
+        cfg["driver"].update(
+            advance={"kind": "observations", "n": 16}, grad_accumulation=2, max_steps=max_steps
+        )
+        return cfg
+
+    ref = egolearn.build(config(tmp_path / "ref", None))
+    ref.driver.fit()
+    steps = ref.ctx.clock.step
+    assert steps % 2 == 1
+
+    first = egolearn.build(config(tmp_path / "first", steps if stop == "max_steps" else None))
+    first.driver.fit()
+    assert first.driver._exhausted == (stop == "stream_end")
+    path = save_snapshot(str(tmp_path / "snap.pth"), first.driver)
+
+    resumed = egolearn.build(config(tmp_path / "resumed", None))
+    load_snapshot(path, resumed.driver)
+    resumed.driver.fit()
+    assert resumed.ctx.clock.step == steps
+    assert resumed.driver.scaler.state_dict() == ref.driver.scaler.state_dict()
+    for key, value in ref.model.state_dict().items():
+        assert torch.equal(value, resumed.model.state_dict()[key]), key
+
+
 @pytest.mark.parametrize("transcript_first", [False, True])
 def test_transcript_first_breaks_equal_time_ties(tmp_path, transcript_first):
     session = tmp_path / "frames" / "S_20130101_0000_01"

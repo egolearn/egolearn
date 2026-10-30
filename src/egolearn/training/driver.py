@@ -30,7 +30,8 @@ losses run under autocast, except the forwards of the named slots and every loss
 one, which stay in float32.  float16 also scales the loss (GradScaler).  BabyCL's original ran
 the visual branch in fp16 and forced the cross-modal branch to fp32 exactly this way.
 
-`max_steps` caps gradient steps exactly, also inside a quantum.
+`max_steps` caps gradient steps exactly, also inside a quantum; resuming the run finishes that
+quantum before the next advance.
 
 V1 scope decisions (design review): single process, one fixed synchronous loop, deterministic;
 no async ingestion.  Anything that does not fit this loop should subclass or replace the
@@ -318,12 +319,21 @@ class LockstepDriver:
     # training
     # ------------------------------------------------------------------
     def _train_steps(self) -> None:
+        """One quantum: `rate.steps_per_admit` iterations after an advance."""
+        self.ctx.clock.quantum_left = int(self.rate["steps_per_admit"])
+        self._run_quantum()
+
+    def _run_quantum(self) -> None:
+        """Run the iterations the last advance is still owed
+        (`clock.quantum_left`): a full quantum from `_train_steps`, or the
+        rest of one that a snapshot interrupted."""
+        clock = self.ctx.clock
         k = int(self.rate["steps_per_admit"])
         resample = bool(self.rate["resample"])
         batch = None
         pending = None  # (future, seq): the next batch, composing ahead
-        for i in range(k):
-            if self.max_steps is not None and self.ctx.clock.step >= self.max_steps:
+        while clock.quantum_left > 0:
+            if self.max_steps is not None and clock.step >= self.max_steps:
                 break
             if batch is None or resample:
                 if pending is not None:
@@ -334,24 +344,30 @@ class LockstepDriver:
                     # committed only now that the batch is handed to training,
                     # so a snapshot taken mid-flight stays consistent (the
                     # resumed run rebuilds the identical batch from this seq)
-                    self.ctx.clock.compose_seq = seq + 1
+                    clock.compose_seq = seq + 1
                 else:
+                    # resuming inside a quantum that reuses one batch: rebuild
+                    # the batch it composed, without allocating a new seq
+                    reused = None if resample or clock.quantum_left == k else clock.compose_seq - 1
                     with self.timer.measure("batch.compose"):
                         batch = self.composer.compose(
                             self.recipe,
                             self.memories,
                             {s: list(d) for s, d in self.stream_head.items()},
                             self.ctx,
+                            reused,
                         )
             if batch is None:
+                clock.quantum_left = 0
                 if self.strict_batches:
                     raise RuntimeError("streaming batch is missing after admission")
                 return  # strict slot unfilled and no fallback: skip quietly
+            clock.quantum_left -= 1
             if (
                 self._prefetch_pool is not None
                 and resample
-                and i + 1 < k
-                and (self.max_steps is None or self.ctx.clock.step + 1 < self.max_steps)
+                and clock.quantum_left > 0
+                and (self.max_steps is None or clock.step + 1 < self.max_steps)
             ):
                 # never across the quantum boundary: the next advance changes
                 # what the composer would sample
@@ -439,9 +455,13 @@ class LockstepDriver:
         snapshotted and continued, and the continuation must fold these
         micro-steps into one full window exactly like an uninterrupted run
         (pending gradients travel inside the snapshot).  A capped run that
-        is never continued leaves them unapplied, and says so."""
+        is never continued leaves them unapplied, and says so.
+
+        Every optimizer step clears the gradients, so none left means the
+        window was already applied (a snapshot taken after this flush) or
+        every micro-step in it was skipped: nothing to do."""
         pending = self.grad_accumulation > 1 and self.ctx.clock.step % self.grad_accumulation != 0
-        if not pending:
+        if not pending or all(p.grad is None for p in self.model.parameters()):
             return
         if not self._exhausted:
             n = self.ctx.clock.step % self.grad_accumulation
@@ -452,6 +472,10 @@ class LockstepDriver:
                 flush=True,
             )
             return
+        if self.scaler is not None:
+            # a restored scaler sets its scale lazily, on the next scale() call;
+            # gradients restored from a snapshot reach here without one
+            self.scaler.scale(torch.zeros((), device=self.ctx.device))
         if self.schedule is not None:
             apply_lr(self.optimizer, self._base_lrs, self.schedule.multiplier(self.ctx))
         self._optimizer_step()
@@ -479,6 +503,8 @@ class LockstepDriver:
         self.model.to(self.ctx.device)
         self.model.train()
         self._run_warmup()
+        # a snapshot taken inside a quantum: finish it before advancing again
+        self._run_quantum()
         while not self._exhausted:
             if self.max_steps is not None and self.ctx.clock.step >= self.max_steps:
                 break

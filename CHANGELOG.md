@@ -181,6 +181,10 @@ patch releases for fixes during 0.x development.
 - A session's last segment gets its own training steps instead of sharing the
   next session's quantum.
 - `driver.max_steps` stops at exactly that step, also inside a quantum.
+- A run resumed from a snapshot taken inside a quantum finishes that quantum
+  before reading more of the stream.
+- A float16 run resumed with a partial gradient-accumulation window applies the
+  pending gradients once, under the restored loss scale.
 
 ### Security
 
