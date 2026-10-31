@@ -48,8 +48,11 @@ def build_model(
         if not initialize_pretrained and "pretrained" in spec:
             spec["pretrained"] = False
         encoders[name] = instantiate(spec)
-    if not encoders:
-        raise ValueError("model needs at least one entry under model.encoders")
+    generative = {
+        name: instantiate(dict(spec)) for name, spec in (resolved.get("generative") or {}).items()
+    }
+    if not encoders and not generative:
+        raise ValueError("model needs at least one entry under model.encoders or model.generative")
 
     heads = {}
     for name, original in (resolved.get("heads") or {}).items():
@@ -64,7 +67,9 @@ def build_model(
         inputs = list(spec.pop("inputs", []))
         predictors[name] = {"inputs": inputs, "module": instantiate(spec)}
 
-    model = ComposedModel(encoders, heads=heads, predictors=predictors, frozen=frozen)
+    model = ComposedModel(
+        encoders, heads=heads, predictors=predictors, frozen=frozen, generative=generative
+    )
     for name, head in heads.items():
         if head["encoder"] not in encoders:
             raise ValueError(
