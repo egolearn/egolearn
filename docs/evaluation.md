@@ -72,6 +72,12 @@ running evaluation.
 | Baby Winoground | `probe:baby_winoground` | [CSV labels, positive/negative images, and training vocabulary](evaluation/data.md#babyvlm-benchmark-data) | `bw_group_acc`; 0.25 for independent random choices |
 | IntPhys 2 | `probe:intphys2` | [Video inputs and score limitations](evaluation/intphys2.md) | `voe_acc`, `voe_auroc`; 0.5 chance |
 | GRASP Level 2 | `probe:grasp` | [Pair manifest and score limitations](evaluation/grasp.md) | `voe_acc`, `voe_auroc`; 0.5 chance |
+| EgoSchema | `egoschema_eval` | [Served model, videos and scoring](evaluation/egoschema.md) | `acc`; 0.2 chance |
+| Ego4D NLQ | `ego4d_nlq_eval` | [Served model, clips and scoring](evaluation/ego4d_nlq.md) | `r1_iou0.3`, `r1_iou0.5` |
+
+EgoSchema and Ego4D NLQ score a generative model, such as a vision-language
+model on a vLLM server, instead of an EgoLearn encoder. Their configs set
+`checkpoint: null` and build the model from `model_config`.
 
 Accuracies are fractions rather than percentages. Baby Winoground requires both
 image-phrase choices to be correct, so its group baseline assumes independent

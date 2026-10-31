@@ -1,0 +1,47 @@
+# EgoSchema (Mangalam et al., 2023) five-way video QA, answered zero-shot by a
+# generative model (docs/evaluation/egoschema.md). The default model is
+# Qwen2.5-VL-7B-Instruct served by vLLM; send Ego4D frames only to servers the
+# lab runs itself.
+#   egl eval egoschema_eval vlm_url=http://<host>:8000/v1
+# All 5,031 questions with submission files:
+#   benchmarks.0.subset_only=false benchmarks.0.submission_dir=<dir>
+defaults:
+  - evaluate
+  - _self_
+
+checkpoint: null  # nothing trained: the model is built from model_config
+egoschema_root: ${oc.env:EGOLEARN_DATA,data}/egoschema
+vlm_url: ???  # OpenAI-compatible endpoint, e.g. http://<host>:8000/v1
+vlm_model: Qwen/Qwen2.5-VL-7B-Instruct  # the server's model name
+reply_cache: ${oc.env:EGOLEARN_ARTIFACTS,runs}/vlm_replies
+device: cpu  # the model runs on the server
+_imports_:
+  - egolearn.evaluation.benchmarks.egoschema
+model_config:
+  model:
+    generative:
+      vlm:
+        _target_: "generative:openai_chat"
+        base_url: ${vlm_url}
+        model: ${vlm_model}
+        api_key_env: null  # name of an environment variable, if the server needs a key
+        video_input: video
+        max_tokens: 32
+        temperature: 0.0
+        cache_dir: ${reply_cache}
+benchmarks:
+  - _target_: "benchmark:egoschema"
+    name: egoschema
+    questions_json: ${egoschema_root}/questions.json
+    answers_json: ${egoschema_root}/subset_answers.json
+    video_root: ${egoschema_root}/videos
+    generative: text
+    fps: 1.0
+    max_frames: 64
+    max_side: 448
+    batch_size: 8
+    workers: 8
+    subset_only: true
+    max_questions: null  # first N questions only (smoke runs)
+    submission_dir: null
+    bootstrap_resamples: 10000
