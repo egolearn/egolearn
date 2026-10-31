@@ -52,19 +52,19 @@ utterance that ends on a frame is visible at that frame
 ## SAYCam results
 
 The table reports `saycam_default` with seeds 1337 and 2002, final checkpoints.
-All scores are percentages. The paper column is from the
-[paper](https://arxiv.org/abs/2606.05115); an updated arXiv version with these
-numbers is forthcoming.
+All scores are percentages. The paper column quotes the updated version of the
+[paper](https://arxiv.org/abs/2606.05115), which reaches arXiv later; the
+version there now reports an earlier Labeled-S 4AFC figure.
 
 | Benchmark | Seed 1337 | Seed 2002 | Paper | Differs from the paper |
 | --- | ---: | ---: | ---: | --- |
-| Labeled-S 4AFC | 42.53 | 43.04 | 43.38 ± 1.47 | Paper: mean ± 95% CI over five seeds |
-| Labeled-S linear | 45.26 | 44.91 | 44.95 | Paper: best seed |
-| mini-ImageNet linear | 25.52 | 26.12 | 25.60 | Paper: best seed |
-| VTWT | 60.60 | 58.43 | 61.32 | Paper: best seed |
-| Baby Winoground | 15.89 | 12.05 | 14.79 | Paper: best seed |
-| BabyView 4AFC | 30.99 | 30.29 | 32.53 | Paper: best seed |
-| BabyView linear | 49.71 | 52.06 | 49.96 | Paper: best seed |
+| Labeled-S 4AFC | 42.53 | 43.04 | 42.72 ± 1.36 | Paper: end-of-training mean ± approximate 95% CI over five seeds |
+| Labeled-S linear | 45.26 | 44.91 | 44.95 | Paper: end-of-training checkpoint of the best seed |
+| mini-ImageNet linear | 25.52 | 26.12 | 25.60 | Paper: end-of-training checkpoint of the best seed |
+| VTWT | 60.60 | 58.43 | 61.32 | Paper: end-of-training checkpoint of the best seed |
+| Baby Winoground | 15.89 | 12.05 | 14.79 | Paper: end-of-training checkpoint of the best seed |
+| BabyView 4AFC | 30.99 | 30.29 | 32.53 | Paper: end-of-training checkpoint of the best seed |
+| BabyView linear | 49.71 | 52.06 | 49.96 | Paper: end-of-training checkpoint of the best seed |
 
 Baby Winoground reports the group score, which counts an item only when both
 the original and the edited scene prefer their own caption. Every row uses the
