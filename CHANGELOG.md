@@ -121,6 +121,8 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- VoE probes reject videos shorter than `num_frames`, preventing repeated frames
+  from affecting IntPhys 2 and GRASP scores.
 - Temporal IID training validates empty recordings and rejects snapshot resumes
   when the temporal-label manifest changes or its saved identity is unavailable.
 - Video benchmarks fall back to the CPU count on platforms without CPU affinity

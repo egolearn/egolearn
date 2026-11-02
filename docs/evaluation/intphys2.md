@@ -58,6 +58,9 @@ registered evaluation `view`, which must be a per-image view such as `resize`
 `center_crop`; the `clip_*` views expect clip tensors. The clip is scored as a
 single window.
 
+Each video must contain at least `num_frames` frames (64 by default). A shorter
+video raises an error with its path and frame count before scoring the pair.
+
 For each context length C in `context_frames`, the first C frames are the context
 and the remaining frames the target. The context encoder sees only the context
 tokens, and the predictor fills in the target tokens. Surprise is their mean
