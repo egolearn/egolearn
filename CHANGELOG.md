@@ -121,6 +121,7 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- Offline training stops on non-finite or empty losses, preventing batch-order drift and infinite retries.
 - Temporal IID training validates empty recordings and rejects snapshot resumes
   when the temporal-label manifest changes or its saved identity is unavailable.
 - Video benchmarks fall back to the CPU count on platforms without CPU affinity
