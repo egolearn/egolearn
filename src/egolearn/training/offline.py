@@ -227,7 +227,7 @@ class OfflineDriver:
                 if callback := getattr(hook, "on_skip", None):
                     callback(self, nonfinite=total is not None)
             print(
-                f"[offline] skipping step {self.ctx.clock.step}: non-finite or empty loss",
+                f"[offline] step {self.ctx.clock.step} failed: non-finite or empty loss",
                 flush=True,
             )
             return False
