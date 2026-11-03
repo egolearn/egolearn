@@ -80,7 +80,9 @@ each training stage. For large frame collections, the [data-loading guide](docs/
 covers packed storage, worker processes, and augmentation controls.
 
 Trained checkpoints can be evaluated independently through
-`egolearn.evaluation.evaluate_checkpoint` or `egl eval`.
+`egolearn.evaluation.evaluate_checkpoint` or `egl eval`. A generative model that
+answers in text, such as a served vision-language model, is built from
+`model_config` without a checkpoint.
 Full ImageNet decoding runs as a standalone benchmark, with dataset preparation
 deferred until evaluation. See [the evaluation guide](docs/evaluation.md) for
 Python usage, CLI configuration, and checkpoint compatibility.
@@ -116,6 +118,13 @@ V-JEPA prediction error; see the
 GRASP Level 2 uses the same readout across 16 physics tests, reporting pairwise
 accuracy, AUROC, and scores by test and concept. See the [GRASP guide](docs/evaluation/grasp.md)
 for manifest preparation and probe configuration.
+
+EgoSchema and Ego4D NLQ evaluate long-video understanding with a generative model,
+without training: EgoSchema reports five-way accuracy on 3-minute videos, and Ego4D
+NLQ the recall of the moment in a clip that answers a query. Qwen2.5-VL served by
+vLLM is the packaged model, and a component that wraps an EgoLearn encoder with a
+language model is scored the same way. See the [EgoSchema](docs/evaluation/egoschema.md)
+and [Ego4D NLQ](docs/evaluation/ego4d_nlq.md) guides.
 
 ## Lifecycle
 

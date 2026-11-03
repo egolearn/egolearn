@@ -59,6 +59,12 @@ def test_composed_model_rejects_ambiguous_or_incomplete_generative_components():
     with pytest.raises(ValueError, match="lacks the 'input_modalities'"):
         ComposedModel({}, generative={"bad": nn.Identity()})
 
+    class Painter(Echo):
+        output_modality = "image"
+
+    with pytest.raises(ValueError, match="only text generation"):
+        ComposedModel({}, generative={"painter": Painter()})
+
 
 def test_check_inputs_validates_modalities_and_alignment():
     echo = Echo()
@@ -185,6 +191,9 @@ def test_generate_returns_replies_in_order_and_caches_by_request(chat_server, tm
     chat.generate(texts=["q0"], videos=[(slower,)])
     assert len(chat_server.requests) == 8  # a new frame rate is a new request
     assert chat_server.requests[-1]["body"]["mm_processor_kwargs"] == {"fps": 0.5}
+    resampled = Video(frames=video.frames, timestamps=video.timestamps, fps=1.0, sampling={"x": 1})
+    chat.generate(texts=["q0"], videos=[(resampled,)])
+    assert len(chat_server.requests) == 9  # other sampling settings, another cache entry
 
 
 def test_empty_replies_are_not_cached(chat_server, tmp_path):

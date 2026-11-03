@@ -4,6 +4,11 @@ import pytest
 
 pytest.importorskip("av")
 
+import numpy as np
+import torch
+
+from egolearn.config.registry import GENERATIVE
+from egolearn.evaluation import load_model
 from egolearn.evaluation.evaluator import EvaluationContext
 from egolearn.evaluation.multiple_choice import (
     MultipleChoiceItem,
@@ -18,12 +23,13 @@ from egolearn.evaluation.temporal_grounding import (
     parse_windows,
 )
 from egolearn.evaluation.video_input import VideoClip, VideoReader, VideoSampling, read_video
-from egolearn.model import ComposedModel
+from egolearn.model import ComposedModel, build_model
+from egolearn.model.encoders.image import ToyCNNEncoder
 from egolearn.model.generative import GenerativeComponent
 
 pytestmark = pytest.mark.video
 
-CTX = EvaluationContext(seed=0, device=__import__("torch").device("cpu"))
+CTX = EvaluationContext(seed=0, device=torch.device("cpu"))
 
 
 class Scripted(GenerativeComponent):
@@ -240,3 +246,59 @@ def test_grounding_scorer_counts_recall_strictly_above_threshold(tmp_path, count
     assert rows[3]["windows"] == [[90.0, 100.0], [0.0, 10.0]]
     assert component.texts[0].startswith("The video is 100.0 seconds long.\nQuery: a\n")
     assert len(component.videos[0][0].frames) == 2  # 2 s at the default 1 fps
+
+
+# ---- a component with trained parts --------------------------------------------------------
+
+
+@GENERATIVE.register("test_encoder_readout")
+class EncoderReadout(GenerativeComponent):
+    """Stands in for an EgoLearn encoder + projector + language model: it encodes the
+    frames it is given with an EgoLearn encoder and reads a reply out of the features."""
+
+    input_modalities = ("text", "video")
+
+    def __init__(self, dim: int = 8):
+        super().__init__()
+        self.encoder = ToyCNNEncoder(dim=dim)
+        self.projector = torch.nn.Linear(dim, 2)
+
+    def generate(self, texts=None, images=None, videos=None):
+        self.check_inputs(texts, images, videos)
+        replies = []
+        for text, (video,) in zip(texts, videos, strict=True):
+            pixels = np.stack([np.asarray(frame) for frame in video.frames])
+            frames = torch.from_numpy(pixels).permute(0, 3, 1, 2).float() / 255
+            score = self.projector(self.encoder(frames).mean(0))
+            if "start - end" in text:  # a grounding prompt: the whole sampled span
+                replies.append(f"{video.timestamps[0]:.1f} - {video.timestamps[-1]:.1f}")
+            else:
+                replies.append("AB"[int(score.argmax())])
+        return replies
+
+
+def test_a_component_wrapping_an_encoder_is_scored_and_reloaded(tmp_path, counter_video):
+    spec = {"generative": {"vlm": {"_target_": "generative:test_encoder_readout", "dim": 8}}}
+    model = build_model(spec)
+    assert model.capabilities() == frozenset({"text_generation"})
+    checkpoint = tmp_path / "readout.pth"
+    state = {
+        "model": model.state_dict(),
+        "model_config": model.construction_config,
+        "export_contract": model.export_contract(),
+    }
+    torch.save(state, checkpoint)
+    loaded = load_model(checkpoint)
+    assert loaded.state_dict().keys() == model.state_dict().keys()
+    for name, value in model.state_dict().items():
+        assert torch.equal(loaded.state_dict()[name], value), name
+
+    path = tmp_path / "v.mp4"
+    counter_video(path, seconds=4.0)
+    clip = VideoClip(str(path))
+    item = MultipleChoiceItem("q", "Why?", ("x", "y"), video=clip, answer=0)
+    metrics, _ = MultipleChoiceScorer("mcq").evaluate(loaded, CTX, [item])
+    assert metrics["unparsed"] == 0.0 and metrics["n_answered"] == 1.0
+    query = GroundingItem("g", "Where?", clip, duration=4.0, window=(0.0, 3.0))
+    metrics, rows = TemporalGroundingScorer("nlq").evaluate(loaded, CTX, [query])
+    assert rows[0]["windows"] == [[0.0, 3.0]] and metrics["r1_iou0.5"] == 1.0

@@ -27,7 +27,7 @@ model_config:
         _target_: "generative:openai_chat"
         base_url: ${vlm_url}
         model: ${vlm_model}
-        api_key_env: null  # name of an environment variable, if the server needs a key
+        api_key_env: EGOLEARN_LLM_API_KEY  # the server's key; null for a server without one
         video_input: video
         max_tokens: 64
         temperature: 0.0
@@ -46,3 +46,4 @@ benchmarks:
     workers: 8
     max_clips: null  # first N clips only (smoke runs)
     predictions_dir: null
+    verify: true  # the official v2 annotation files; false for a subset

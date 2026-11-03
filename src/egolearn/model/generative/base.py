@@ -6,7 +6,8 @@ class attributes rather than by inheritance:
 
   input_modalities  which inputs it reads: any of "text", "image", "video"
   output_modality   what it produces; the composed model gains
-                    "<output_modality>_generation" for carrying it
+                    "<output_modality>_generation" for carrying it.  Only "text"
+                    is supported until a benchmark needs image or video output.
 
 and calls one method, batched over requests:
 
@@ -23,12 +24,18 @@ times, so the benchmark and its configuration decide what a model sees and
 every component sees the same thing.  How the frames reach the model (one
 video input with its frame rate, or images labelled with their times) is the
 component's configuration.
+
+A component may hold trained parts.  One that wraps an EgoLearn encoder with a
+projector and a language model implements the same ``generate``: it encodes the
+frames it is given, so the generic scorers evaluate it exactly as they evaluate a
+served model, and its weights are saved and reloaded with the composed model
+like any other part (tests/test_video_qa_scorers.py has a toy example).
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import torch.nn as nn
@@ -44,11 +51,14 @@ class Video:
     ``timestamps`` are the frames' media times in seconds from the start of the
     video (or clip) the caller read; ``fps`` is the rate they were sampled at,
     which is what a model that encodes time from the frame rate must be told.
+    ``sampling`` holds the settings that selected the frames (frame rate, frame
+    count and resolution limits), which components that cache replies key on.
     """
 
     frames: tuple[Image.Image, ...]
     timestamps: tuple[float, ...]
     fps: float
+    sampling: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.frames:

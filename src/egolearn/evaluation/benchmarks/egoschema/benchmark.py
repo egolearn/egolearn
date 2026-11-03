@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Any
 
 from egolearn.config.registry import BENCHMARKS
-from egolearn.core import keys as K
 from egolearn.evaluation.benchmark import Benchmark
 from egolearn.evaluation.benchmarks.egoschema.data import (
     QUESTIONS_SHA256,
@@ -40,7 +39,7 @@ class EgoSchemaBenchmark(Benchmark):
 
     name = "egoschema"
     version = "1"
-    requires_capabilities = (K.CAP_TEXT_GENERATION,)
+    requires_capabilities = MultipleChoiceScorer.requires_capabilities
 
     def __init__(
         self,

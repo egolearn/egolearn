@@ -86,6 +86,7 @@ def _benchmark(root, **overrides):
         annotations_json=str(root / "nlq_val.json"),
         clip_root=str(root / "clips"),
         workers=1,
+        verify=False,
     )
     return Ego4DNLQBenchmark(**{**settings, **overrides})
 
@@ -145,6 +146,8 @@ def test_test_split_writes_predictions_without_metrics(ego4d_root, tmp_path):
 
 
 def test_benchmark_refuses_missing_clips_and_unknown_splits(ego4d_root):
+    with pytest.raises(ValueError, match="not that of the official Ego4D v2 nlq_val file"):
+        _benchmark(ego4d_root, verify=True).prepare()
     (ego4d_root / "clips" / "clip-2.mp4").unlink()
     with pytest.raises(FileNotFoundError, match="1 of 2 NLQ clips"):
         _benchmark(ego4d_root).prepare()

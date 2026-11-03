@@ -92,7 +92,7 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
-- The `generation` capability becomes one capability per output modality, such as `text_generation`.
+- The `generation` capability becomes `text_generation`, and generative components must produce text.
 - VoE probes report pooled-surprise AUROC alongside pairwise accuracy, with
   optional group metrics for labeled pairs.
 - The documentation separates task guides from reference material and corrects

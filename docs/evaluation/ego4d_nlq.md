@@ -25,7 +25,9 @@ ego4d --output_directory "$EGOLEARN_DATA/ego4d" --version v2 \
 
 This gives `$EGOLEARN_DATA/ego4d/v2/annotations/nlq_{train,val,test_unannotated}.json`
 and one file per clip, `$EGOLEARN_DATA/ego4d/v2/clips/<clip_uid>.mp4`. The
-benchmark checks that every clip it scores is present before asking the model.
+benchmark checks that every clip it scores is present before asking the model. It
+also checks the annotation file against the SHA-256 of the official v2 release.
+Set `benchmarks.0.verify=false` to score a subset.
 
 ## Running the evaluation
 

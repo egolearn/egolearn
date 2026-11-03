@@ -7,6 +7,11 @@ question and, outside the test split, the clip-relative window
 baseline, a query without text is skipped but still counts in the numbering:
 ``query_idx`` is the index in ``language_queries``, which is how prediction
 files name queries.
+
+The benchmark checks each file against the SHA-256 of the official v2 release
+(``ANNOTATION_SHA256``; the ego4d CLI with ``--version v2 --datasets
+annotations``), so every run scores the same queries: 415 val clips with 4,552
+queries, and 333 test clips with 4,004.  ``verify=False`` admits subsets.
 """
 
 from __future__ import annotations
@@ -17,6 +22,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
+
+ANNOTATION_SHA256 = {
+    "val": "20413901b8dbfcb097e7219da6b3a577ebb1c309f8e6667a0f53fdd2ae0d6da7",
+    "test": "fbe1452334e7b7b0048c51dcc3457cae4138142faac94467bc293074191f5161",
+}
 
 
 @dataclass(frozen=True)

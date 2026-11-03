@@ -25,7 +25,7 @@ import os
 from collections import OrderedDict
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from PIL import Image
@@ -138,7 +138,12 @@ def read_video(clip: VideoClip, sampling: VideoSampling) -> Video:
                     current, current_time = sampling.resize(last_frame.to_image()), last_time
             assert current is not None  # set by the decode loop or the end-of-file branch
             frames.append(current)
-    return Video(frames=tuple(frames), timestamps=tuple(times), fps=len(times) / duration)
+    return Video(
+        frames=tuple(frames),
+        timestamps=tuple(times),
+        fps=len(times) / duration,
+        sampling=asdict(sampling),
+    )
 
 
 class VideoReader:

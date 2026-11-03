@@ -21,9 +21,13 @@ from pathlib import Path
 from typing import Any
 
 from egolearn.config.registry import BENCHMARKS
-from egolearn.core import keys as K
 from egolearn.evaluation.benchmark import Benchmark
-from egolearn.evaluation.benchmarks.ego4d_nlq.data import NLQSplit, first_clips, load_split
+from egolearn.evaluation.benchmarks.ego4d_nlq.data import (
+    ANNOTATION_SHA256,
+    NLQSplit,
+    first_clips,
+    load_split,
+)
 from egolearn.evaluation.temporal_grounding import (
     TOP_K,
     GroundingItem,
@@ -40,7 +44,7 @@ class Ego4DNLQBenchmark(Benchmark):
 
     name = "ego4d_nlq"
     version = "1"
-    requires_capabilities = (K.CAP_TEXT_GENERATION,)
+    requires_capabilities = TemporalGroundingScorer.requires_capabilities
 
     def __init__(
         self,
@@ -56,6 +60,7 @@ class Ego4DNLQBenchmark(Benchmark):
         workers: int = 8,
         max_clips: int | None = None,
         predictions_dir: str | None = None,
+        verify: bool = True,
     ):
         if split not in SPLITS:
             raise ValueError(f"split must be one of {SPLITS}, got {split!r}")
@@ -66,6 +71,7 @@ class Ego4DNLQBenchmark(Benchmark):
         self.clip_root = clip_root
         self.split = split
         self.max_clips = max_clips
+        self.verify = verify
         self.predictions_dir = predictions_dir
         self.scorer = TemporalGroundingScorer(
             name,
@@ -83,6 +89,12 @@ class Ego4DNLQBenchmark(Benchmark):
         if self.data is not None:
             return
         data = load_split(self.annotations_json, self.split, annotated=self.split == "val")
+        if self.verify and data.sha256 != ANNOTATION_SHA256[self.split]:
+            raise ValueError(
+                f"{self.annotations_json} has SHA-256 {data.sha256}, not that of the official "
+                f"Ego4D v2 nlq_{self.split} file ({ANNOTATION_SHA256[self.split]}); "
+                "set verify: false for a subset"
+            )
         if self.max_clips is not None:
             data = first_clips(data, self.max_clips)
         if not data.queries:
@@ -102,6 +114,7 @@ class Ego4DNLQBenchmark(Benchmark):
             "name": self.name,
             "split": self.split,
             "max_clips": self.max_clips,
+            "verify": self.verify,
         }
 
     def metadata(self) -> dict[str, Any]:

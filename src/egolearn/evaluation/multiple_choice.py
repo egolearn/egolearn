@@ -35,6 +35,7 @@ from typing import Any
 
 import numpy as np
 
+from egolearn.core import keys as K
 from egolearn.evaluation.video_input import (
     VideoClip,
     VideoReader,
@@ -100,6 +101,8 @@ def bootstrap_interval(
 class MultipleChoiceScorer:
     """Scores items with ``model.generate(generative, texts=, videos=)``."""
 
+    requires_capabilities = (K.CAP_TEXT_GENERATION,)
+
     def __init__(
         self,
         name: str,
@@ -135,6 +138,11 @@ class MultipleChoiceScorer:
         """``(metrics, predictions)``; one prediction row per item, in order."""
         if not items:
             raise ValueError(f"{self.name}: no items to score")
+        if K.CAP_TEXT_GENERATION not in model.capabilities():
+            raise ValueError(
+                f"{self.name}: the model has no text-generating component "
+                f"(needs {K.CAP_TEXT_GENERATION!r}, has {sorted(model.capabilities())})"
+            )
         rows: list[dict[str, Any]] = []
         for start in range(0, len(items), self.batch_size):
             batch = items[start : start + self.batch_size]

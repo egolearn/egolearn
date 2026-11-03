@@ -154,6 +154,11 @@ class ComposedModel(nn.Module):
                         f"the {attr!r} attribute -- see model/generative/base.py"
                     )
             output = str(component.output_modality)
+            if output != "text":
+                raise ValueError(
+                    f"generative component {name!r} produces {output!r}; only text generation "
+                    "is supported until a benchmark needs another output"
+                )
             if output in self._generative_route:
                 raise ValueError(
                     f"generative components {self._generative_route[output]!r} and {name!r} "

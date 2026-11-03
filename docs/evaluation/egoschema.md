@@ -45,9 +45,9 @@ vllm serve Qwen/Qwen2.5-VL-7B-Instruct --port 8000 --max-model-len 32768 \
 
 EgoSchema videos are cut from Ego4D, whose license does not allow sending them
 to third-party services. Point the evaluation only at servers the lab runs
-itself. If the server was started with `--api-key`, put the key in an
-environment variable and set `model_config.model.generative.vlm.api_key_env` to
-its name.
+itself. The client reads the server's key from `EGOLEARN_LLM_API_KEY`. For a
+server started without `--api-key`, set
+`model_config.model.generative.vlm.api_key_env=null`.
 
 ## Running the evaluation
 
@@ -96,6 +96,16 @@ letter after "answer is", else the option whose full text it repeats.
 | `unparsed` | Share of replies that name no option; they count as wrong |
 | `pred_frac_A` … `pred_frac_E` | Share of predictions per letter, which exposes a letter bias |
 | `n_scored`, `n_answered` | Questions scored, and those with a public answer |
+
+## Other generative models
+
+Any generative component that produces text can be scored, since the benchmark
+only builds questions and the scorer only calls `generate(texts, videos)`. A
+component that wraps an EgoLearn encoder with a projector and a language model
+reads the same frames and is scored the same way. Its weights are saved with the
+composed model, so you evaluate it from its checkpoint (`checkpoint=<path>`) like
+any trained model. A component without trained weights goes under
+`model_config.model.generative` in place of `generative:openai_chat`.
 
 ## Reply cache
 

@@ -17,9 +17,10 @@ how a Video reaches the server:
   ``"Frame at <t> s:"``, for any server that accepts images.
 
 Decoding is greedy by default.  With ``cache_dir`` set, replies are stored as
-JSON files named by the SHA-256 of the full request body: the model name,
-every message part (frames and images included as JPEG bytes), the sampling
-parameters and the processor arguments.  Any change to the prompt, the frames,
+JSON files named by the SHA-256 of the full request body (the model name, every
+message part with frames and images as JPEG bytes, the decoding parameters and
+the processor arguments) together with each video's sampling settings (frame
+rate, frame count and resolution limits).  Any change to the prompt, the frames,
 their resolution, timestamps or frame rate, or the decoding settings therefore
 misses the cache, while a rerun of the same evaluation reads it.  The key holds the
 model name, not its weights: serving other weights under the same name needs another
@@ -114,10 +115,14 @@ class OpenAIChat(GenerativeComponent):
             )
             for i in range(count)
         ]
+        # The settings that selected each request's frames join the cache key explicitly.
+        sampling = [
+            [dict(v.sampling) for v in (() if videos is None else videos[i])] for i in range(count)
+        ]
         if count == 1 or self.concurrency == 1:
-            return [self._reply(body) for body in bodies]
+            return [self._reply(body, s) for body, s in zip(bodies, sampling, strict=True)]
         with ThreadPoolExecutor(min(self.concurrency, count)) as pool:
-            return list(pool.map(self._reply, bodies))
+            return list(pool.map(self._reply, bodies, sampling))
 
     # ---- requests ----------------------------------------------------------------------------
     def request_body(
@@ -162,8 +167,9 @@ class OpenAIChat(GenerativeComponent):
         return {"type": "image_url", "image_url": {"url": url}}
 
     # ---- replies -----------------------------------------------------------------------------
-    def _reply(self, body: dict[str, Any]) -> str:
-        key = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+    def _reply(self, body: dict[str, Any], sampling: list[dict[str, Any]]) -> str:
+        material = {"request": body, "video_sampling": sampling}
+        key = hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
         path = None if self.cache_dir is None else self.cache_dir / key[:2] / f"{key}.json"
         if path is not None and path.is_file():
             return str(json.loads(path.read_text())["reply"])

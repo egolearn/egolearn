@@ -24,7 +24,7 @@ model_config:
         _target_: "generative:openai_chat"
         base_url: ${vlm_url}
         model: ${vlm_model}
-        api_key_env: null  # name of an environment variable, if the server needs a key
+        api_key_env: EGOLEARN_LLM_API_KEY  # the server's key; null for a server without one
         video_input: video
         max_tokens: 32
         temperature: 0.0
@@ -45,3 +45,4 @@ benchmarks:
     max_questions: null  # first N questions only (smoke runs)
     submission_dir: null
     bootstrap_resamples: 10000
+    verify: true  # the release files at the pinned EgoSchema commit

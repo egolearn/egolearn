@@ -130,8 +130,11 @@ def test_packaged_config_composes():
     assert cfg.benchmarks[0]._target_ == "benchmark:egoschema"
 
 
-def test_egl_eval_runs_egoschema_against_a_served_model(egoschema_root, tmp_path, chat_server):
+def test_egl_eval_runs_egoschema_against_a_served_model(
+    egoschema_root, tmp_path, chat_server, monkeypatch
+):
     pytest.importorskip("openai")
+    monkeypatch.setenv("EGOLEARN_LLM_API_KEY", "lab-key")
 
     def reply(body):
         text = body["messages"][-1]["content"][-1]["text"]
@@ -151,7 +154,7 @@ def test_egl_eval_runs_egoschema_against_a_served_model(egoschema_root, tmp_path
         f"egoschema_root={egoschema_root}",
         f"reply_cache={tmp_path / 'replies'}",
         f"output_json={output}",
-        "+benchmarks.0.verify=false",
+        "benchmarks.0.verify=false",
         "benchmarks.0.workers=1",
         f"hydra.run.dir={tmp_path / 'hydra'}",
     ]
@@ -161,5 +164,7 @@ def test_egl_eval_runs_egoschema_against_a_served_model(egoschema_root, tmp_path
     assert result["checkpoint"] is None
     assert result["model_config"]["model"]["generative"]["vlm"]["video_input"] == "video"
     assert len(chat_server.requests) == 2
+    headers = {k.lower(): v for k, v in chat_server.requests[0]["headers"].items()}
+    assert headers["authorization"] == "Bearer lab-key"
     subprocess.run(command, cwd=tmp_path, check=True, capture_output=True, text=True)
     assert len(chat_server.requests) == 2  # the rerun reads the reply cache

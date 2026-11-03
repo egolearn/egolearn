@@ -48,9 +48,12 @@ def build_model(
         if not initialize_pretrained and "pretrained" in spec:
             spec["pretrained"] = False
         encoders[name] = instantiate(spec)
-    generative = {
-        name: instantiate(dict(spec)) for name, spec in (resolved.get("generative") or {}).items()
-    }
+    generative = {}
+    for name, original in (resolved.get("generative") or {}).items():
+        spec = dict(original)
+        if not initialize_pretrained and "pretrained" in spec:
+            spec["pretrained"] = False  # the checkpoint supplies the weights, as for encoders
+        generative[name] = instantiate(spec)
     if not encoders and not generative:
         raise ValueError("model needs at least one entry under model.encoders or model.generative")
 
