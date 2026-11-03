@@ -6,6 +6,7 @@ Run: pytest tests/ -q
 from __future__ import annotations
 
 from copy import deepcopy
+from unittest.mock import Mock
 
 import pytest
 import torch
@@ -198,6 +199,64 @@ def test_offline_mode_rejects_unknown_view(toy_config, tmp_path):
     cfg["driver"]["batch"]["views"] = ["v1", "nope"]
     with pytest.raises(egolearn.PipelineError, match="nope"):
         egolearn.build(cfg)
+
+
+@pytest.mark.parametrize(
+    "invalid,prefetch,successful_steps",
+    [("nan", False, 1), ("nan", True, 1), ("inf", False, 0), ("empty", True, 0)],
+)
+def test_offline_invalid_loss_stops_without_advancing_batches(
+    toy_config, tmp_path, monkeypatch, invalid, prefetch, successful_steps
+):
+    cfg = _offline_cfg(toy_config, tmp_path)
+    cfg["record_json"] = False  # Failure must not depend on run-record hooks.
+    cfg["driver"].update(prefetch=prefetch, grad_accumulation=3)
+    cfg["loader"] = {"workers": 1 if prefetch else 0}
+    pipe = egolearn.build(cfg)
+    driver = pipe.driver
+    before = [p.detach().clone() for p in pipe.model.parameters()]
+    hook = Mock()
+    driver.hooks.append(hook)
+    close = Mock(wraps=driver.loader.close)
+    monkeypatch.setattr(driver.loader, "close", close)
+    step = Mock(wraps=driver.optimizer.step)
+    monkeypatch.setattr(driver.optimizer, "step", step)
+    loss = pipe.losses[0]
+    compute = loss.compute
+    calls = 0
+
+    def invalid_loss(*args):
+        nonlocal calls
+        calls += 1
+        # Bound the regression even if a persistent invalid loss would loop forever.
+        if calls > successful_steps + 1:
+            pytest.fail("offline training continued after an invalid loss")
+        if calls <= successful_steps:
+            return compute(*args)
+        return {} if invalid == "empty" else {"loss": torch.tensor(float(invalid))}
+
+    monkeypatch.setattr(loss, "compute", invalid_loss)
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            rf"step {successful_steps}.*non-finite or empty loss.*"
+            rf"epoch 0, batch {successful_steps}"
+        ),
+    ):
+        driver.fit()
+
+    assert calls == successful_steps + 1
+    assert pipe.ctx.clock.step == pipe.ctx.clock.admitted == successful_steps
+    assert pipe.ctx.clock.compose_seq == successful_steps + 1
+    assert driver.skipped_steps == 1
+    assert driver.nonfinite_steps == int(invalid != "empty")
+    hook.on_skip.assert_called_once_with(driver, nonfinite=invalid != "empty")
+    hook.on_end.assert_not_called()
+    step.assert_not_called()  # Do not flush the partial accumulation window on failure.
+    for old, current in zip(before, pipe.model.parameters(), strict=True):
+        assert torch.equal(old, current)
+    close.assert_called_once_with()
+    assert driver.loader._pool is None
 
 
 # ---------------------------------------------------------------------------

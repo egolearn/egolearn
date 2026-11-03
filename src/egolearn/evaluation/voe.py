@@ -41,7 +41,10 @@ from egolearn.evaluation.probe import Probe
 
 
 def read_video(path: str, num_frames: int, transform) -> torch.Tensor:
-    """`num_frames` frames spread uniformly over the whole video -> [T, C, H, W]."""
+    """Sample `num_frames` distinct frames over the whole video -> [T, C, H, W].
+
+    Raise ValueError if the video has fewer than `num_frames` frames.
+    """
     import av  # optional dependency (video / train extras)
 
     with av.open(path) as container:
@@ -50,6 +53,11 @@ def read_video(path: str, num_frames: int, transform) -> torch.Tensor:
         total = stream.frames
         if not total:
             raise ValueError(f"{path}: the container does not report a frame count")
+        if total < num_frames:
+            raise ValueError(
+                f"{path}: video has {total} frames, but num_frames={num_frames} "
+                f"requires at least {num_frames}"
+            )
         idx = np.linspace(0, total - 1, num_frames).round().astype(int).tolist()
         frames = {}
         for i, frame in enumerate(container.decode(stream)):

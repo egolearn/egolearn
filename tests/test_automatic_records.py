@@ -476,7 +476,7 @@ def test_preconstructed_benchmark_inputs_remain_descriptive(tmp_path, toy_config
 
 
 @pytest.mark.parametrize("mode", ["streaming", "offline"])
-def test_ordinary_recording_preserves_nonfinite_skip_and_final_checkpoint(
+def test_ordinary_recording_preserves_nonfinite_failure_or_streaming_skip(
     tmp_path, training_config, monkeypatch, mode
 ):
     cfg = training_config(mode)
@@ -497,6 +497,17 @@ def test_ordinary_recording_preserves_nonfinite_skip_and_final_checkpoint(
 
     for loss in pipe.losses:
         monkeypatch.setattr(loss, "compute", skip_once(loss.compute))
+    if mode == "offline":
+        with pytest.raises(RuntimeError, match="non-finite or empty loss"):
+            pipe.driver.fit()
+        [record] = records(tmp_path)
+        assert record["status"] == "failed"
+        assert record["error_type"] == "RuntimeError"
+        assert record["nonfinite_steps"] == 1
+        assert record["metrics"]["train/steps"] == 0
+        assert record["metrics"]["train/skipped_steps"] == 1
+        assert not (tmp_path / "run/final.pth").exists()
+        return
     pipe.driver.fit()
     [record] = records(tmp_path)
     assert record["status"] == "nonfinite"

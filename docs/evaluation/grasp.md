@@ -84,6 +84,9 @@ frames as context and the rest as the V-JEPA prediction target, and all lengths
 share one decode and one target-encoder pass. The manifest records every
 video's frame count, so unequal twins are visible before scoring.
 
+Each video must contain at least `num_frames` frames (64 by default). A shorter
+video raises an error with its path and frame count before scoring the pair.
+
 `voe_acc_ctx<C>` scores each context length alone; `voe_acc` averages each
 video's surprise over the context lengths and then compares once per pair.
 `voe_auroc` ranks every selected video by that pooled surprise with no pairing:
