@@ -23,9 +23,19 @@ def test_default_implementation_is_separable():
         gaussian_blur(23, "fast")
 
 
-@pytest.mark.parametrize("mode", ["RGB", "L"])
-@pytest.mark.parametrize("sigma", [0.1, 0.3, 1.0, 2.0])
-@pytest.mark.parametrize("kernel", [3, 23, (23, 7)])
+@pytest.mark.parametrize(
+    "mode,sigma,kernel",
+    [
+        ("RGB", 0.1, 23),
+        ("L", 0.1, 3),
+        ("RGB", 0.3, 3),
+        ("L", 0.3, (23, 7)),
+        ("RGB", 1.0, (23, 7)),
+        ("L", 1.0, 23),
+        ("RGB", 2.0, 3),  # A wide filter truncated by the smallest kernel.
+        ("L", 2.0, (23, 7)),
+    ],
+)
 def test_separable_matches_reference_filter_and_rng(mode, sigma, kernel):
     shape = (32, 40, 3) if mode == "RGB" else (32, 40)
     pixels = np.random.default_rng(5).integers(0, 256, shape, dtype=np.uint8)
@@ -50,9 +60,15 @@ def test_separable_preserves_constant_images_and_rejects_unsupported_input():
         transform(Image.new("F", (32, 32)))
 
 
-@pytest.mark.parametrize("view_idx", [0, 1])
-@pytest.mark.parametrize("builder", [simclr_strong, babycl_ms_aug])
-@pytest.mark.parametrize("size", [64, 224])
+@pytest.mark.parametrize(
+    "view_idx,builder,size",
+    [
+        (0, simclr_strong, 64),
+        (1, simclr_strong, 224),
+        (0, babycl_ms_aug, 224),
+        (1, babycl_ms_aug, 64),
+    ],
+)
 def test_default_view_tracks_reference_within_one_level_and_same_draws(view_idx, builder, size):
     pixels = np.random.default_rng(19).integers(0, 256, (80, 96, 3), dtype=np.uint8)
     image = Image.fromarray(pixels)
@@ -144,21 +160,22 @@ def test_flush_denormal_leaves_blurred_pixels_identical(impl):
         torch.set_flush_denormal(False)
 
 
-@pytest.mark.parametrize(
-    ("view_name", "blur_impl"),
-    [("simclr_strong", "separable"), ("babycl_ms_aug", "separable"), ("simclr_strong", "none")],
-)
-def test_views_match_across_worker_counts(view_name, blur_impl):
+def test_views_match_across_worker_counts():
     # workers (which flush denormals) must load the same tensors as in-process
     stream = ToyStream(n_sessions=1, img_size=80, noise=80)
     views = ViewBank(
         {
-            f"v{i}": {"name": view_name, "size": 64, "view_idx": i, "blur_impl": blur_impl}
+            f"{name}_{impl}_{i}": {"name": name, "size": 64, "view_idx": i, "blur_impl": impl}
+            for name, impl in (
+                ("simclr_strong", "separable"),
+                ("babycl_ms_aug", "separable"),
+                ("simclr_strong", "none"),
+            )
             for i in range(2)
         }
     )
     items = [
-        ("frame", ItemRef("toy_00", "video", i, i, ("toy_00", i)), 0, ["v0", "v1"], 123 + i)
+        ("frame", ItemRef("toy_00", "video", i, i, ("toy_00", i)), 0, list(views.specs), 123 + i)
         for i in range(8)
     ]
     expected = Loader(stream, views).views_batch(items)

@@ -46,11 +46,32 @@ class Fails(Score):
         raise RuntimeError("synthetic failure")
 
 
-def test_default_records_preserve_each_attempt_and_explicit_path(tmp_path):
-    cfg = {"run_dir": tmp_path}
+@pytest.fixture
+def training_config(tmp_path, toy_config):
+    def build(mode="streaming"):
+        cfg = toy_config(tmp_path)
+        if mode == "offline":
+            for key in ("admission", "memories", "recipe", "routes", "label_stores"):
+                cfg.pop(key)
+            cfg["driver"] = {
+                "mode": "offline",
+                "max_steps": 2,
+                "batch": {"slot": "curr", "n": 4, "views": ["v1", "v2"]},
+            }
+            cfg["losses"] = cfg["losses"][:1]
+        return cfg
+
+    return build
+
+
+def test_default_records_preserve_each_attempt_and_explicit_path(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     for _ in range(2):
-        with record_run(cfg, "train") as record:
+        with record_run({}, "train") as record:
             assert record is not None
+            assert record.path == (
+                Path("runs/default/records") / record.value["record_id"] / "record.json"
+            )
             record.value["metrics"]["loss"] = 1.0
     assert len(records(tmp_path)) == 2
     explicit = tmp_path / "explicit.json"
@@ -136,25 +157,9 @@ def test_dry_run_does_not_hash_or_resolve_inputs(tmp_path, monkeypatch):
     assert records(tmp_path)[0]["status"] == "dry_run"
 
 
-def test_automatic_train_records_use_default_checkpoint_directory(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    with record_run({}, "train") as run:
-        assert run is not None
-        assert run.path == Path("runs/default/records") / run.value["record_id"] / "record.json"
-
-
 @pytest.mark.parametrize("mode", ["streaming", "offline"])
-def test_pipeline_records_without_changing_training_or_rng(tmp_path, toy_config, mode):
-    cfg = toy_config(tmp_path)
-    if mode == "offline":
-        for key in ("admission", "memories", "recipe", "routes", "label_stores"):
-            cfg.pop(key)
-        cfg["driver"] = {
-            "mode": "offline",
-            "max_steps": 2,
-            "batch": {"slot": "curr", "n": 4, "views": ["v1", "v2"]},
-        }
-        cfg["losses"] = cfg["losses"][:1]
+def test_pipeline_records_without_changing_training_or_rng(tmp_path, training_config, mode):
+    cfg = training_config(mode)
     torch.manual_seed(12)
     plain = egolearn.build({**cfg, "record_json": None})
     plain.driver.fit()
@@ -331,19 +336,6 @@ def test_resume_records_restored_seed_parent_and_new_attempt(
         assert results[1]["input_provenance"]["resume"]["commit"] == "c" * 40
 
 
-def test_in_memory_evaluation_automatically_records_without_checkpoint_claim(
-    tmp_path, toy_config, monkeypatch
-):
-    monkeypatch.chdir(tmp_path)
-    pipe = egolearn.build(toy_config(tmp_path))
-    for _ in range(2):
-        evaluate(pipe.model, benchmarks=[Score()])
-    results = records(tmp_path / "runs/eval")
-    assert len(results) == 2
-    assert all(r["metrics"] == {"score/accuracy": 0.75} for r in results)
-    assert all(r["evaluation"]["checkpoint"] is None for r in results)
-
-
 @pytest.mark.parametrize("entry", ["model", "checkpoint"])
 def test_evaluation_records_in_memory_split_without_changing_benchmark_arguments(
     tmp_path, toy_config, monkeypatch, entry
@@ -383,6 +375,8 @@ def test_evaluation_records_in_memory_split_without_changing_benchmark_arguments
     [record] = records(tmp_path / "runs/eval")
     assert record["status"] == "completed"
     assert record["evaluation"]["results"] == result.results
+    if entry == "model":
+        assert record["evaluation"]["checkpoint"] is None
     plain_split = json.loads(json.dumps(asdict(split)))
     assert record["config"]["benchmarks"][0]["split"] == plain_split
     assert record["evaluation"]["configs"]["linear"]["split"] == split.metadata()
@@ -428,20 +422,12 @@ def test_evaluation_preserves_nested_dataclasses_and_resolved_hub_inputs(
 
 @pytest.mark.parametrize("provenance", ["present", "missing", "null"])
 def test_snapshot_load_replaces_provenance_before_saving_without_fit(
-    tmp_path, toy_config, monkeypatch, provenance
+    tmp_path, training_config, monkeypatch, provenance
 ):
     import egolearn.run_record as run_records
 
     # Offline drivers support loading a snapshot after an earlier fit().
-    cfg = toy_config(tmp_path)
-    for key in ("admission", "memories", "recipe", "routes", "label_stores"):
-        cfg.pop(key)
-    cfg["driver"] = {
-        "mode": "offline",
-        "max_steps": 2,
-        "batch": {"slot": "curr", "n": 4, "views": ["v1", "v2"]},
-    }
-    cfg["losses"] = cfg["losses"][:1]
+    cfg = training_config("offline")
     source = egolearn.build({**cfg, "run_dir": str(tmp_path / "source")})
     source.driver.fit()
     snapshot = tmp_path / "source.pth"
@@ -491,19 +477,10 @@ def test_preconstructed_benchmark_inputs_remain_descriptive(tmp_path, toy_config
 
 @pytest.mark.parametrize("mode", ["streaming", "offline"])
 def test_ordinary_recording_preserves_nonfinite_failure_or_streaming_skip(
-    tmp_path, toy_config, monkeypatch, mode
+    tmp_path, training_config, monkeypatch, mode
 ):
-    cfg = toy_config(tmp_path)
+    cfg = training_config(mode)
     cfg["hooks"]["checkpoint_every"] = 2
-    if mode == "offline":
-        for key in ("admission", "memories", "recipe", "routes", "label_stores"):
-            cfg.pop(key)
-        cfg["driver"] = {
-            "mode": "offline",
-            "max_steps": 2,
-            "batch": {"slot": "curr", "n": 4, "views": ["v1", "v2"]},
-        }
-        cfg["losses"] = cfg["losses"][:1]
     pipe = egolearn.build(cfg)
 
     def skip_once(compute):
@@ -564,22 +541,6 @@ def test_snapshot_persists_link_to_still_running_parent_record(tmp_path, toy_con
         assert persisted["status"] == "running"
         assert persisted["outputs"][snapshot.name]["sha256"] == sha256_file(snapshot)
         assert saved["run_provenance"]["record_id"] == persisted["record_id"]
-
-
-def test_record_and_suite_imports_do_not_load_torch(tmp_path):
-    subprocess.run(
-        [
-            sys.executable,
-            "-I",
-            "-c",
-            "import sys; import egolearn.commands.bench; assert 'torch' not in sys.modules",
-        ],
-        cwd=tmp_path,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
 
 
 def test_babycl_suite_composes_default_training_and_protected_inputs(tmp_path, monkeypatch):

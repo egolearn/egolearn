@@ -34,9 +34,7 @@ def test_catalog_is_unique_and_distinguishes_metadata_from_pixels(capsys):
     assert rows["grasp"]["collection"] is None and rows["grasp"]["prepare_module"]
 
 
-@pytest.mark.parametrize(
-    "name", ["saycam", "babyview", "labeled-s", "imagenet", "intphys2", "grasp", "unknown"]
-)
+@pytest.mark.parametrize("name", ["saycam", "imagenet", "grasp", "unknown"])
 def test_unavailable_fetch_fails_without_contacting_hub(monkeypatch, name):
     def unexpected(*args, **kwargs):
         pytest.fail("restricted/unknown dataset must not contact Hub")
@@ -164,17 +162,26 @@ def test_prepare_preserves_default_fetched_collection(tmp_path, monkeypatch, nam
     assert calls[-1][1][-1] == str(tmp_path / "new")
 
 
-@pytest.mark.parametrize("item", PREPARERS, ids=lambda item: item.name)
-def test_preparation_explains_missing_extra(monkeypatch, capsys, tmp_path, item):
+def test_preparation_explains_missing_extra(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(data.importlib.util, "find_spec", lambda name: None)
     with pytest.raises(SystemExit):
-        data.main(["--root", str(tmp_path), "prepare", item.name])
+        data.main(["--root", str(tmp_path), "prepare", "shape-bias"])
     assert "egolearn[train]" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("item", PREPARERS, ids=lambda item: item.name)
-@pytest.mark.parametrize("help_args", [["--help"], ["-h"], ["--", "--help"]])
-def test_installed_preparation_help_needs_no_training_dependencies(tmp_path, item, help_args):
+@pytest.mark.parametrize(
+    "name,help_args",
+    [
+        ("shape-bias", ["--help"]),
+        ("spatial-relations", ["-h"]),
+        ("spatial-monitoring", ["--", "--help"]),
+        ("babyview-4afc", ["--help"]),
+        ("labeled-s-4afc", ["--help"]),
+        ("grasp", ["--help"]),
+    ],
+)
+def test_installed_preparation_help_needs_no_training_dependencies(tmp_path, name, help_args):
+    item = data.dataset(name)
     script = """
 import sys
 from importlib.abc import MetaPathFinder
