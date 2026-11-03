@@ -121,6 +121,8 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- VoE probes reject videos shorter than `num_frames`, preventing repeated frames
+  from affecting IntPhys 2 and GRASP scores.
 - Offline training raises on non-finite or empty losses, preserving batch order
   and closing loader workers without writing a final checkpoint.
 - Temporal IID training validates empty recordings and rejects snapshot resumes
