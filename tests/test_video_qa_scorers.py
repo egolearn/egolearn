@@ -347,7 +347,7 @@ def _official_iou(pred, gt):
 
 
 def _official_nlq_metrics(predictions, truths, thresholds=(0.3, 0.5), topk=(1, 5)):
-    results = [[[] for _ in topk] for _ in thresholds]
+    results: list[list[list[bool]]] = [[[] for _ in topk] for _ in thresholds]
     average_iou = []
     for windows, truth in zip(predictions, truths, strict=True):
         overlap = _official_iou(windows, [list(truth)])
