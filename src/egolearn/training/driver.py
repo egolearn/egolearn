@@ -448,8 +448,8 @@ class LockstepDriver:
 
     def _flush_grad_accumulation(self) -> None:
         """The loop steps the optimizer every `grad_accumulation` backwards;
-        when the STREAM ends between optimizer steps, apply what accumulated
-        instead of silently dropping those gradients.
+        when the stream and its final quantum end between optimizer steps,
+        apply what accumulated instead of silently dropping those gradients.
 
         Deliberately not done on a max_steps stop: a capped run may be
         snapshotted and continued, and the continuation must fold these
@@ -463,7 +463,7 @@ class LockstepDriver:
         pending = self.grad_accumulation > 1 and self.ctx.clock.step % self.grad_accumulation != 0
         if not pending or all(p.grad is None for p in self.model.parameters()):
             return
-        if not self._exhausted:
+        if not self._exhausted or self.ctx.clock.quantum_left > 0:
             n = self.ctx.clock.step % self.grad_accumulation
             print(
                 f"[driver] stopped at max_steps with {n} accumulated micro-step(s) "

@@ -185,6 +185,8 @@ patch releases for fixes during 0.x development.
   before reading more of the stream.
 - A float16 run resumed with a partial gradient-accumulation window applies the
   pending gradients once, under the restored loss scale.
+- `driver.max_steps` preserves pending accumulated gradients when it interrupts
+  the final quantum after stream exhaustion.
 
 ### Security
 

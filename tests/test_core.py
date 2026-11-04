@@ -596,7 +596,16 @@ def test_resumed_run_does_not_overwrite_milestone_snapshots(tmp_path):
 
 @pytest.mark.parametrize(
     "mode",
-    ["streaming", "offline", "accumulation", "prefetch", "mid_quantum", "mid_quantum_reuse"],
+    [
+        "streaming",
+        "offline",
+        "accumulation",
+        "prefetch",
+        "mid_quantum",
+        "mid_quantum_reuse",
+        "final_quantum",
+        "final_quantum_amp",
+    ],
 )
 def test_resumed_run_matches_uninterrupted(toy_config, tmp_path, mode):
     from egolearn.utils.snapshot import load_snapshot, save_snapshot
@@ -613,6 +622,18 @@ def test_resumed_run_matches_uninterrupted(toy_config, tmp_path, mode):
         cfg["driver"]["rate"] = {"steps_per_admit": 3, "resample": mode == "mid_quantum"}
         cfg["driver"]["max_steps"] = 6
         cut = 4
+    elif mode.startswith("final_quantum"):
+        # The stream is exhausted, but the capped final quantum still owes
+        # updates: its partial accumulation window must survive the snapshot.
+        cfg["driver"].update(
+            advance={"kind": "observations", "n": 100000},
+            rate={"steps_per_admit": 7, "resample": True},
+            grad_accumulation=2,
+            max_steps=7,  # The completed quantum must flush its odd tail.
+        )
+        if mode == "final_quantum_amp":
+            cfg["driver"]["amp"] = {"dtype": "float16"}
+        cut = 3
     elif mode == "prefetch":
         cfg = _prefetch_cfg(toy_config, tmp_path, True)
         cut = 4  # Snapshot at a quantum boundary with a prefetched batch in flight.
@@ -623,8 +644,11 @@ def test_resumed_run_matches_uninterrupted(toy_config, tmp_path, mode):
     interrupted["driver"]["max_steps"] = cut
     first = egolearn.build(interrupted)
     first.driver.fit()
-    if mode == "accumulation":
+    if mode == "accumulation" or mode.startswith("final_quantum"):
         assert any(p.grad is not None for p in first.model.parameters())
+    if mode.startswith("final_quantum"):
+        assert first.driver._exhausted
+        assert first.ctx.clock.quantum_left == 4
     snapshot = str(tmp_path / "resume.pth")
     save_snapshot(snapshot, first.driver)
 
@@ -639,6 +663,11 @@ def test_resumed_run_matches_uninterrupted(toy_config, tmp_path, mode):
     resumed.driver.fit()
     assert resumed.ctx.clock.step == ref.ctx.clock.step == cfg["driver"]["max_steps"]
     assert resumed.ctx.clock.admitted == ref.ctx.clock.admitted
+    if mode.startswith("final_quantum"):
+        assert all(p.grad is None for p in ref.model.parameters())
+        assert all(p.grad is None for p in resumed.model.parameters())
+    if mode == "final_quantum_amp":
+        assert resumed.driver.scaler.state_dict() == ref.driver.scaler.state_dict()
     for key, value in ref.model.state_dict().items():
         assert torch.equal(value, resumed.model.state_dict()[key]), key
 
