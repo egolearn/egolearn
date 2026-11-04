@@ -253,8 +253,10 @@ generated tables contain metrics and diagnostics suitable for a README after rev
 training with seeds 1337, 1338 and 1339. It uses the default BabyCL training config
 with `+benchmark=labeled_s` to select Labeled-S 4AFC plus canonical 26-class
 fixed-feature linear decoding. Tables use final-model probe scores as fractions,
-with mean and sample SD. The linear protocol differs from the paper's 24-class
-split and embedding representation; this suite does not assert numerical parity.
+with mean and sample SD. The linear protocol differs from the paper's split of
+all 26-class Labeled-S images and its embedding, which
+`probe:labeled_s_stratified_linear` follows; this suite does not assert
+numerical parity.
 
 Set these artifact paths and digests in your local environment:
 

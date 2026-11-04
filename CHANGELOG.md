@@ -86,6 +86,20 @@ patch releases for fixes during 0.x development.
 - The documentation site uses MkDocs under `/docs/`, with a landing page at the
   site root and crawler blocking enabled for staging.
 - Contribution guidance includes a PR template and a local PR-message checker.
+- `saycam_default` reproduces the BabyCL paper's run, including its 26568-step
+  budget, mixed precision, and 2-D Gaussian blur.
+- `solver.schedule.total_steps` indexes the cosine schedule by gradient steps.
+- `driver.amp` runs encoder forwards and losses under float16 or bfloat16
+  autocast, with named slots kept in float32.
+- `stream.transcript_first` surfaces an utterance before a frame with the same
+  timestamp, on frame directories and packed frame stores alike.
+- `paper_evals.yaml` runs the BabyCL paper's seven end-of-training evaluations
+  with the paper's protocols.
+- `probe:labeled_s_stratified_linear` and `probe:mini_imagenet_linear` follow the
+  BabyCL paper's linear decoding protocols.
+- `probe:linear` accepts `feature_norm: l2` and a scikit-learn-style penalty `c`.
+- The BabyCL README reports per-seed SAYCam results next to the paper's numbers,
+  with each protocol difference stated.
 
 ### Changed
 
@@ -169,6 +183,15 @@ patch releases for fixes during 0.x development.
   executing Python on login nodes.
 - The combined site build retains a root 404 page and applies the staging
   setting consistently to the landing page and documentation.
+- A session's last segment gets its own training steps instead of sharing the
+  next session's quantum.
+- `driver.max_steps` stops at exactly that step, also inside a quantum.
+- A run resumed from a snapshot taken inside a quantum finishes that quantum
+  before reading more of the stream.
+- A float16 run resumed with a partial gradient-accumulation window applies the
+  pending gradients once, under the restored loss scale.
+- `driver.max_steps` preserves pending accumulated gradients when it interrupts
+  the final quantum after stream exhaustion.
 
 ### Security
 

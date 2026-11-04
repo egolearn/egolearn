@@ -336,6 +336,19 @@ def build(cfg: dict) -> Pipeline:
                 "sample between steps, so batches cannot be composed ahead"
             )
 
+    amp = dcfg.get("amp")
+    if amp and mode == "offline":
+        raise PipelineError("driver.amp is supported by the streaming driver only")
+    if amp and recipe is not None:
+        slot_names = {s.name for s in recipe.slots}
+        if recipe.fallback is not None:
+            slot_names |= {s.name for s in recipe.fallback.slots}
+        unknown = set(amp.get("fp32_slots") or ()) - slot_names
+        if unknown:
+            raise PipelineError(
+                f"driver.amp.fp32_slots names {sorted(unknown)}, which no recipe slot defines"
+            )
+
     driver: LockstepDriver | OfflineDriver
     if mode == "offline":
         driver = instantiate(
@@ -380,6 +393,7 @@ def build(cfg: dict) -> Pipeline:
             max_steps=dcfg.get("max_steps"),
             grad_accumulation=dcfg.get("grad_accumulation", 1),
             prefetch=prefetch,
+            amp=amp,
         )
 
     pipe = Pipeline(

@@ -112,6 +112,28 @@ def test_store_is_byte_identical_and_refs_interchangeable(packed):
     store.close()
 
 
+@pytest.mark.parametrize("transcript_first", [False, True])
+def test_equal_time_order_matches_the_frame_dirs(packed, transcript_first):
+    # both fixture utterances end on a frame time, so stream.transcript_first
+    # decides each tie; a packed store must break it the same way
+    root, transcript, out, _ = packed
+    src = SaycamStream(
+        str(root), transcript_json=str(transcript), include="S_*", transcript_first=transcript_first
+    )
+    dst = PackedFrameStream(
+        str(out), transcript_json=str(transcript), transcript_first=transcript_first
+    )
+    for a, b in zip(src.sessions(), dst.sessions(), strict=True):
+        obs_a = [(o.channel, o.t, o.ref) for o in a.observations()]
+        obs_b = [(o.channel, o.t, o.ref) for o in b.observations()]
+        assert obs_a == obs_b
+        if "transcript" in b.channels:
+            k = next(i for i, (channel, _, _) in enumerate(obs_b) if channel == "transcript")
+            tie = obs_b[k + 1] if transcript_first else obs_b[k - 1]
+            assert tie[:2] == ("video", obs_b[k][1])
+    dst.close()
+
+
 def test_windows_and_clips_read_the_same_frames(packed):
     root, _, out, _ = packed
     src = SaycamStream(str(root), include="S_*")

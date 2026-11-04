@@ -33,6 +33,7 @@ class PackedFrameStream(SaycamStream):
         naming: str | None = None,
         sessions: list[str] | None = None,
         include: str | None = None,
+        transcript_first: bool = False,
     ):
         """`root_dir` is a packed store directory; `fps` and the frame naming
         scheme come from its manifest, and a config that still carries them
@@ -56,6 +57,7 @@ class PackedFrameStream(SaycamStream):
             naming=self.store.naming,
             sessions=sessions,
             include=include,
+            transcript_first=transcript_first,
         )
 
     # ---- session enumeration (manifest order, not a directory scan) -------
@@ -86,11 +88,7 @@ class PackedFrameStream(SaycamStream):
             span = self.store.span(sid)
             times = self.store.session_times(sid).tolist()
             video = S.DenseFrameChannel("video", sid, times, [(sid, i) for i in range(span.count)])
-            channels: dict[str, S.Channel] = {"video": video}
-            utts = self._utts_by_stem.get(self._stem(sid), [])
-            if utts:
-                channels["transcript"] = S.SparseIntervalChannel("transcript", sid, utts)
-            yield S.Session(sid, channels)
+            yield self._session(sid, video)
 
     def total_observations(self) -> int | None:
         if self._total is None:
