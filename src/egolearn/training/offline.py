@@ -227,7 +227,7 @@ class OfflineDriver:
                 if callback := getattr(hook, "on_skip", None):
                     callback(self, nonfinite=total is not None)
             print(
-                f"[offline] skipping step {self.ctx.clock.step}: non-finite or empty loss",
+                f"[offline] step {self.ctx.clock.step} failed: non-finite or empty loss",
                 flush=True,
             )
             return False
@@ -318,17 +318,22 @@ class OfflineDriver:
                         seq = self.ctx.clock.compose_seq
                         nxt = self._pick(refs, order, b + 1)
                         pending = (executor.submit(self._compose, nxt, seq), seq)
-                    self._train_step(batch)
+                    if not self._train_step(batch):
+                        raise RuntimeError(
+                            f"offline driver: step {self.ctx.clock.step} failed with "
+                            f"non-finite or empty loss (epoch {epoch}, batch {b}); "
+                            "stopping to preserve batch order"
+                        )
         finally:
             if executor is not None:
                 executor.shutdown(wait=True)
+            self.loader.close()
         if self.grad_accumulation > 1 and self.ctx.clock.step % self.grad_accumulation != 0:
             # apply the tail of an unfinished accumulation window
             if self.schedule is not None:
                 apply_lr(self.optimizer, self._base_lrs, self.schedule.multiplier(self.ctx))
             self.optimizer.step()
             self.optimizer.zero_grad(set_to_none=True)
-        self.loader.close()
         for h in self.hooks:
             h.on_end(self)
         print(f"[offline] done: steps={self.ctx.clock.step}", flush=True)

@@ -56,13 +56,24 @@ def _intphys2_root(tmp_path, monkeypatch, brightness=None):
     return tmp_path
 
 
-def test_read_video_samples_uniformly_over_the_whole_video(tmp_path):
+@pytest.mark.parametrize(
+    "values", [[6 * i for i in range(40)], [0, 78, 156, 234]], ids=["subsample", "exact_length"]
+)
+def test_read_video_samples_uniformly_over_the_whole_video(tmp_path, values):
     path = tmp_path / "ramp.mp4"
-    _write_video(path, [6 * i for i in range(40)])
+    _write_video(path, values)
     clip = read_video(str(path), 4, T.PILToTensor())
     assert clip.shape == (4, 3, 32, 32)
-    # frames 0, 13, 26, 39 -- the first and last frames included
+    # Include both endpoints; retain every frame when the video has exactly num_frames.
     assert clip.float().mean(dim=(1, 2, 3)).tolist() == pytest.approx([0, 78, 156, 234], abs=4)
+
+
+def test_read_video_rejects_short_videos(tmp_path):
+    path = tmp_path / "short.mp4"
+    _write_video(path, [0, 80, 160])
+    with pytest.raises(ValueError) as caught:
+        read_video(str(path), 4, T.PILToTensor())
+    assert str(caught.value) == f"{path}: video has 3 frames, but num_frames=4 requires at least 4"
 
 
 def test_intphys2_pairs_count_the_impossible_twin_as_more_surprising(tmp_path, monkeypatch):

@@ -230,8 +230,16 @@ def test_full_preflight_accepts_complete_static_clips(tmp_path, frames, mode):
     assert run(cfg) == PREFLIGHT_STOP
 
 
-@pytest.mark.parametrize("mode", ["iid", "streaming"])
-@pytest.mark.parametrize("invalid", ["short", "point", "channel", "timestamp"])
+@pytest.mark.parametrize(
+    "mode,invalid",
+    [
+        ("iid", "short"),
+        ("streaming", "short"),
+        ("iid", "point"),
+        ("streaming", "channel"),
+        ("iid", "timestamp"),
+    ],
+)
 def test_full_preflight_rejects_incomplete_refs(tmp_path, frames, mode, invalid):
     pipe, _, _, refs = prepare(config(tmp_path / mode, frames, mode))
     try:

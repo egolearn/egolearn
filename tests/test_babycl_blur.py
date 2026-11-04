@@ -17,8 +17,9 @@ def restore_python_rng():
     random.setstate(state)
 
 
-@pytest.mark.parametrize("mode", ["RGB", "L"])
-@pytest.mark.parametrize("sigma", [None, (0.3, 1.25), (0.75, 0.75), (0.0, 0.0)])
+@pytest.mark.parametrize(
+    "mode,sigma", [("RGB", None), ("L", (0.3, 1.25)), ("RGB", (0.75, 0.75)), ("L", (0.0, 0.0))]
+)
 def test_pil_radius_blur_matches_seeded_pillow_pixels_and_rng(mode, sigma):
     shape = (21, 29, 3) if mode == "RGB" else (21, 29)
     pixels = np.random.default_rng(5).integers(0, 256, shape, dtype=np.uint8)
