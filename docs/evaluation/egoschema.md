@@ -84,10 +84,16 @@ is correct. This form uses vLLM's `video/jpeg` data URLs. With
 which any server that accepts images understands. Start vLLM with an image limit of
 at least `max_frames` for this form, such as `--limit-mm-per-prompt '{"image": 64, "video": 1}'`.
 
-The prompt shows the question, the five options as `A.` to `E.`, and the
-instruction "Answer with the option's letter from the given choices directly."
-Decoding is greedy. A reply is read as the letter it starts with, else the
-letter after "answer is", else the option whose full text it repeats.
+The prompt and the reply parser are named in the config, and the result records
+both names. The default prompt, `lettered_options`, shows the question, the five
+options as `A.` to `E.`, and the instruction "Answer with the option's letter
+from the given choices directly." Decoding is greedy. The default parser,
+`option_letter`, reads a reply as the letter it starts with (alone or followed by
+`.`, `:`, `)` or `]`), else the capital letter after "answer" or "answer is", else
+the option whose full text it repeats. To use another, register a function with
+`@PROMPTS.register("name")` or `@PARSERS.register("name")` from
+`egolearn.config.registry` in a module listed in `_imports_`, then set
+`benchmarks.0.prompt` or `benchmarks.0.parser` to its name.
 
 | Metric | Meaning |
 | --- | --- |

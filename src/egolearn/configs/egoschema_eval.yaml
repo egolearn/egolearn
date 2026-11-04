@@ -45,4 +45,6 @@ benchmarks:
     max_questions: null  # first N questions only (smoke runs)
     submission_dir: null
     bootstrap_resamples: 10000
+    prompt: lettered_options  # registered prompt (question and lettered options)
+    parser: option_letter  # registered reply parser (option letter)
     verify: true  # the release files at the pinned EgoSchema commit

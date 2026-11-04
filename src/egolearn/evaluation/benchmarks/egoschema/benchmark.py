@@ -24,13 +24,13 @@ from typing import Any
 from egolearn.config.registry import BENCHMARKS
 from egolearn.evaluation.benchmark import Benchmark
 from egolearn.evaluation.benchmarks.egoschema.data import (
-    QUESTIONS_SHA256,
     EgoSchemaQuestion,
     load_answers,
     load_questions,
 )
 from egolearn.evaluation.multiple_choice import MultipleChoiceItem, MultipleChoiceScorer
 from egolearn.evaluation.video_input import VideoClip, VideoSampling
+from egolearn.hub import sha256_file
 
 
 @BENCHMARKS.register("egoschema")
@@ -57,6 +57,8 @@ class EgoSchemaBenchmark(Benchmark):
         max_questions: int | None = None,
         submission_dir: str | None = None,
         bootstrap_resamples: int = 10_000,
+        prompt: str = "lettered_options",
+        parser: str = "option_letter",
         verify: bool = True,
     ):
         if max_questions is not None and max_questions < 1:
@@ -78,9 +80,12 @@ class EgoSchemaBenchmark(Benchmark):
             batch_size=batch_size,
             workers=workers,
             bootstrap_resamples=bootstrap_resamples,
+            prompt=prompt,
+            parser=parser,
         )
         self.questions: list[EgoSchemaQuestion] | None = None
         self.answers: dict[str, int] | None = None
+        self.file_sha256: dict[str, str] = {}
 
     def video_path(self, q_uid: str) -> Path:
         return Path(self.video_root) / f"{q_uid}.mp4"
@@ -107,6 +112,11 @@ class EgoSchemaBenchmark(Benchmark):
             )
         self.questions = questions
         self.answers = answers
+        # The files actually read, recorded whether or not they were verified.
+        self.file_sha256 = {
+            "questions_sha256": sha256_file(Path(self.questions_json)),
+            "answers_sha256": sha256_file(Path(self.answers_json)),
+        }
 
     def configuration(self) -> dict[str, Any]:
         return {
@@ -123,7 +133,8 @@ class EgoSchemaBenchmark(Benchmark):
         return {
             "n_questions": len(self.questions),
             "n_answered": sum(q.q_uid in self.answers for q in self.questions),
-            "questions_sha256": QUESTIONS_SHA256 if self.verify else "unverified",
+            **self.file_sha256,
+            "verified": self.verify,
             **self.scorer.video_summary,
         }
 

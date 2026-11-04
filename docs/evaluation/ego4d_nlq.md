@@ -56,11 +56,13 @@ prediction row records the frame count and rate the model saw. The
 model is told the true sampling rate, as for [EgoSchema](egoschema.md#scoring-contract),
 so its times count from the start of the clip like the annotations.
 
-The prompt gives the clip's duration and the query, and asks for the start and
-end time in the form "start - end". Decoding is greedy. A reply is read as
-every pair of times joined by "-", "to", "and", "," or "~", in seconds or as
+The default prompt, `start_end_seconds`, gives the clip's duration and the query,
+and asks for the start and end time in the form "start - end". Decoding is
+greedy. The default parser, `time_pairs`, reads every pair of times joined by "-", "to", "and", "," or "~", in seconds or as
 clock times such as `1:05`. Each window is clipped to the clip and put in
 order, and the first five are kept. A reply without a pair counts as a miss.
+Other prompts and parsers are chosen with `benchmarks.0.prompt` and
+`benchmarks.0.parser`, as described for [EgoSchema](egoschema.md#scoring-contract).
 
 The metrics follow the official `evaluate_ego4d_nlq.py`. A query is recalled at
 (k, t) when one of its first k windows overlaps the ground truth with IoU

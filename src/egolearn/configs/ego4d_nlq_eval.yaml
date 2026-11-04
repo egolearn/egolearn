@@ -46,4 +46,6 @@ benchmarks:
     workers: 8
     max_clips: null  # first N clips only (smoke runs)
     predictions_dir: null
+    prompt: start_end_seconds  # registered prompt (asks for "start - end" in seconds)
+    parser: time_pairs  # registered reply parser (time pairs, best first)
     verify: true  # the official v2 annotation files; false for a subset

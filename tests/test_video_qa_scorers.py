@@ -1,3 +1,7 @@
+# _official_iou and _official_nlq_metrics are adapted from EGO4D/episodic-memory
+# NLQ/VSLNet/utils/evaluate_ego4d_nlq.py at 5275b9570a3d77884e8685bad474309f7778db1f
+# (MIT, Copyright (c) 2021 EGO4D Dataset and Benchmark Suite), as a reference for
+# the grounding metrics; the rest of this file is EgoLearn's own.
 """Video input sampling and the generic multiple-choice and temporal-grounding scorers."""
 
 import pytest
@@ -7,10 +11,11 @@ pytest.importorskip("av")
 import numpy as np
 import torch
 
-from egolearn.config.registry import GENERATIVE
+from egolearn.config.registry import GENERATIVE, PARSERS, PROMPTS
 from egolearn.evaluation import load_model
 from egolearn.evaluation.evaluator import EvaluationContext
 from egolearn.evaluation.multiple_choice import (
+    LETTERS,
     MultipleChoiceItem,
     MultipleChoiceScorer,
     format_prompt,
@@ -19,7 +24,7 @@ from egolearn.evaluation.multiple_choice import (
 from egolearn.evaluation.temporal_grounding import (
     GroundingItem,
     TemporalGroundingScorer,
-    interval_iou,
+    compute_iou,
     parse_windows,
 )
 from egolearn.evaluation.video_input import VideoClip, VideoReader, VideoSampling, read_video
@@ -196,7 +201,33 @@ def test_multiple_choice_scorer_reads_each_item_video(tmp_path, counter_video):
     assert video.timestamps == (0.0, 1.0, 2.0)
     assert (rows[0]["frames"], rows[0]["fps"]) == (3, 1.0)
     assert scorer.video_summary == {"video_frames_mean": 3.0, "video_fps_mean": 1.0}
-    assert scorer.configuration()["fps"] == 1.0 and scorer.configuration()["prompt_version"] == 1
+    config = scorer.configuration()
+    assert config["fps"] == 1.0
+    assert (config["prompt"], config["parser"]) == ("lettered_options", "option_letter")
+
+
+@PROMPTS.register("test_bare_question")
+def bare_question(question, options):
+    return question
+
+
+@PARSERS.register("test_last_letter")
+def last_letter(reply, options):
+    named = [c for c in reply if c in LETTERS[: len(options)]]
+    return LETTERS.index(named[-1]) if named else None
+
+
+def test_multiple_choice_scorer_uses_the_named_prompt_and_parser():
+    model, component = _model(lambda text: "I think A, no, B")
+    item = MultipleChoiceItem("q", "Why?", ("x", "y"), answer=1)
+    metrics, _ = MultipleChoiceScorer("mcq").evaluate(model, CTX, [item])
+    assert metrics["unparsed"] == 1.0  # the default parser reads a leading letter only
+    scorer = MultipleChoiceScorer("mcq", prompt="test_bare_question", parser="test_last_letter")
+    metrics, _ = scorer.evaluate(model, CTX, [item])
+    assert metrics["acc"] == 1.0 and component.texts[-1] == "Why?"
+    assert scorer.configuration()["parser"] == "test_last_letter"
+    with pytest.raises(KeyError, match="unknown component parser:nope"):
+        MultipleChoiceScorer("mcq", parser="nope")
 
 
 # ---- temporal grounding --------------------------------------------------------------------
@@ -218,10 +249,10 @@ def test_parse_windows(reply, expected):
     assert parse_windows(reply, duration=100.0) == expected
 
 
-def test_interval_iou_uses_the_hull_as_union():
-    assert interval_iou([0, 10], [5, 15]) == pytest.approx(5 / 15)
-    assert interval_iou([0, 1], [2, 3]) == 0.0
-    assert interval_iou([2, 2], [2, 2]) == 0.0
+def test_compute_iou_uses_the_hull_as_union():
+    overlap = compute_iou([[0, 10], [0, 1]], [[5, 15]])
+    assert overlap.shape == (2, 1)
+    assert overlap[:, 0].tolist() == pytest.approx([5 / 15, 0.0])
 
 
 def test_grounding_scorer_counts_recall_strictly_above_threshold(tmp_path, counter_video):
@@ -302,3 +333,51 @@ def test_a_component_wrapping_an_encoder_is_scored_and_reloaded(tmp_path, counte
     query = GroundingItem("g", "Where?", clip, duration=4.0, window=(0.0, 3.0))
     metrics, rows = TemporalGroundingScorer("nlq").evaluate(loaded, CTX, [query])
     assert rows[0]["windows"] == [[0.0, 3.0]] and metrics["r1_iou0.5"] == 1.0
+
+
+def _official_iou(pred, gt):
+    pred, gt = np.array(pred), np.array(gt)
+    inter_left = np.maximum(pred[:, 0, None], gt[None, :, 0])
+    inter_right = np.minimum(pred[:, 1, None], gt[None, :, 1])
+    inter = np.maximum(0.0, inter_right - inter_left)
+    union_left = np.minimum(pred[:, 0, None], gt[None, :, 0])
+    union_right = np.maximum(pred[:, 1, None], gt[None, :, 1])
+    union = np.maximum(0.0, union_right - union_left)
+    return 1.0 * inter / union
+
+
+def _official_nlq_metrics(predictions, truths, thresholds=(0.3, 0.5), topk=(1, 5)):
+    results = [[[] for _ in topk] for _ in thresholds]
+    average_iou = []
+    for windows, truth in zip(predictions, truths, strict=True):
+        overlap = _official_iou(windows, [list(truth)])
+        average_iou.append(np.mean(np.sort(overlap[0])[-3:]))
+        for tt, threshold in enumerate(thresholds):
+            for rr, k in enumerate(topk):
+                results[tt][rr].append((overlap > threshold)[:k].any())
+    return np.array(results).mean(axis=-1), float(np.mean(average_iou))
+
+
+def test_grounding_metrics_match_the_official_evaluation(tmp_path, counter_video):
+    rng = np.random.default_rng(0)
+    path = tmp_path / "clip.mp4"
+    counter_video(path, seconds=2.0)
+    clip = VideoClip(str(path))
+    windows, truths, items = [], [], []
+    for i in range(200):  # 1 to 5 windows per query, inside [0, 100]
+        starts = rng.uniform(0, 90, int(rng.integers(1, 6))).round(1)
+        ends = (starts + rng.uniform(0.5, 10, starts.size)).round(1)
+        windows.append([[float(s), float(e)] for s, e in zip(starts, ends, strict=True)])
+        start = round(float(rng.uniform(0, 90)), 1)
+        truths.append((start, round(start + float(rng.uniform(0.5, 10)), 1)))
+        items.append(GroundingItem(str(i), f"q{i}", clip, duration=100.0, window=truths[-1]))
+    replies = {f"q{i}": "\n".join(f"{s} - {e}" for s, e in w) for i, w in enumerate(windows)}
+    model, _ = _model(lambda text: replies[text.split("Query: ")[1].split("\n")[0]])
+    metrics, rows = TemporalGroundingScorer("nlq", batch_size=50).evaluate(model, CTX, items)
+    assert [row["windows"] for row in rows] == windows
+    recall, miou = _official_nlq_metrics(windows, truths)
+    for tt, threshold in enumerate((0.3, 0.5)):
+        for rr, k in enumerate((1, 5)):
+            assert metrics[f"r{k}_iou{threshold}"] == pytest.approx(recall[tt][rr])
+    assert metrics["miou"] == pytest.approx(miou)
+    assert metrics["r5_iou0.3"] > metrics["r1_iou0.3"]  # several windows do matter here

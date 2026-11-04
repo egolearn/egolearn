@@ -55,11 +55,13 @@ EMBEDDERS = Registry("embedder")  # ref -> embedding providers
 ENCODERS = Registry("encoder")  # modality -> representation (model/encoders)
 HEADS = Registry("head")
 PREDICTORS = Registry("predictor")  # representation(s) -> predicted representation
-GENERATIVE = Registry("generative")  # generative/autoregressive components (interface)
+GENERATIVE = Registry("generative")  # text-producing components (model/generative)
 LOSSES = Registry("loss")  # model/losses
 # evaluation
 PROBES = Registry("probe")
 BENCHMARKS = Registry("benchmark")
+PROMPTS = Registry("prompt")  # item -> prompt text for the generative scorers
+PARSERS = Registry("parser")  # reply text -> prediction for the generative scorers
 
 _ALL = {
     r.kind: r
@@ -78,6 +80,8 @@ _ALL = {
         LOSSES,
         PROBES,
         BENCHMARKS,
+        PROMPTS,
+        PARSERS,
     ]
 }
 

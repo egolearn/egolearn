@@ -13,6 +13,7 @@ pytest.importorskip("av")
 from egolearn.evaluation import evaluate
 from egolearn.evaluation.benchmarks.egoschema import EgoSchemaBenchmark
 from egolearn.evaluation.benchmarks.egoschema.data import load_answers, load_questions
+from egolearn.hub import sha256_file
 from egolearn.model import ComposedModel
 from egolearn.model.generative import GenerativeComponent
 
@@ -85,7 +86,11 @@ def test_subset_scores_public_answers(egoschema_root, tmp_path):
     assert result.metadata["egoschema"]["n_answered"] == 2
     assert result.metadata["egoschema"]["video_fps_mean"] == 1.0  # 3 frames of 3 s
     assert result.configs["egoschema"]["max_frames"] == 64
-    assert result.configs["egoschema"]["prompt_version"] == 1
+    assert result.configs["egoschema"]["prompt"] == "lettered_options"
+    metadata = result.metadata["egoschema"]
+    assert metadata["questions_sha256"] == sha256_file(egoschema_root / "questions.json")
+    assert metadata["answers_sha256"] == sha256_file(egoschema_root / "subset_answers.json")
+    assert metadata["verified"] is False
     rows = [json.loads(line) for line in (out / "predictions.jsonl").read_text().splitlines()]
     assert [(r["uid"], r["pred"], r["answer"], r["frames"]) for r in rows] == [
         ("q-alpha", 0, 0, 3),

@@ -4,7 +4,13 @@ A benchmark builds ``MultipleChoiceItem``s (question, options, optional video,
 answer index or None when hidden) and this scorer turns each into one prompt,
 calls ``model.generate`` and parses the reply.  It needs ``text_generation``.
 
-The prompt (``PROMPT_VERSION`` 1) is the question, every option behind a
+The prompt and the reply parser are functions registered by name (registries
+``prompt`` and ``parser``) and chosen in the configuration, which records the
+names used.  A prompt takes ``(question, options)`` and returns the text; a
+parser takes ``(reply, options)`` and returns the option index, or None.  Register
+others in a module listed in ``_imports_``.
+
+The default prompt, ``lettered_options``, is the question, every option behind a
 capital letter, and the instruction usual for letter answers in LLaVA-style
 evaluations (lmms-eval's EgoSchema task among them)::
 
@@ -14,7 +20,8 @@ evaluations (lmms-eval's EgoSchema task among them)::
     ...
     Answer with the option's letter from the given choices directly.
 
-A reply is read as the option whose letter it starts with, alone or followed by
+The default parser, ``option_letter``, reads a reply as the option whose letter
+it starts with, alone or followed by
 ".", ":", ")" or "]" (``"B"``, ``"(B)"``, ``"B. ..."``), else the capital letter
 after "answer" or "answer is", else the option whose full text it equals.  A
 reply that starts with a word, such as "C is cooking", names no letter (in
@@ -35,6 +42,7 @@ from typing import Any
 
 import numpy as np
 
+from egolearn.config.registry import PARSERS, PROMPTS
 from egolearn.core import keys as K
 from egolearn.evaluation.video_input import (
     VideoClip,
@@ -44,7 +52,6 @@ from egolearn.evaluation.video_input import (
     shown_summary,
 )
 
-PROMPT_VERSION = 1
 LETTERS = "ABCDEFGH"
 INSTRUCTION = "Answer with the option's letter from the given choices directly."
 
@@ -64,6 +71,7 @@ class MultipleChoiceItem:
             raise ValueError(f"{self.uid}: answer {self.answer} is not an option index")
 
 
+@PROMPTS.register("lettered_options")
 def format_prompt(question: str, options: Sequence[str]) -> str:
     lines = [f"Question: {question.strip()}", "Options:"]
     lines += [f"{LETTERS[i]}. {str(option).strip()}" for i, option in enumerate(options)]
@@ -71,6 +79,7 @@ def format_prompt(question: str, options: Sequence[str]) -> str:
     return "\n".join(lines)
 
 
+@PARSERS.register("option_letter")
 def parse_choice(reply: str, options: Sequence[str]) -> int | None:
     """The option index a reply names, or None (see the module docstring)."""
     letters = LETTERS[: len(options)]
@@ -111,10 +120,14 @@ class MultipleChoiceScorer:
         batch_size: int = 8,
         workers: int = 8,
         bootstrap_resamples: int = 10_000,
+        prompt: str = "lettered_options",
+        parser: str = "option_letter",
     ):
         if batch_size < 1 or bootstrap_resamples < 1:
             raise ValueError("batch_size and bootstrap_resamples must be >= 1")
         self.name = name
+        self.prompt, self._prompt = prompt, PROMPTS.get(prompt)
+        self.parser, self._parser = parser, PARSERS.get(parser)
         self.generative = generative
         self.sampling = sampling or VideoSampling()
         self.batch_size = batch_size
@@ -129,7 +142,8 @@ class MultipleChoiceScorer:
             "batch_size": self.batch_size,
             "workers": self.reader.workers,
             "bootstrap_resamples": self.bootstrap_resamples,
-            "prompt_version": PROMPT_VERSION,
+            "prompt": self.prompt,
+            "parser": self.parser,
         }
 
     def evaluate(
@@ -147,7 +161,7 @@ class MultipleChoiceScorer:
         for start in range(0, len(items), self.batch_size):
             batch = items[start : start + self.batch_size]
             inputs: dict[str, Any] = {
-                "texts": [format_prompt(item.question, item.options) for item in batch]
+                "texts": [self._prompt(item.question, item.options) for item in batch]
             }
             clips = [item.video for item in batch if item.video is not None]
             if clips and len(clips) != len(batch):
@@ -159,7 +173,7 @@ class MultipleChoiceScorer:
             if len(replies) != len(batch):
                 raise ValueError(f"{self.name}: {len(replies)} replies for {len(batch)} items")
             for i, (item, reply) in enumerate(zip(batch, replies, strict=True)):
-                choice = parse_choice(str(reply), item.options)
+                choice = self._parser(str(reply), item.options)
                 row = {"uid": item.uid, "reply": str(reply), "pred": choice, "answer": item.answer}
                 rows.append(row | (shown(videos[i]) if videos else {}))
         self.video_summary = shown_summary(rows)

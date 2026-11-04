@@ -60,6 +60,8 @@ class Ego4DNLQBenchmark(Benchmark):
         workers: int = 8,
         max_clips: int | None = None,
         predictions_dir: str | None = None,
+        prompt: str = "start_end_seconds",
+        parser: str = "time_pairs",
         verify: bool = True,
     ):
         if split not in SPLITS:
@@ -79,6 +81,8 @@ class Ego4DNLQBenchmark(Benchmark):
             sampling=VideoSampling(fps=fps, max_frames=max_frames, max_side=max_side),
             batch_size=batch_size,
             workers=workers,
+            prompt=prompt,
+            parser=parser,
         )
         self.data: NLQSplit | None = None
 
