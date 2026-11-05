@@ -168,6 +168,9 @@ def test_not_applicable_requires_consistent_reasons_and_cannot_hide_scores():
     bad["not_applicable"][0]["column"] = DEFAULT_COLUMNS[0]
     with pytest.raises(ValueError, match="evaluated and not applicable"):
         validate_run(bad)
+    bad["not_applicable"][0]["column"] = {**DEFAULT_COLUMNS[0], "id": "alias"}
+    with pytest.raises(ValueError, match="evaluated and not applicable"):
+        validate_run(bad)
     bad = copy.deepcopy(run)
     bad["not_applicable"][0]["reason"] = " "
     with pytest.raises(ValueError, match="nonempty reason"):

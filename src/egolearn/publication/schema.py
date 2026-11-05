@@ -210,6 +210,7 @@ def validate_run(run: dict[str, Any], *, published: bool = False) -> None:
     if not isinstance(run["evaluations"], list) or not run["evaluations"]:
         raise ValueError("a published run needs evaluations")
     seen = set()
+    evaluated_metrics = set()
     for evaluation in run["evaluations"]:
         _keys(evaluation, "column value protocol protocol_sha256 source_sha256")
         column = evaluation["column"]
@@ -217,6 +218,7 @@ def validate_run(run: dict[str, Any], *, published: bool = False) -> None:
         if column["id"] in seen:
             raise ValueError("duplicate metric in one run")
         seen.add(column["id"])
+        evaluated_metrics.add((column["benchmark"], column["metric"]))
         value = evaluation["value"]
         if type(value) not in (float, int) or not math.isfinite(value):
             raise ValueError("metrics must be finite numbers")
@@ -251,7 +253,8 @@ def validate_run(run: dict[str, Any], *, published: bool = False) -> None:
         _keys(entry, "column reason")
         validate_column(entry["column"])
         name = entry["column"]["id"]
-        if name in seen:
+        metric = (entry["column"]["benchmark"], entry["column"]["metric"])
+        if name in seen or metric in evaluated_metrics:
             raise ValueError("a metric cannot be evaluated and not applicable, or declared twice")
         seen.add(name)
         if not isinstance(entry["reason"], str) or not entry["reason"].strip():
