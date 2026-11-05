@@ -11,6 +11,7 @@ from egolearn.publication.schema import (
     digest,
     encoded,
     identifier,
+    model_directory,
     portable,
     read_json,
     run_id,
@@ -131,16 +132,45 @@ def prepare(manifest: Path, destination: Path, *, allow_legacy: bool = False) ->
     columns = plan.get("columns", DEFAULT_COLUMNS)
     condition = plan["condition"]
     identifier(condition["id"])
+    reference = plan.get("reference", False)
+    if type(reference) is not bool:
+        raise ValueError("reference must be a boolean")
+    if reference and (plan["expected_seeds"] != [None] or len(plan["runs"]) != 1):
+        raise ValueError("publish each unknown-seed reference as one condition with [null]")
+    unavailable = plan.get("not_applicable", {})
+    if not isinstance(unavailable, dict):
+        raise ValueError("not_applicable must map column IDs to reasons")
+    by_id = {column["id"]: column for column in columns}
+    if unavailable.keys() - by_id.keys():
+        raise ValueError("not_applicable names an unknown column")
+    not_applicable = [
+        {"column": by_id[name], "reason": reason} for name, reason in sorted(unavailable.items())
+    ]
+    version = 2 if reference or not_applicable else 1
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".publication-", dir=destination.parent) as temporary:
         stage = Path(temporary)
         runs: list[dict[str, Any]] = []
         for spec in plan["runs"]:
             seed = spec["training_seed"]
-            training_config = OmegaConf.load(spec["training_config"])
-            if not isinstance(training_config, DictConfig) or training_config.get("seed") != seed:
-                raise ValueError("training seed differs from the saved training configuration")
-            export = stage / "models" / str(seed)
+            if reference:
+                if seed is not None or spec.get("training_config") is not None:
+                    raise ValueError(
+                        "unknown-seed references require null seed and training_config"
+                    )
+                training_config_sha256 = None
+            else:
+                if type(seed) is not int:
+                    raise ValueError("training seed must be an integer")
+                training_config = OmegaConf.load(spec["training_config"])
+                if (
+                    not isinstance(training_config, DictConfig)
+                    or type(training_config.get("seed")) is not int
+                    or training_config.get("seed") != seed
+                ):
+                    raise ValueError("training seed differs from the saved training configuration")
+                training_config_sha256 = file_digest(Path(spec["training_config"]))
+            export = stage / "models" / model_directory(spec)
             export_checkpoint(Path(spec["checkpoint"]), export)
             metadata = read_json(export / "model.json")
             # A strict model reconstruction catches missing imports and incompatible state dicts.
@@ -173,19 +203,22 @@ def prepare(manifest: Path, destination: Path, *, allow_legacy: bool = False) ->
             if commit in {None, "unavailable"} or revision.get("dirty"):
                 commit = None
             run = {
-                "schema_version": 1,
+                "schema_version": version,
                 "id": "",
                 "condition": condition,
                 "training_seed": seed,
-                "expected_seeds": sorted(plan["expected_seeds"]),
+                "expected_seeds": [None] if reference else sorted(plan["expected_seeds"]),
                 "checkpoint": checkpoint,
                 "provenance": {
-                    "training_config_sha256": file_digest(Path(spec["training_config"])),
+                    "training_config_sha256": training_config_sha256,
                     "training_code_commit": commit,
                     "legacy_evaluation": legacy,
                 },
                 "evaluations": evaluations,
             }
+            if version == 2:
+                run["provenance"]["reference"] = reference
+                run["not_applicable"] = not_applicable
             run["id"] = run_id(run)
             validate_run(run)
             runs.append(run)

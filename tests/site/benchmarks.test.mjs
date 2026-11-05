@@ -32,6 +32,44 @@ test("the Python-generated schema-1 feed validates with all eight default metric
   }
 });
 
+test("mixed schema feeds render an imported reference and explain N/A cells", () => {
+  const mixed = JSON.parse(readFileSync(new URL("../fixtures/publication-v2.json", import.meta.url), "utf8"));
+  const data = validateTable(mixed.table);
+  const reference = data.rows.find(row => row.expected_seeds[0] === null);
+  assert.equal(reference.runs[0].seed, null);
+  assert.equal(reference.cells.labeled_s_linear.n, 1);
+  assert.equal(reference.cells.labeled_s_linear.sd, null);
+  assert.equal(reference.cells.labeled_s_4afc.status, "not_applicable");
+  assert.deepEqual(formatMetric(reference.cells.labeled_s_4afc, data.columns[0]), {value: "N/A", sd: ""});
+  const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
+  globalThis.document = document;
+  try {
+    const container = document.getElementById("table");
+    renderTable(data, container);
+    assert.match(container.textContent, /1 reference checkpoint/);
+    assert.match(container.textContent, /Training seed unknown/);
+    assert.doesNotMatch(container.textContent, /Seed null/);
+    assert.match(container.textContent, /N\/A/);
+    const cells = [...container.querySelectorAll("td")];
+    assert.ok(cells.some(cell => cell.textContent === "N/A" && cell.title.includes("image-text head")));
+    assert.ok(cells.some(cell => cell.title.includes("112 px")));
+  } finally {
+    delete globalThis.document;
+  }
+  for (const mutate of [
+    row => { row.expected_seeds = [null, 1]; },
+    row => { row.runs[0].provenance.reference = false; },
+    row => { row.runs[0].provenance.training_config_sha256 = "a".repeat(64); },
+    row => { row.cells.labeled_s_4afc.reason = " "; },
+    row => { row.cells.labeled_s_4afc.n = 1; },
+    row => { row.cells.labeled_s_4afc.mean = 0.5; },
+  ]) {
+    const changed = structuredClone(data);
+    mutate(changed.rows.find(row => row.expected_seeds[0] === null));
+    assert.throws(() => validateTable(changed));
+  }
+});
+
 test("metrics display percentages, unavailable cells and singleton uncertainty correctly", () => {
   const data = validateTable(fixture());
   const column = data.columns[0];

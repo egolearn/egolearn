@@ -8,6 +8,7 @@ Versions follow [SemVer](https://semver.org) (0.x: minor = features, patch = fix
 
 ### Added
 
+- `egl publish` supports reference checkpoints with unknown training seeds and explains inapplicable benchmarks in the website table.
 - `egl publish` publishes results with optional model exports and updates the website's
   benchmark table from versioned, per-seed Hugging Face records.
 - Automatic atomic run records for CLI and Python training/evaluation, with input

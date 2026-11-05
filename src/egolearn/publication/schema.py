@@ -11,7 +11,7 @@ from collections import defaultdict
 from copy import deepcopy
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSIONS = (1, 2)
 METRICS = [
     ("labeled_s_4afc", "four_afc_acc", "Labeled-S 4AFC", "Four-alternative image-word matching."),
     ("babyview_4afc", "four_afc_acc", "BabyView 4AFC", "Four-alternative image-word matching."),
@@ -125,22 +125,50 @@ def run_id(run: dict[str, Any]) -> str:
     )
 
 
+def model_directory(run: dict[str, Any]) -> str:
+    """Return the bundle directory for a seeded run or an imported reference."""
+    return "reference" if run["training_seed"] is None else str(run["training_seed"])
+
+
+def validate_column(column: dict[str, Any]) -> None:
+    _keys(column, "id benchmark metric label description unit direction")
+    if any(not isinstance(value, str) or not value.strip() for value in column.values()):
+        raise ValueError("column fields must be nonempty strings")
+    for key in ("id", "benchmark", "metric"):
+        identifier(column[key])
+    if column["unit"] not in {"fraction", "number"} or column["direction"] not in {"min", "max"}:
+        raise ValueError("unsupported metric unit or direction")
+
+
 def validate_run(run: dict[str, Any], *, published: bool = False) -> None:
+    version = run.get("schema_version")
     _keys(
         run,
         "schema_version id condition training_seed expected_seeds "
-        "checkpoint provenance evaluations",
+        "checkpoint provenance evaluations" + (" not_applicable" if version == 2 else ""),
     )
     portable(run)
-    if run["schema_version"] != SCHEMA_VERSION or run["id"] != run_id(run):
+    if type(version) is not int or version not in SCHEMA_VERSIONS or run["id"] != run_id(run):
         raise ValueError("unsupported schema or incorrect run identity")
     condition = run["condition"]
     _keys(condition, "id label dataset regime architecture description")
     identifier(condition["id"])
     if any(not isinstance(v, str) or not v for v in condition.values()):
         raise ValueError("condition fields must be nonempty strings")
+    provenance = run["provenance"]
+    _keys(
+        provenance,
+        "training_config_sha256 training_code_commit legacy_evaluation"
+        + (" reference" if version == 2 else ""),
+    )
+    if version == 2 and type(provenance["reference"]) is not bool:
+        raise ValueError("reference must be a boolean")
     seeds = run["expected_seeds"]
-    if (
+    reference = version == 2 and provenance["reference"]
+    if reference:
+        if seeds != [None] or run["training_seed"] is not None:
+            raise ValueError("an unknown-seed reference requires training_seed=null and [null]")
+    elif (
         not isinstance(seeds, list)
         or not seeds
         or any(type(s) is not int for s in seeds)
@@ -167,9 +195,11 @@ def validate_run(run: dict[str, Any], *, published: bool = False) -> None:
             not isinstance(revision, str) or not re.fullmatch(r"[a-f0-9]{40}", revision)
         ):
             raise ValueError("hosted checkpoints require an immutable Hub commit")
-    provenance = run["provenance"]
-    _keys(provenance, "training_config_sha256 training_code_commit legacy_evaluation")
-    sha256(provenance["training_config_sha256"])
+    if reference:
+        if provenance["training_config_sha256"] is not None:
+            raise ValueError("unknown-seed references must not claim a training config")
+    else:
+        sha256(provenance["training_config_sha256"])
     if type(provenance["legacy_evaluation"]) is not bool:
         raise ValueError("legacy_evaluation must be a boolean")
     commit = provenance["training_code_commit"]
@@ -183,19 +213,10 @@ def validate_run(run: dict[str, Any], *, published: bool = False) -> None:
     for evaluation in run["evaluations"]:
         _keys(evaluation, "column value protocol protocol_sha256 source_sha256")
         column = evaluation["column"]
-        _keys(column, "id benchmark metric label description unit direction")
-        if any(not isinstance(value, str) or not value for value in column.values()):
-            raise ValueError("column fields must be nonempty strings")
-        for key in ("id", "benchmark", "metric"):
-            identifier(column[key])
+        validate_column(column)
         if column["id"] in seen:
             raise ValueError("duplicate metric in one run")
         seen.add(column["id"])
-        if column["unit"] not in {"fraction", "number"} or column["direction"] not in {
-            "min",
-            "max",
-        }:
-            raise ValueError("unsupported metric unit or direction")
         value = evaluation["value"]
         if type(value) not in (float, int) or not math.isfinite(value):
             raise ValueError("metrics must be finite numbers")
@@ -223,6 +244,18 @@ def validate_run(run: dict[str, Any], *, published: bool = False) -> None:
             raise ValueError("invalid evaluation code commit")
         if evaluation["protocol_sha256"] != digest(protocol):
             raise ValueError("protocol identity mismatch")
+    unavailable = run.get("not_applicable", [])
+    if not isinstance(unavailable, list):
+        raise ValueError("not_applicable must be a list")
+    for entry in unavailable:
+        _keys(entry, "column reason")
+        validate_column(entry["column"])
+        name = entry["column"]["id"]
+        if name in seen:
+            raise ValueError("a metric cannot be evaluated and not applicable, or declared twice")
+        seen.add(name)
+        if not isinstance(entry["reason"], str) or not entry["reason"].strip():
+            raise ValueError("not_applicable needs a nonempty reason")
 
 
 def merge_runs(existing: list[dict], incoming: list[dict]) -> list[dict]:
@@ -265,7 +298,7 @@ def build_table(runs: list[dict], *, results_repo: str, updated_at: str) -> dict
             raise ValueError("a checkpoint cannot count as more than one training run")
         checkpoints.add(checksum)
         groups[run["condition"]["id"]].append(run)
-        for evaluation in run["evaluations"]:
+        for evaluation in [*run["evaluations"], *run.get("not_applicable", [])]:
             column = evaluation["column"]
             if column["id"] in columns and columns[column["id"]] != column:
                 raise ValueError("conflicting column definitions")
@@ -280,8 +313,28 @@ def build_table(runs: list[dict], *, results_repo: str, updated_at: str) -> dict
             raise ValueError(f"conflicting condition or seed set for {condition_id}")
         if len({r["training_seed"] for r in members}) != len(members):
             raise ValueError("multiple checkpoints for the same condition and training seed")
+        unavailable = {
+            entry["column"]["id"]: entry["reason"] for entry in first.get("not_applicable", [])
+        }
+        if any(
+            {entry["column"]["id"]: entry["reason"] for entry in r.get("not_applicable", [])}
+            != unavailable
+            for r in members
+        ):
+            raise ValueError(f"conflicting benchmark applicability for {condition_id}")
         cells = {}
         for column_id in columns:
+            if column_id in unavailable:
+                cells[column_id] = {
+                    "mean": None,
+                    "sd": None,
+                    "n": 0,
+                    "expected_n": len(expected),
+                    "status": "not_applicable",
+                    "protocols": [],
+                    "reason": unavailable[column_id],
+                }
+                continue
             values = [
                 e for r in members for e in r["evaluations"] if e["column"]["id"] == column_id
             ]
@@ -325,7 +378,7 @@ def build_table(runs: list[dict], *, results_repo: str, updated_at: str) -> dict
         )
     order = {column["id"]: i for i, column in enumerate(DEFAULT_COLUMNS)}
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": max((r["schema_version"] for r in runs), default=1),
         "updated_at": updated_at,
         "results_repo": results_repo,
         "columns": sorted(columns.values(), key=lambda c: (order.get(c["id"], 1000), c["id"])),

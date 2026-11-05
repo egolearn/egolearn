@@ -80,6 +80,47 @@ Column IDs must retain the same definition, including display text, across publi
 Condition metadata is also immutable. Keep the original manifest when adding seeds;
 pushes that change a condition's label or description are refused.
 
+### Imported reference checkpoints
+
+For a reference whose training seed and configuration are unavailable, set
+`reference: true` and `expected_seeds: [null]` in the manifest. Include one run with
+`training_seed: null` and `training_config: null`. Keep the checkpoint, evaluation,
+input-hash, and destination fields from the example above.
+
+Use a separate condition ID for each reference checkpoint. The table reports one
+checkpoint with an unknown training seed and no standard deviation. Preparation
+rejects a null seed when the checkpoint records a known seed. If you have the
+original training configuration and seed, use the ordinary manifest instead.
+
+Describe the reference's known training data, architecture, and checkpoint selection
+in the condition fields. A filename alone does not establish initialization history.
+Model construction metadata remains part of the verified export even when the
+training configuration is unavailable.
+
+### Inapplicable benchmarks
+
+For a model without a trained image-text head, add this top-level manifest field:
+
+```json
+{
+  "not_applicable": {
+    "labeled_s_4afc": "No trained image-text head.",
+    "babyview_4afc": "No trained image-text head.",
+    "vtwt": "No trained image-text head.",
+    "baby_winoground": "No trained image-text head."
+  }
+}
+```
+
+The keys are column IDs, and each reason must be a nonempty string. These cells
+display N/A with the supplied explanation. Leave unfinished evaluations undeclared,
+which displays a dash in existing table columns. The publisher rejects scores for
+a metric declared N/A and requires the same declarations across seeds of a condition.
+
+Keep different evaluation resolutions and protocols explicit in each condition's
+description. The table also includes recorded resolutions in metric tooltips.
+Comparisons across architectures or training budgets do not isolate a method's effect.
+
 ## Preparation
 
 Export and validate the batch into a new directory:
@@ -97,6 +138,8 @@ Historical schema-1 evaluations have no completion field. After checking their e
 records, pass `--allow-legacy-evaluations` to import them. Their records retain the
 legacy designation. Missing training and evaluation code commits remain null rather
 than inheriting the exporter's current revision.
+Imported references and N/A declarations retain the same input-hash requirements.
+Recover missing historical records or rerun the affected evaluations before publishing.
 
 Inspect the bundle and exported metadata before uploading. The publisher omits local
 paths and rejects unexpected publication fields, nonfinite metrics, and incomplete
@@ -167,8 +210,12 @@ an unavailable message instead of placeholder scores. Responses disable shared c
 
 Aggregate values require all declared seeds and identical protocols. Missing results
 and protocol mismatches display a dash. The table uses sample standard deviation,
-and a single-seed result has no standard deviation. Method details link to the model
+and a single-checkpoint result has no standard deviation. Method details link to the model
 revision and per-run evidence. Those Hub links still require the visitor's Hub access.
+
+Reference checkpoints and N/A declarations produce schema-2 run records and feeds.
+The publisher and website also read schema-1 records without rewriting their evidence.
+Deploy the schema-2 website reader before publishing these new records.
 
 For this publication path, upload through `egl publish push`. Uploading checkpoint
 weights alone does not run evaluations or update the results index.
