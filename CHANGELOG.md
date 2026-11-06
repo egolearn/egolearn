@@ -15,6 +15,10 @@ patch releases for fixes during 0.x development.
 - WalkingTours preparation and training recipes support checksum-verified original videos and user-supplied WT++ frames.
 - The Slurm launcher can requeue runners that save state and return pause exit code 75.
 
+- EgoSchema and Ego4D NLQ score generative models zero-shot through generic multiple-choice and temporal-grounding scorers with configurable prompts and reply parsers.
+- `generative:openai_chat` queries OpenAI-compatible servers such as vLLM, caching replies on disk by full request.
+- Composed models carry generative components, and `egl eval` builds a model from `model_config` when `checkpoint` is null.
+- The docs site generates component, Python API, CLI, config, and benchmark references from source on every build.
 - KrishnaCam IID configurations support instance-only SimCLR and temporal-only classification with explicit update budgets.
 - Linear SGD evaluation exposes batch prefetching and worker persistence without changing sampled inputs.
 
@@ -90,7 +94,7 @@ patch releases for fixes during 0.x development.
 - `egl doctor` checks environment dependencies, CUDA, data roots, and cluster
   storage without modifying settings.
 - The documentation site uses MkDocs under `/docs/`, with a landing page at the
-  site root and crawler blocking enabled for staging.
+  site root and `noindex` tags enabled for staging.
 - Contribution guidance includes a PR template and a local PR-message checker.
 - `saycam_default` reproduces the BabyCL paper's run, including its 26568-step
   budget, mixed precision, and 2-D Gaussian blur.
@@ -112,6 +116,8 @@ patch releases for fixes during 0.x development.
 - Full-pass MAE schedules use optimizer updates so streaming and IID runs receive identical learning rates.
 - Serial augmentation preserves CUDA randomness by seeding only the CPU generator.
 
+- The `generation` capability becomes `text_generation`, and generative components must produce text.
+- Site builds use pinned uv in a separate Python 3.12 environment and keep Cloudflare previews unindexed.
 - The test suite trims repetitive validation matrices and consolidates training, CLI, recording, and import checks.
 - VoE probes report pooled-surprise AUROC alongside pairwise accuracy, with
   optional group metrics for labeled pairs.
@@ -148,6 +154,7 @@ patch releases for fixes during 0.x development.
 - MAE resume archives milestones ahead of the restored checkpoint and recreates them at their scheduled updates.
 - MAE records intentional stops as paused and counts preparation and checkpoint replay toward its wall-clock budget.
 
+- Staging sites allow crawlers to read `noindex` tags without `robots.txt` blocking access to the pages.
 - VoE probes reject videos shorter than `num_frames`, preventing repeated frames
   from affecting IntPhys 2 and GRASP scores.
 - Offline training raises on non-finite or empty losses, preserving batch order

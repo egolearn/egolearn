@@ -11,7 +11,7 @@ make sense (`requires_capabilities`), and the pipeline checks that against
 wired against a vision-only model fails at startup with a clear message,
 instead of every model x evaluation pair needing its own adapter.  Current
 capability names: image_representation, video_representation,
-text_representation, multimodal, prediction, generation.
+text_representation, multimodal, prediction, text_generation.
 
 Generic, dataset-agnostic probes live beside this protocol (four_afc.py,
 linear_probe.py); a benchmark package owns its dataset manifests and any

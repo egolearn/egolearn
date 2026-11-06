@@ -31,6 +31,12 @@ _PATH_KEYS = {
     "storyboard_json",
     "metadata_csv",
     "trials_json",
+    # Ego4D NLQ and EgoSchema (annotation files and video directories)
+    "annotations_json",
+    "clip_root",
+    "questions_json",
+    "answers_json",
+    "video_root",
 }
 _INPUT_SECTIONS = {"stream", "tokenizer", "probes", "benchmarks", "init_from", "driver"}
 
