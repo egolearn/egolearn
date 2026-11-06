@@ -11,6 +11,7 @@ from egolearn.publication.schema import (
     build_table,
     encoded,
     merge_runs,
+    model_directory,
     portable,
     read_json,
     repo_id,
@@ -89,10 +90,13 @@ def _model(api, run: dict, directory: Path) -> str:
         return info.sha
     write_checksums(directory)
     condition = run["condition"]
+    identity = (
+        "reference checkpoint" if run["training_seed"] is None else f"seed {run['training_seed']}"
+    )
     # No redistribution license is inferred from the software license.
     card = (
         "---\ntags:\n- egolearn\n- safetensors\n---\n\n"
-        f"# {condition['label']} — seed {run['training_seed']}\n\n"
+        f"# {condition['label']} — {identity}\n\n"
         f"{condition['description']}\n\n"
         "## Training\n\n"
         f"Dataset: {condition['dataset']}. Architecture: {condition['architecture']}. "
@@ -104,7 +108,7 @@ def _model(api, run: dict, directory: Path) -> str:
         "Training snapshots, optimizer state, transcripts and frames are excluded.\n\n"
         "## Evaluation\n\n"
         f"Publication run ID: `{run['id']}`. "
-        "The EgoLearn results repository records per-seed scores and evaluation protocols. "
+        "The EgoLearn results repository records checkpoint scores and evaluation protocols. "
         "Unavailable training or evaluation code revisions remain unspecified.\n"
     )
     operations = [
@@ -208,7 +212,7 @@ def publish(
     # Validate the entire local batch before creating any remote repositories.
     for run in runs:
         validate_run(run)
-        directory = bundle / "models" / str(run["training_seed"])
+        directory = bundle / "models" / model_directory(run)
         metadata = validate_export(directory, publishing=True)
         portable(metadata)
         if (
@@ -234,7 +238,7 @@ def publish(
             for key in ("repo_id", "revision", "private"):
                 run["checkpoint"][key] = None
         else:
-            directory = bundle / "models" / str(run["training_seed"])
+            directory = bundle / "models" / model_directory(run)
             run["checkpoint"]["revision"] = _model(api, run, directory)
     revision = publish_results(api, runs, results_repo=results_repo, public=public_results)
     receipt = {

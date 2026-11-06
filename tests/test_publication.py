@@ -18,6 +18,7 @@ from egolearn.publication.schema import (
     digest,
     encoded,
     merge_runs,
+    model_directory,
     read_json,
     run_id,
     validate_run,
@@ -107,6 +108,81 @@ def test_current_defaults_can_extend_schema_one_results():
     # This historical fixture also feeds the JS validator. Changing presentation
     # metadata needs an explicit migration, not an incompatible default edit.
     assert table(merge_runs(fixture["runs"], [new_run])) == fixture["table"]
+
+    mixed = read_json(Path(__file__).parent / "fixtures" / "publication-v2.json")
+    assert table(merge_runs(mixed["runs"][:1], mixed["runs"][1:])) == mixed["table"]
+
+
+def test_reference_checkpoint_keeps_unknown_training_seed_without_inventing_uncertainty():
+    reference = make_run(1, (1,))
+    reference.update(schema_version=2, training_seed=None, expected_seeds=[None], not_applicable=[])
+    reference["provenance"].update(reference=True, training_config_sha256=None)
+    reference["id"] = run_id(reference)
+    result = table([reference])
+    assert result["schema_version"] == 2
+    assert result["rows"][0]["expected_seeds"] == [None]
+    assert result["rows"][0]["runs"][0]["seed"] is None
+    assert cell([reference])["mean"] == 0.1 and cell([reference])["sd"] is None
+    assert model_directory(reference) == "reference"
+    for expected in ([None, None], [None, 1], [1]):
+        with pytest.raises(ValueError, match="reference"):
+            validate_run({**reference, "expected_seeds": expected})
+    other = copy.deepcopy(reference)
+    other["checkpoint"]["sha256"] = "f" * 64
+    other["id"] = run_id(other)
+    with pytest.raises(ValueError, match="same condition and training seed"):
+        table([reference, other])
+    with pytest.raises(ValueError, match="fields"):
+        validate_run({**reference, "provenance": None})
+    with pytest.raises(ValueError, match="boolean"):
+        validate_run({**reference, "provenance": {**reference["provenance"], "reference": 1}})
+    reference["provenance"]["reference"] = False
+    with pytest.raises(ValueError, match="expected_seeds"):
+        validate_run(reference)
+
+
+def test_not_applicable_requires_consistent_reasons_and_cannot_hide_scores():
+    run = make_run(1, (1,))
+    run.update(
+        schema_version=2,
+        not_applicable=[
+            {
+                "column": DEFAULT_COLUMNS[1],
+                "reason": "No trained image-text head.",
+            }
+        ],
+    )
+    run["provenance"]["reference"] = False
+    result = table([run])["rows"][0]["cells"]
+    assert result["labeled_s_4afc"]["status"] == "complete"
+    assert result["babyview_4afc"] == {
+        "mean": None,
+        "sd": None,
+        "n": 0,
+        "expected_n": 1,
+        "status": "not_applicable",
+        "protocols": [],
+        "reason": "No trained image-text head.",
+    }
+    bad = copy.deepcopy(run)
+    bad["not_applicable"][0]["column"] = DEFAULT_COLUMNS[0]
+    with pytest.raises(ValueError, match="evaluated and not applicable"):
+        validate_run(bad)
+    bad["not_applicable"][0]["column"] = {**DEFAULT_COLUMNS[0], "id": "alias"}
+    with pytest.raises(ValueError, match="evaluated and not applicable"):
+        validate_run(bad)
+    bad = copy.deepcopy(run)
+    bad["not_applicable"][0]["reason"] = " "
+    with pytest.raises(ValueError, match="nonempty reason"):
+        validate_run(bad)
+    second = copy.deepcopy(run)
+    run["expected_seeds"] = second["expected_seeds"] = [1, 2]
+    second["training_seed"] = 2
+    second["checkpoint"]["sha256"] = "f" * 64
+    second["id"] = run_id(second)
+    second["not_applicable"] = []
+    with pytest.raises(ValueError, match="conflicting benchmark applicability"):
+        table([run, second])
 
 
 def test_duplicates_cannot_inflate_seed_counts_or_overwrite_results():
@@ -227,7 +303,8 @@ def test_custom_file_inputs_require_hashes_and_do_not_publish_paths(tmp_path, ke
     assert results[0]["protocol"]["input_sha256"][key] == "a" * 64
 
 
-def test_prepare_exports_and_strictly_reloads_synthetic_model(tmp_path, monkeypatch):
+@pytest.mark.parametrize("reference", [False, True])
+def test_prepare_exports_and_strictly_reloads_synthetic_model(tmp_path, monkeypatch, reference):
     import torch
 
     from egolearn.model.build import build_model
@@ -240,7 +317,11 @@ def test_prepare_exports_and_strictly_reloads_synthetic_model(tmp_path, monkeypa
             "model_config": model.construction_config,
             "export_contract": model.export_contract(),
             "step": 12,
-            "run_provenance": {"commit": "f" * 40, "dirty": False, "seed": 1},
+            "run_provenance": {
+                "commit": "f" * 40,
+                "dirty": False,
+                **({} if reference else {"seed": 1}),
+            },
         },
         checkpoint,
     )
@@ -272,17 +353,36 @@ def test_prepare_exports_and_strictly_reloads_synthetic_model(tmp_path, monkeypa
             }
         ],
     }
+    if reference:
+        plan.update(
+            reference=True,
+            expected_seeds=[None],
+            not_applicable={
+                "babyview_4afc": "Benchmark does not apply to this synthetic reference.",
+            },
+        )
+        plan["runs"][0].update(training_seed=None, training_config=None)
     manifest = tmp_path / "manifest.json"
     manifest.write_bytes(encoded(plan))
     destination = prepare(manifest, tmp_path / "publication")
     bundle = read_json(destination / "bundle.json")
     assert bundle["runs"][0]["checkpoint"]["sha256"] == source["checkpoint"]["sha256"]
     assert bundle["runs"][0]["provenance"]["training_code_commit"] == "f" * 40
+    if reference:
+        assert bundle["runs"][0]["provenance"]["training_config_sha256"] is None
+        assert bundle["runs"][0]["training_seed"] is None
     assert str(tmp_path) not in (destination / "bundle.json").read_text()
     assert not list(destination.rglob("*.pth"))
     with pytest.raises(FileExistsError):
         prepare(manifest, destination)
-    config.write_text("seed: 2\n")
+    if reference:
+        original = torch.load(checkpoint, weights_only=True)
+        original["run_provenance"]["seed"] = 1
+        torch.save(original, checkpoint)
+        source["checkpoint"]["sha256"] = file_digest(checkpoint)
+        result.write_bytes(encoded(source))
+    else:
+        config.write_text("seed: 2\n")
     with pytest.raises(ValueError, match="training seed"):
         prepare(manifest, tmp_path / "wrong-seed")
     assert not (tmp_path / "wrong-seed").exists()
@@ -323,7 +423,8 @@ def test_prepare_exports_and_strictly_reloads_synthetic_model(tmp_path, monkeypa
     monkeypatch.setattr(hub, "_download", lambda *args: index)
     changed = tmp_path / "changed-export"
     copytree(destination, changed)
-    metadata_path = changed / "models" / "1" / "model.json"
+    model_dir = model_directory(bundle["runs"][0])
+    metadata_path = changed / "models" / model_dir / "model.json"
     metadata = read_json(metadata_path)
     metadata["provenance"]["code_revision"] = {"commit": "e" * 40, "dirty": False}
     metadata_path.write_bytes(encoded(metadata))
@@ -343,7 +444,7 @@ def test_prepare_exports_and_strictly_reloads_synthetic_model(tmp_path, monkeypa
     upload.assert_called_once()
     assert receipt["models"][0]["revision"] == "b" * 40
     assert commit.call_args.args[1][0]["checkpoint"]["metadata_sha256"] == file_digest(
-        destination / "models" / "1" / "model.json"
+        destination / "models" / model_dir / "model.json"
     )
 
 
