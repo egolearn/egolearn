@@ -9,6 +9,12 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- MAE ablations match streaming and shuffled update budgets, with separate consumption, retention, window, and throughput metrics.
+- MAE provides ViT-S/16 and ViT-B/16 reconstruction recipes, a synthetic CPU example, and resumable full-pass training.
+- StreamMAE adds stochastic depth, color jitter, DataDrop, and motion-biased crops with cached admission scores.
+- WalkingTours preparation and training recipes support checksum-verified original videos and user-supplied WT++ frames.
+- The Slurm launcher can requeue runners that save state and return pause exit code 75.
+
 - KrishnaCam IID configurations support instance-only SimCLR and temporal-only classification with explicit update budgets.
 - Linear SGD evaluation exposes batch prefetching and worker persistence without changing sampled inputs.
 
@@ -102,6 +108,9 @@ patch releases for fixes during 0.x development.
   with each protocol difference stated.
 
 ### Changed
+
+- Full-pass MAE schedules use optimizer updates so streaming and IID runs receive identical learning rates.
+- Serial augmentation preserves CUDA randomness by seeding only the CPU generator.
 
 - The test suite trims repetitive validation matrices and consolidates training, CLI, recording, and import checks.
 - VoE probes report pooled-surprise AUROC alongside pairwise accuracy, with

@@ -1,0 +1,13 @@
+# @package _global_
+ablation_name: iid
+admission: []
+memories: null
+routes: null
+recipe: null
+driver:
+  mode: offline
+  prefetch: true
+  batch: {slot: frames, n: '${run_control.batch_size}', views: [reconstruction]}
+  subsample: 1
+loader:
+  cache_frames: 0

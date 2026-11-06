@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     from egolearn.training.profiling import StageTimer
 
 # WorkItem: what one output row of views_batch needs, tagged by kind:
-#   ("frame", ref, frame_index, view_names, seed)              -> [V, C, H, W]
+#   ("frame", ref, frame_index, view_names, seed, context?)    -> [V, C, H, W]
 #   ("clip", ref, start, view_names, clip_len, stride, seed)   -> [V, T, C, H, W]
 # The seed pins the item's augmentation randomness; the frame index / clip
 # start were already picked sequentially by the caller.
@@ -166,17 +166,18 @@ def _pool_task(item: WorkItem, pil=None) -> torch.Tensor:
             _WORKER["cache"],
             _WORKER["cache_frames"],
         )
-        torch.manual_seed(seed)
+        torch.random.default_generator.manual_seed(seed)
         random.seed(seed)
         return _WORKER["views"].apply_clip(clip, view_names)
-    _, ref, index, view_names, seed = item
-    torch.manual_seed(seed)
+    _, ref, index, view_names, seed, *extra = item
+    torch.random.default_generator.manual_seed(seed)
     random.seed(seed)
     if pil is None:
         pil = _open_frame(_WORKER["stream"], ref, index, _WORKER["cache"], _WORKER["cache_frames"])
     if _WORKER["cache_frames"]:
         pil = pil.copy()  # frame views may mutate their input
-    return _WORKER["views"].apply(pil, view_names)
+    kwargs = {"context": extra[0]} if extra else {}
+    return _WORKER["views"].apply(pil, view_names, **kwargs)
 
 
 def _batch_images(stream: Stream, items: list[WorkItem]) -> dict:
@@ -362,7 +363,14 @@ class Loader:
         return rng.randrange(n - span + 1) if n > span else 0
 
     # ---- loading ------------------------------------------------------------
-    def frame_views(self, ref, index: int, view_names: list[str], seed: int | None = None):
+    def frame_views(
+        self,
+        ref,
+        index: int,
+        view_names: list[str],
+        seed: int | None = None,
+        context: dict | None = None,
+    ):
         """Decode one frame of `ref` and apply the named views (augmentation
         pipelines), returning a [V,C,H,W] tensor with one row per view.
 
@@ -371,25 +379,30 @@ class Loader:
         contract that makes worker-pool loading reproducible."""
         if self.timer is not None:
             with self.timer.measure("data.load"):
-                result = self._one_frame(ref, index, view_names, seed)
+                result = self._one_frame(ref, index, view_names, seed, context)
         else:
-            result = self._one_frame(ref, index, view_names, seed)
+            result = self._one_frame(ref, index, view_names, seed, context)
         self.frame_requests += 1
         return result
 
-    def _one_frame(self, ref, index: int, view_names: list[str], seed: int | None):
+    def _one_frame(
+        self, ref, index: int, view_names: list[str], seed: int | None, context: dict | None = None
+    ):
         pil = self.stream.open_frame(ref, index)
-        return self._frame_views(pil, view_names, seed)
+        return self._frame_views(pil, view_names, seed, context)
 
-    def _frame_views(self, pil, view_names: list[str], seed: int | None):
+    def _frame_views(
+        self, pil, view_names: list[str], seed: int | None, context: dict | None = None
+    ):
+        kwargs = {"context": context} if context is not None else {}
         if seed is None:
-            return self.views.apply(pil, view_names)
+            return self.views.apply(pil, view_names, **kwargs)
         with torch.random.fork_rng(devices=[]):
-            torch.manual_seed(seed)
+            torch.random.default_generator.manual_seed(seed)
             py_state = random.getstate()
             random.seed(seed)
             try:
-                return self.views.apply(pil, view_names)
+                return self.views.apply(pil, view_names, **kwargs)
             finally:
                 random.setstate(py_state)
 
@@ -426,8 +439,10 @@ class Loader:
                             self._one_clip(ref, start, views, clip_len, stride, seed, timed=False)
                         )
                     else:
-                        _, _ref, _index, views, seed = item
-                        out.append(self._frame_views(images[i], views, seed))
+                        _, _ref, _index, views, seed, *extra = item
+                        out.append(
+                            self._frame_views(images[i], views, seed, extra[0] if extra else None)
+                        )
             return out
         if self.affinity:
             pending = self._submit_affinity(items, packed=False)
@@ -529,7 +544,7 @@ class Loader:
             if seed is None:
                 return self.views.apply_clip(clip, view_names)
             with torch.random.fork_rng(devices=[]):
-                torch.manual_seed(seed)
+                torch.random.default_generator.manual_seed(seed)
                 py_state = random.getstate()
                 random.seed(seed)
                 try:

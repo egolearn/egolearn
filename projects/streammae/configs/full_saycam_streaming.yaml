@@ -1,0 +1,7 @@
+defaults:
+  - mae_shared
+  - full_run_shared
+  - _self_
+hydra:
+  searchpath: [pkg://egolearn.configs]
+run_dir: runs/mae_saycam_streaming

@@ -1,0 +1,68 @@
+# A tiny standard MAE on synthetic frames; no downloads or GPU needed.
+#   uv run python -m egolearn.train --config-name toy_mae
+defaults:
+  - /config
+  - _self_
+
+_imports_: [egolearn.methods.mae]
+run_dir: runs/toy_mae
+seed: 7
+device: cpu
+
+stream:
+  _target_: "stream:toy"
+  n_sessions: 1
+  blocks_per_session: 2
+  block_len: 12
+  img_size: 32
+
+views:
+  reconstruction: {name: mae, size: 32}
+
+admission:
+  - {_target_: "admission:frame_emitter", subsample: 1}
+memories:
+  frames:
+    tiers:
+      window: {capacity: 4, update: fifo}
+    admit_to: [window]
+    overflow: {}
+routes:
+  RawFrame: frames
+recipe:
+  slots:
+    - name: frames
+      source: {kind: tier, memory: frames, tier: window}
+      n: 4
+      unit: frame
+      views: [reconstruction]
+      strict: true
+
+model:
+  encoders:
+    vision: {_target_: "encoder:mae_vit", image_size: 32, patch_size: 8,
+             dim: 32, depth: 2, heads: 4}
+  predictors:
+    reconstruction: {_target_: "predictor:mae", inputs: [vision],
+                     image_size: 32, patch_size: 8, encoder_dim: 32,
+                     dim: 32, depth: 1, heads: 4}
+losses:
+  - {_target_: "loss:mae", slot: frames, encoder: vision,
+     predictor: reconstruction, mask_ratio: 0.75, norm_pix_loss: true}
+
+solver:
+  opt: adamw
+  betas: [0.9, 0.95]
+  groups:
+    - {match: ".*", lr: 1.0e-3, weight_decay: 0.05, split_no_decay: true,
+       no_decay_pattern: '(bias$|norm)'}
+  # floor=1 preserves warmup, followed by a constant learning rate.
+  schedule: {warmup_frac: 0.05, warmup_min_steps: 2, floor: 1.0}
+
+driver:
+  advance: {kind: events, schema: RawFrame, n: 1}
+  rate: {steps_per_admit: 1, resample: true}
+  warmup: {admitted: 3}
+  max_steps: 5
+hooks:
+  log_every: 1
