@@ -103,6 +103,7 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- Site builds use pinned uv in a separate Python 3.12 environment and keep Cloudflare previews unindexed.
 - The test suite trims repetitive validation matrices and consolidates training, CLI, recording, and import checks.
 - VoE probes report pooled-surprise AUROC alongside pairwise accuracy, with
   optional group metrics for labeled pairs.

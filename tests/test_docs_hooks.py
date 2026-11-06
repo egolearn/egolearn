@@ -57,3 +57,27 @@ def test_raw_html_targets_are_rewritten_and_missing_ones_reported(caplog):
         out = render(html)
     assert 'src="../assets/icon-light.svg"' in out
     assert "docs/assets/nope.svg" in caplog.text
+
+
+@pytest.mark.parametrize("target", ["missing.md", "#missing-anchor"])
+def test_strict_site_build_rejects_broken_internal_links(tmp_path, target, caplog):
+    pytest.importorskip("mkdocs")
+    from mkdocs.commands.build import build
+    from mkdocs.config import load_config
+    from mkdocs.exceptions import Abort
+
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "index.md").write_text(f"# Home\n\n[Broken]({target})\n")
+    # Retain the repository's validation settings while rendering one bad page.
+    config = load_config(
+        str(ROOT / "mkdocs.yml"),
+        strict=True,
+        docs_dir=str(docs),
+        site_dir=str(tmp_path / "site"),
+        nav=[{"Home": "index.md"}],
+        hooks=[],
+    )
+    with caplog.at_level(logging.WARNING, logger="mkdocs"), pytest.raises(Abort):
+        build(config)
+    assert target in caplog.text
