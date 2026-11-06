@@ -1,8 +1,8 @@
 """MkDocs hooks for the egolearn site.
 
 Adds repository files outside docs/ as pages, rewrites relative links so each
-one points at a site page or at the file on GitHub, and blocks crawlers while
-the site is in staging mode. Links are rewritten on the parsed Markdown tree,
+one points at a site page or at the file on GitHub, and lets crawlers read the
+staging site's noindex tags. Links are rewritten on the parsed Markdown tree,
 so code is never touched. Links to missing files are left as written so
 `mkdocs build --strict` reports them; MkDocs does not check raw HTML, so the
 hook reports missing raw-HTML targets itself.
@@ -137,7 +137,7 @@ def on_files(files, config):
         content = (ROOT / repo_path).read_text(encoding="utf-8")
         files.append(File.generated(config, site_path, content=content))
     if config.extra["staging"]:
-        files.append(File.generated(config, "robots.txt", content="User-agent: *\nDisallow: /\n"))
+        files.append(File.generated(config, "robots.txt", content="User-agent: *\nAllow: /\n"))
     return files
 
 
