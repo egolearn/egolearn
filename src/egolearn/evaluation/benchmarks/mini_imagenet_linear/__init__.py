@@ -22,3 +22,15 @@ Config::
 from .probe import MiniImageNetLinearProbe
 
 __all__ = ["MiniImageNetLinearProbe"]
+
+# Literal metadata for the generated benchmark reference; keep data terms separate from code.
+BENCHMARK_METADATA = {
+    "name": "mini-ImageNet linear",
+    "source": "[ImageNet](https://www.image-net.org/)",
+    "license": "ImageNet access and use terms",
+    "access": "upstream-licensed",
+    "prepare": (
+        "No preparer; supply the 100-class mini-ImageNet release in `train/<class>/` "
+        "and `val/<class>/` folders."
+    ),
+}

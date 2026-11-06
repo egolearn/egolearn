@@ -19,3 +19,15 @@ Config::
 """
 
 from egolearn.evaluation.four_afc import FourAFCProbe  # noqa: F401  (registers probe:four_afc)
+
+# Literal metadata for the generated benchmark reference; keep data terms separate from code.
+BENCHMARK_METADATA = {
+    "name": "Labeled-S 4AFC",
+    "source": "[SAYCam / Labeled-S](https://nyu.databrary.org/volume/564/)",
+    "license": "Databrary terms; frozen trial metadata obtained separately",
+    "access": "IRB",
+    "prepare": (
+        '`egl data prepare labeled-s-4afc --data_root "$DATA_ROOT" --trials_json '
+        '"$TRIALS_JSON" --vocab_json "$VOCAB_JSON" --output "$MANIFEST"`'
+    ),
+}

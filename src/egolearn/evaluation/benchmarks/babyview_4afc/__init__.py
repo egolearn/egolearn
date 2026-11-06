@@ -43,3 +43,18 @@ Config::
 
 from egolearn.evaluation.four_afc import FourAFCProbe  # noqa: F401  (registers probe:four_afc)
 from egolearn.evaluation.linear_probe import LinearProbe  # noqa: F401  (registers probe:linear)
+
+# Literal metadata for the generated benchmark reference; keep data terms separate from code.
+BENCHMARK_METADATA = {
+    "name": "BabyView 4AFC and linear",
+    "source": (
+        "[BabyView public object "
+        "crops](https://github.com/babyview-project/ccn-2026-object-variability)"
+    ),
+    "license": "CC0-1.0 (public crops)",
+    "access": "public",
+    "prepare": (
+        '`egl data prepare babyview-4afc --download --data_root "$DATA_ROOT" '
+        '--vocab_json "$VOCAB_JSON" --out_dir "$OUT_DIR"`'
+    ),
+}

@@ -42,3 +42,14 @@ __all__ = [
     "score_shape_bias",
     "validate_stimulus_manifest",
 ]
+
+# Literal metadata for the generated benchmark reference; keep data terms separate from code.
+BENCHMARK_METADATA = {
+    "name": "Novel-object shape bias",
+    "source": (
+        "[Tartaglini et al. stimuli](https://github.com/alexatartaglini/developmental-shape-bias)"
+    ),
+    "license": "Prepared collection: CC BY 4.0; upstream assets: no repository license stated",
+    "access": "public",
+    "prepare": ('`egl data prepare shape-bias --asset-dir "$ASSET_DIR" --output-dir "$OUT_DIR"`'),
+}

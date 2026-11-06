@@ -31,3 +31,15 @@ Config::
 from egolearn.evaluation.benchmarks.imagenet_linear.benchmark import ImageNetLinearBenchmark
 
 __all__ = ["ImageNetLinearBenchmark"]
+
+# Literal metadata for the generated benchmark reference; keep data terms separate from code.
+BENCHMARK_METADATA = {
+    "name": "ImageNet linear SGD",
+    "source": "[ImageNet](https://www.image-net.org/)",
+    "license": "ImageNet access and use terms",
+    "access": "upstream-licensed",
+    "prepare": (
+        "No preparer; obtain images upstream and arrange `train/<class>/` and "
+        "`val/<class>/` under `data_root`."
+    ),
+}
