@@ -147,3 +147,20 @@ class VTWTProbe(Probe):
                     indent=2,
                 )
         return {"vtwt_acc": acc, "vtwt_n": float(n_total), "vtwt_skipped": float(n_skipped)}
+
+
+# Literal metadata for the generated benchmark reference; keep data terms separate from code.
+BENCHMARK_METADATA = {
+    "name": "Visual Two-Word Test",
+    "source": (
+        "[BabyVLM "
+        "labels](https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/vtwt), "
+        "[SAYCam frames](https://nyu.databrary.org/volume/564/)"
+    ),
+    "license": "Images: Databrary terms; labels: see source; task code: Apache-2.0",
+    "access": "IRB",
+    "prepare": (
+        "No preparer; supply CSV, SAYCam frames, and training vocabulary ([data "
+        "guide](../evaluation/data.md#babyvlm-benchmark-data))."
+    ),
+}

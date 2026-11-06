@@ -10,6 +10,7 @@ copyright: egolearn
 
 hooks:
   - scripts/docs/hooks.py
+  - scripts/docs/reference.py
 
 # Pages the hook imports from outside docs/: rebuild `mkdocs serve` when they change.
 watch:
@@ -21,6 +22,27 @@ watch:
   - projects/storyboard/README.md
   - projects/vjepa2/README.md
   - scripts/docs/hooks.py
+  - scripts/docs/reference.py
+  - src/egolearn
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            allow_inspection: false
+            force_inspection: false
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: true
+            heading_level: 2
+            members: null
+            inherited_members: true
+            filters: ["!^_"]
+            show_if_no_docstring: true
+            docstring_style: null
 
 theme:
   name: material
@@ -132,6 +154,8 @@ nav:
     - Streaming design history: design/streaming.md
     - V-JEPA 2: design/vjepa2.md
     - V-JEPA 2 full runs: design/vjepa2-full.md
+  # Filled from source by scripts/docs/reference.py on each build.
+  - Reference: []
   - Project:
     - Roadmap: roadmap.md
     - Changelog: changelog.md

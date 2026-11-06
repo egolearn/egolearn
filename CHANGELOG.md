@@ -9,6 +9,7 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- The docs site generates component, Python API, CLI, config, and benchmark references from source on every build.
 - KrishnaCam IID configurations support instance-only SimCLR and temporal-only classification with explicit update budgets.
 - Linear SGD evaluation exposes batch prefetching and worker persistence without changing sampled inputs.
 

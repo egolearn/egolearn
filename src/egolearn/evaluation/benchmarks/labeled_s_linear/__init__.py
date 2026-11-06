@@ -28,3 +28,18 @@ from .probe import LabeledSLinearProbe
 from .stratified import LabeledSStratifiedLinearProbe
 
 __all__ = ["LabeledSLinearProbe", "LabeledSStratifiedLinearProbe"]
+
+# Literal metadata for the generated benchmark reference; keep data terms separate from code.
+BENCHMARK_METADATA = {
+    "name": "Labeled-S linear",
+    "source": (
+        "[Labeled-S images](https://nyu.databrary.org/volume/564/), [canonical "
+        "split](https://github.com/agentic-learning-ai-lab/memory-storyboard/blob/c084d826fdc85a72e78477bb53c88b7353a89563/metas/labeledS_train_val.txt)"
+    ),
+    "license": "Images: Databrary terms; split metadata: see source",
+    "access": "IRB",
+    "prepare": (
+        "No preparer; supply category folders as `data_root`; the canonical adapter "
+        "verifies split metadata, and the stratified adapter splits in memory."
+    ),
+}

@@ -163,3 +163,20 @@ class BabyWinogroundProbe(Probe):
             "bw_n": float(n_total),
             "bw_skipped": float(n_skipped),
         }
+
+
+# Literal metadata for the generated benchmark reference; keep data terms separate from code.
+BENCHMARK_METADATA = {
+    "name": "Baby Winoground",
+    "source": (
+        "[BabyVLM "
+        "labels](https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/baby_winoground), "
+        "[Databrary images](https://nyu.databrary.org/volume/564/folder/77120)"
+    ),
+    "license": "Images: Databrary terms; labels: see source; task code: Apache-2.0",
+    "access": "IRB",
+    "prepare": (
+        "No preparer; supply CSV, SAYCam frames, synthetic negatives, and training "
+        "vocabulary ([data guide](../evaluation/data.md#babyvlm-benchmark-data))."
+    ),
+}
