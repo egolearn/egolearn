@@ -1,0 +1,51 @@
+# Ego4D episodic memory: natural language queries (Grauman et al., 2022),
+# answered zero-shot by a generative model that names the moment's start and
+# end time (docs/evaluation/ego4d_nlq.md). The default model is
+# Qwen2.5-VL-7B-Instruct served by vLLM; send Ego4D frames only to servers the
+# lab runs itself.
+#   egl eval ego4d_nlq_eval vlm_url=http://<host>:8000/v1
+# Challenge predictions for the test split:
+#   benchmarks.0.split=test \
+#   benchmarks.0.annotations_json=<ego4d_root>/annotations/nlq_test_unannotated.json \
+#   benchmarks.0.predictions_dir=<dir>
+defaults:
+  - evaluate
+  - _self_
+
+checkpoint: null  # nothing trained: the model is built from model_config
+ego4d_root: ${oc.env:EGOLEARN_DATA,data}/ego4d/v2
+vlm_url: ???  # OpenAI-compatible endpoint, e.g. http://<host>:8000/v1
+vlm_model: Qwen/Qwen2.5-VL-7B-Instruct  # the server's model name
+reply_cache: ${oc.env:EGOLEARN_ARTIFACTS,runs}/vlm_replies
+device: cpu  # the model runs on the server
+_imports_:
+  - egolearn.evaluation.benchmarks.ego4d_nlq
+model_config:
+  model:
+    generative:
+      vlm:
+        _target_: "generative:openai_chat"
+        base_url: ${vlm_url}
+        model: ${vlm_model}
+        api_key_env: EGOLEARN_LLM_API_KEY  # the server's key; null for a server without one
+        video_input: video
+        max_tokens: 64
+        temperature: 0.0
+        cache_dir: ${reply_cache}
+benchmarks:
+  - _target_: "benchmark:ego4d_nlq"
+    name: ego4d_nlq
+    annotations_json: ${ego4d_root}/annotations/nlq_val.json
+    clip_root: ${ego4d_root}/clips
+    split: val
+    generative: text
+    fps: 0.5
+    max_frames: 128
+    max_side: 448
+    batch_size: 8
+    workers: 8
+    max_clips: null  # first N clips only (smoke runs)
+    predictions_dir: null
+    prompt: start_end_seconds  # registered prompt (asks for "start - end" in seconds)
+    parser: time_pairs  # registered reply parser (time pairs, best first)
+    verify: true  # the official v2 annotation files; false for a subset

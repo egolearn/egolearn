@@ -131,6 +131,18 @@ DATASETS = (
         "Obtain images from the licensed upstream release",
         "https://www.image-net.org/",
     ),
+    Dataset(
+        "ego4d-nlq",
+        "upstream-licensed",
+        "Ego4D v2 NLQ annotations and clips; download with the Ego4D CLI",
+        "https://ego4d-data.org/docs/start-here/",
+    ),
+    Dataset(
+        "egoschema",
+        "upstream-licensed",
+        "EgoSchema questions, public subset answers and 3-minute videos",
+        "https://github.com/egoschema/EgoSchema",
+    ),
 )
 
 

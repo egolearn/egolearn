@@ -142,6 +142,8 @@ nav:
     - Spatial relations: evaluation/spatial_relations.md
     - IntPhys 2: evaluation/intphys2.md
     - GRASP: evaluation/grasp.md
+    - EgoSchema: evaluation/egoschema.md
+    - Ego4D NLQ: evaluation/ego4d_nlq.md
     - Python API: evaluation/api.md
     - Adding benchmarks: evaluation/extending.md
   - Methods:

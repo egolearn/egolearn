@@ -163,9 +163,10 @@ SLOT_META = "meta"  # list of source items (refs + payload; read-only)
 # Capability names.  A composed model derives its capability set from its
 # parts (model.capabilities()); probes declare what they require and the
 # pipeline compares the two at build time.  Modality-derived names follow
-# the pattern "<modality>_representation", so new modalities mint their
-# capability without touching this file; the constants below are the ones
-# framework code spells out.
+# the patterns "<modality>_representation" (an encoder of that modality) and
+# "<modality>_generation" (a generative component producing it), so new
+# modalities mint their capability without touching this file; the constants
+# below are the ones framework code spells out.
 # --------------------------------------------------------------------------
 
 CAP_IMAGE_REPRESENTATION = "image_representation"
@@ -173,7 +174,7 @@ CAP_VIDEO_REPRESENTATION = "video_representation"
 CAP_TEXT_REPRESENTATION = "text_representation"
 CAP_MULTIMODAL = "multimodal"
 CAP_PREDICTION = "prediction"
-CAP_GENERATION = "generation"
+CAP_TEXT_GENERATION = "text_generation"
 
 KNOWN_CAPABILITIES = frozenset(
     {
@@ -182,6 +183,6 @@ KNOWN_CAPABILITIES = frozenset(
         CAP_TEXT_REPRESENTATION,
         CAP_MULTIMODAL,
         CAP_PREDICTION,
-        CAP_GENERATION,
+        CAP_TEXT_GENERATION,
     }
 )

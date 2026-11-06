@@ -11,6 +11,8 @@ config:
         proj128: {encoder: vision, _target_: "head:mlp", ...}
       predictors:                                     # optional (JEPA-style)
         pred: {inputs: [video], _target_: "predictor:mlp", ...}
+      generative:                                     # optional
+        vlm: {_target_: "generative:openai_chat", ...}  # text, image, video -> text
 
 The vocabulary, one line each:
   encoder    one modality's tensor -> representation; declares modality and
@@ -23,13 +25,16 @@ The vocabulary, one line each:
              classifier); names its encoder in the config
   predictor  representation(s) -> predicted representation; names the
              encoders it reads
+  generative inputs of some modalities -> one output modality (a VLM
+             answering in text); see generative/base.py.  A model may carry
+             generative components and no encoders at all.
   capability what the composition can do, derived from its parts -- this is
              what evaluation compatibility is checked against, so the
              framework knows what a model can do rather than which class
              it is.
 
 Losses, probes and the drivers reach the model ONLY through names:
-encode(...) / apply_head(...) / predict(...).  Every checkpoint records the
+encode(...) / apply_head(...) / predict(...) / generate(...).  Every checkpoint records the
 name -> role mapping (export_contract), so a trained encoder can be reloaded
 elsewhere by name without knowing how it was trained.
 
@@ -43,6 +48,8 @@ BatchNorm updates.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -61,6 +68,7 @@ class ComposedModel(nn.Module):
         heads: dict[str, dict] | None = None,
         predictors: dict[str, dict] | None = None,
         frozen: tuple[str, ...] | list[str] | set[str] = (),
+        generative: dict[str, nn.Module] | None = None,
     ):
         """encoders: name -> encoder module (with modality/out_dim attrs)
         heads: name -> {"encoder": encoder_name, "field": output field
@@ -70,13 +78,15 @@ class ComposedModel(nn.Module):
             target).  Frozen is a construction-time fact recorded here -- not
             re-derived from requires_grad later, so freezing the whole model
             for a linear probe cannot change how batches are routed.
+        generative: name -> generative component (with input_modalities and
+            output_modality attrs)
         """
         super().__init__()
         # Populated by build_model; manually assembled models need an explicit
         # construction config when loading a checkpoint for evaluation.
         self.construction_config: dict | None = None
-        if not encoders:
-            raise ValueError("ComposedModel needs at least one encoder")
+        if not encoders and not generative:
+            raise ValueError("ComposedModel needs at least one encoder or generative component")
         for name, enc in encoders.items():
             for attr in ("modality", "out_dim"):
                 if not hasattr(enc, attr):
@@ -133,6 +143,35 @@ class ComposedModel(nn.Module):
             pred_mods[name] = spec["module"]
         self.predictors = nn.ModuleDict(pred_mods)
 
+        # Generative components route by output modality, like encoders by input.
+        self._generative_route: dict[str, str] = {}
+        self._generative_io: dict[str, dict] = {}
+        for name, component in (generative or {}).items():
+            for attr in ("input_modalities", "output_modality"):
+                if not hasattr(component, attr):
+                    raise ValueError(
+                        f"generative component {name!r} ({type(component).__name__}) lacks "
+                        f"the {attr!r} attribute -- see model/generative/base.py"
+                    )
+            output = str(component.output_modality)
+            if output != "text":
+                raise ValueError(
+                    f"generative component {name!r} produces {output!r}; only text generation "
+                    "is supported until a benchmark needs another output"
+                )
+            if output in self._generative_route:
+                raise ValueError(
+                    f"generative components {self._generative_route[output]!r} and {name!r} "
+                    f"both produce {output!r}; keep one per output modality"
+                )
+            self._generative_route[output] = name
+            declared: Any = component  # attributes checked above
+            self._generative_io[name] = {
+                "inputs": [str(m) for m in declared.input_modalities],
+                "output": output,
+            }
+        self.generative = nn.ModuleDict(generative or {})
+
     # ---- what the composition offers ----------------------------------------
     def modalities(self) -> dict[str, str]:
         """encoder name -> modality."""
@@ -154,7 +193,7 @@ class ComposedModel(nn.Module):
             caps.add(K.CAP_MULTIMODAL)
         if len(self.predictors) > 0:
             caps.add(K.CAP_PREDICTION)
-        # CAP_GENERATION is added when a generative component lands (generative.py)
+        caps.update(f"{output}_generation" for output in self._generative_route)
         return frozenset(caps)
 
     def train(self, mode: bool = True) -> ComposedModel:
@@ -229,6 +268,22 @@ class ComposedModel(nn.Module):
                 )
         return self.predictors[name](*reps, **kw)
 
+    # ---- generative components -------------------------------------------------
+    def generate(self, name: str, **inputs):
+        """Run one generative component, addressed by its config name ("vlm") or
+        by its output modality ("text").  Inputs are batched lists (texts=,
+        images=, videos=); see model/generative/base.py."""
+        component: Any
+        if name in self.generative:
+            component = self.generative[name]
+        elif name in self._generative_route:
+            component = self.generative[self._generative_route[name]]
+        else:
+            raise KeyError(
+                f"model has no generative component named {name!r} and none producing {name!r}"
+            )
+        return component.generate(**inputs)
+
     # ---- shared per-step features ---------------------------------------------
     def precompute_feats(self, batch: dict, device, skip: frozenset[str] = frozenset()) -> None:
         """Run the right encoder once per slot and view, storing the result in
@@ -261,7 +316,7 @@ class ComposedModel(nn.Module):
 
     # ---- export contract: what a checkpoint records so parts reload by name ---
     def export_contract(self) -> dict:
-        return {
+        contract = {
             "encoders": self.modalities(),
             "frozen": sorted(self._frozen),
             "heads": {
@@ -272,3 +327,10 @@ class ComposedModel(nn.Module):
             "capabilities": sorted(self.capabilities()),
             "preprocessing": "imagenet_norm",  # views normalize with ImageNet stats
         }
+        if self.generative:
+            # Only when present, so contracts of encoder-only checkpoints are unchanged.
+            contract["generative"] = {
+                name: {"inputs": list(io["inputs"]), "output": io["output"]}
+                for name, io in self._generative_io.items()
+            }
+        return contract

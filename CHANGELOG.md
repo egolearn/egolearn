@@ -9,6 +9,9 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- EgoSchema and Ego4D NLQ score generative models zero-shot through generic multiple-choice and temporal-grounding scorers with configurable prompts and reply parsers.
+- `generative:openai_chat` queries OpenAI-compatible servers such as vLLM, caching replies on disk by full request.
+- Composed models carry generative components, and `egl eval` builds a model from `model_config` when `checkpoint` is null.
 - The docs site generates component, Python API, CLI, config, and benchmark references from source on every build.
 - KrishnaCam IID configurations support instance-only SimCLR and temporal-only classification with explicit update budgets.
 - Linear SGD evaluation exposes batch prefetching and worker persistence without changing sampled inputs.
@@ -104,6 +107,7 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- The `generation` capability becomes `text_generation`, and generative components must produce text.
 - Site builds use pinned uv in a separate Python 3.12 environment and keep Cloudflare previews unindexed.
 - The test suite trims repetitive validation matrices and consolidates training, CLI, recording, and import checks.
 - VoE probes report pooled-surprise AUROC alongside pairwise accuracy, with

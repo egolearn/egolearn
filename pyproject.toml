@@ -23,12 +23,12 @@ egl = "egolearn.cli:main"
 
 # Optional extras are added together with the code that needs them (see docs/roadmap.md).
 # Still planned:
-#   qa    : openai, anthropic, pandas           (LLM-based QA + memory)
 #   eval  : scikit-learn                        (kNN/SVM readout)
 [project.optional-dependencies]
 video = ["pillow>=10", "av>=19"]
 train = ["torch>=2.4", "torchvision>=0.19", "pillow>=10", "av>=19", "wandb>=0.18", "safetensors>=0.5"]
-all = ["egolearn[video,train]"]
+qa = ["openai>=1.40"]  # generative:openai_chat (served VLMs)
+all = ["egolearn[video,train,qa]"]
 
 [dependency-groups]
 dev = [

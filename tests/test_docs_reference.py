@@ -145,7 +145,7 @@ def test_repository_reference_covers_registries_packages_and_api():
     assert "VoEProbe.__init__" in probes
     assert "benchmark probes require these imports" in probes
     assert "egolearn.evaluation.benchmarks.shape_bias.probe" in probes
-    assert "No components registered." in pages["reference/components/generative.md"].content
+    assert "generative:openai_chat" in pages["reference/components/generative.md"].content
     benchmarks = pages["reference/benchmarks.md"].content
     for path in (ROOT / "src/egolearn/evaluation/benchmarks").glob("*/__init__.py"):
         assert path.parent.name + "/__init__.py" in benchmarks
