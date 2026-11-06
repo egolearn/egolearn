@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from urllib.robotparser import RobotFileParser
 
 import pytest
 
@@ -90,7 +91,10 @@ def test_site_assembly_and_staging(site, settings, staging):
     assert (output / "docs/index.html").read_text() == str(staging).lower()
     assert (output / "robots.txt").exists() is staging
     if staging:
-        assert (output / "robots.txt").read_text() == "User-agent: *\nDisallow: /\n"
+        robots = RobotFileParser()
+        robots.parse((output / "robots.txt").read_text().splitlines())
+        assert robots.can_fetch("Googlebot", "https://preview.example/")
+        assert robots.can_fetch("Googlebot", "https://preview.example/docs/overview/")
     assert (output / "404.html").read_text() == (output / "docs/404.html").read_text()
     assert (output / "asset.svg").read_text() == "<svg/>"
     assert not (output / "old.html").exists()

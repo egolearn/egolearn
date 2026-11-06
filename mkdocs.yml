@@ -69,7 +69,7 @@ extra_css:
 
 extra:
   generator: false
-  # Staging adds noindex and a blocking robots.txt; set
+  # Staging adds noindex and allows crawlers to read the tags; set
   # EGOLEARN_SITE_STAGING=false for the public production build.
   staging: !ENV [EGOLEARN_SITE_STAGING, true]
   social:

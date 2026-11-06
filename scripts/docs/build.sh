@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds dist/ for Cloudflare Pages: the MkDocs site under docs/ and the
-# landing page at the root. Staging (the default) keeps crawlers out.
+# landing page at the root. Staging (the default) adds noindex tags.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -43,9 +43,9 @@ if [[ "$EGOLEARN_SITE_STAGING" == false ]]; then
   exit 0
 fi
 
-# Staging: block crawlers at the root (the docs pages also get a noindex
-# meta tag from overrides/main.html and /docs/robots.txt from the hook).
-printf 'User-agent: *\nDisallow: /\n' > dist/robots.txt
+# Crawlers must be able to fetch pages to read their noindex tags. The docs
+# pages get the same tag from overrides/main.html.
+printf 'User-agent: *\nAllow: /\n' > dist/robots.txt
 build/docs-venv/bin/python - <<'EOF'
 from pathlib import Path
 

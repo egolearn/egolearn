@@ -100,7 +100,7 @@ Cloudflare Pages builds both with `scripts/docs/build.sh`:
 - Output directory: `dist`
 - Environment: `PYTHON_VERSION=3.12`, `SKIP_DEPENDENCY_INSTALL=1`;
   `EGOLEARN_SITE_STAGING=false` only for the public
-  production build (staging adds `noindex` and a `robots.txt` that blocks crawlers)
+  production build (staging adds `noindex` and lets crawlers read the tags)
 
 The build uses pinned uv and a separate environment under `build/docs-venv/`.
 See the [site build README](scripts/docs/README.md) for deployment settings,

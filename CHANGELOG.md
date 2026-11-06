@@ -84,7 +84,7 @@ patch releases for fixes during 0.x development.
 - `egl doctor` checks environment dependencies, CUDA, data roots, and cluster
   storage without modifying settings.
 - The documentation site uses MkDocs under `/docs/`, with a landing page at the
-  site root and crawler blocking enabled for staging.
+  site root and `noindex` tags enabled for staging.
 - Contribution guidance includes a PR template and a local PR-message checker.
 - `saycam_default` reproduces the BabyCL paper's run, including its 26568-step
   budget, mixed precision, and 2-D Gaussian blur.
@@ -137,6 +137,7 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- Staging sites allow crawlers to read `noindex` tags without `robots.txt` blocking access to the pages.
 - VoE probes reject videos shorter than `num_frames`, preventing repeated frames
   from affecting IntPhys 2 and GRASP scores.
 - Offline training raises on non-finite or empty losses, preserving batch order

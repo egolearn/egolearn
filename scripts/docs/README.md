@@ -46,9 +46,12 @@ The `docs` CI job runs the same build on every pull request with a 20-minute tim
 without becoming a required branch-protection check.
 
 Staging is enabled by default, adding a `noindex, nofollow` meta tag to the landing
-page and documentation. Both `/robots.txt` and `/docs/robots.txt` disallow crawling
-until you explicitly disable staging for the production build. For the public release,
-set `EGOLEARN_SITE_STAGING=false` in Cloudflare's production environment only, leaving
+page and documentation. Both `/robots.txt` and `/docs/robots.txt` allow crawling so
+search engines can read these tags. Blocking crawling prevents search engines from
+seeing `noindex`, so linked URLs can still appear in search results, as explained in
+[Google's indexing guidance](https://developers.google.com/search/docs/crawling-indexing/block-indexing).
+For the public release, set `EGOLEARN_SITE_STAGING=false` in Cloudflare's production
+environment only, leaving
 it unset in the preview environment.
 The script also forces staging when Cloudflare's `CF_PAGES_BRANCH` differs from
 `main`, even if a preview inherits the production setting.
