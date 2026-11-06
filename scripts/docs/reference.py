@@ -254,7 +254,8 @@ def component_page(index: SourceIndex, kind: str, entries: list[Component]) -> s
     text = (
         f"# {kind.capitalize()} components\n\n"
         f"Use these `{kind}:name` targets in configuration `_target_` fields. "
-        "For method components, add the defining module to `_imports_`.\n\n"
+        "Add the defining module to `_imports_` to register a component explicitly. "
+        "Method components and benchmark probes require these imports.\n\n"
     )
     if not entries:
         return text + "No components registered.\n"

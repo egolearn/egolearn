@@ -141,7 +141,10 @@ def test_repository_reference_covers_registries_packages_and_api():
     assert len([p for p in pages if p.startswith("reference/components/")]) == len(
         index.registries()
     )
-    assert "VoEProbe.__init__" in pages["reference/components/probe.md"].content
+    probes = pages["reference/components/probe.md"].content
+    assert "VoEProbe.__init__" in probes
+    assert "benchmark probes require these imports" in probes
+    assert "egolearn.evaluation.benchmarks.shape_bias.probe" in probes
     assert "No components registered." in pages["reference/components/generative.md"].content
     benchmarks = pages["reference/benchmarks.md"].content
     for path in (ROOT / "src/egolearn/evaluation/benchmarks").glob("*/__init__.py"):
@@ -181,6 +184,13 @@ build(load_config('mkdocs.yml', site_dir=sys.argv[1], strict=True))
     assert 'id="egolearn.pipeline.build"' in api
     assert 'id="egolearn.pipeline.validate"' in api
     assert "edit/main/docs/reference/" not in api
+    configuration = (site / "api/configuration/index.html").read_text()
+    assert 'id="egolearn.config.registry.Registry.register"' in configuration
+    assert 'id="egolearn.config.registry.Registry._items"' not in configuration
+    evaluation = (site / "api/evaluation/index.html").read_text()
+    for member in ("benchmark.Benchmark.prepare", "probe.Probe.run", "probe.Probe.prepare"):
+        assert f'id="egolearn.evaluation.{member}"' in evaluation
+    assert "repeated calls should be cheap" in evaluation
     assert 'id="encoder-video_vit"' in (site / "components/encoder/index.html").read_text()
     assert "IntPhys 2" in (site / "benchmarks/index.html").read_text()
     assert not (ROOT / "docs/reference").exists()
