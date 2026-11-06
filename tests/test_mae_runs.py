@@ -2,6 +2,7 @@
 
 import json
 import pickle
+import signal
 from copy import deepcopy
 from pathlib import Path
 
@@ -69,6 +70,11 @@ def test_full_pass_pause_resume_matches_uninterrupted(config, tmp_path, iid):
     assert run(config) == PREFLIGHT_STOP
     assert not (tmp_path / "resumed" / "final.pth").exists()
     assert json.loads((tmp_path / "resumed" / "status.json").read_text())["state"] == "paused"
+    [record_path] = (tmp_path / "resumed" / "records").glob("*/record.json")
+    record = json.loads(record_path.read_text())
+    assert record["status"] == "paused" and record["pause_exit_code"] == PREFLIGHT_STOP
+    assert "error_type" not in record
+    assert record["metrics"]["train/steps"] == record["metrics"]["train/last_step/step"] == 2
     config["run_control"]["stop_after_steps"] = 0
     assert run(config) == 0
     result = torch.load(tmp_path / "resumed" / "final.pth", weights_only=False)
@@ -79,6 +85,8 @@ def test_full_pass_pause_resume_matches_uninterrupted(config, tmp_path, iid):
     assert status["state"] == "complete" and status["step"] == 6
     if not iid:
         assert status["admitted"] == 9
+    records = [json.loads(p.read_text()) for p in record_path.parent.parent.glob("*/record.json")]
+    assert sorted(r["status"] for r in records) == ["completed", "paused"]
 
 
 def test_resume_refuses_changed_recipe(config):
@@ -269,10 +277,110 @@ def test_milestone_matches_update_budget_and_precedes_pause(config, tmp_path, ii
     assert state["context"]["clock"]["step"] == 3  # ceil(.5 * 6), in both modes
 
 
-def test_timed_pause_uses_requeue_exit_code(config, tmp_path):
-    config["run_control"]["max_seconds"] = 1e-9
+@pytest.mark.parametrize("phase", ["prepare", "load_snapshot"])
+@pytest.mark.parametrize("trigger", ["time", "signal"])
+def test_startup_and_replay_honor_pause_before_training(
+    config, tmp_path, monkeypatch, phase, trigger
+):
+    import egolearn.methods.mae.train as train_module
+
+    start_step = 0
+    if phase == "load_snapshot":
+        config["run_control"]["stop_after_steps"] = 2
+        assert run(config) == PREFLIGHT_STOP
+        config["run_control"]["stop_after_steps"] = 0
+        start_step = 2
+    original = getattr(train_module, phase)
+    old_handler = signal.getsignal(signal.SIGUSR1)
+    now = 0.0
+    monkeypatch.setattr(train_module.time, "monotonic", lambda: now)
+    config["run_control"]["max_seconds"] = 30
+
+    def interrupted(*args):
+        nonlocal now
+        if trigger == "signal":
+            # Check first so a broken runner cannot terminate the pytest process.
+            assert signal.getsignal(signal.SIGUSR1) != old_handler
+            signal.raise_signal(signal.SIGUSR1)
+        else:
+            now += 31
+        return original(*args)
+
+    monkeypatch.setattr(train_module, phase, interrupted)
     assert run(config) == PAUSED
-    assert json.loads((tmp_path / "run" / "status.json").read_text())["step"] == 1
+    assert signal.getsignal(signal.SIGUSR1) == old_handler
+    root = tmp_path / "run"
+    status = json.loads((root / "status.json").read_text())
+    assert status["state"] == "paused" and status["step"] == start_step
+    assert status["seconds_this_attempt"] == (31 if trigger == "time" else 0)
+    state = torch.load(root / "snapshot_latest.pth", weights_only=False)
+    assert state["context"]["clock"]["step"] == start_step
+    assert not (root / "final.pth").exists()
+    records = [json.loads(p.read_text()) for p in root.glob("records/*/record.json")]
+    [record] = [r for r in records if r.get("pause_exit_code") == PAUSED]
+    assert record["status"] == "paused" and "error_type" not in record
+    assert record["start_step"] == record["metrics"]["train/steps"] == start_step
+
+
+def test_startup_failure_restores_signal_handler_and_records_failure(config, tmp_path, monkeypatch):
+    import egolearn.methods.mae.train as train_module
+
+    old_handler = signal.getsignal(signal.SIGUSR1)
+
+    def fail(_):
+        assert signal.getsignal(signal.SIGUSR1) != old_handler
+        raise RuntimeError("synthetic setup failure")
+
+    monkeypatch.setattr(train_module, "prepare", fail)
+    with pytest.raises(RuntimeError, match="synthetic setup failure"):
+        run(config)
+    assert signal.getsignal(signal.SIGUSR1) == old_handler
+    [record_path] = (tmp_path / "run").glob("records/*/record.json")
+    record = json.loads(record_path.read_text())
+    assert record["status"] == "failed" and record["error_type"] == "RuntimeError"
+
+
+def test_resume_replaces_only_milestones_ahead_of_rolling_snapshot(config, tmp_path, monkeypatch):
+    from egolearn.methods.mae.train import RunControl
+
+    config["hooks"].update(snapshot_every=3, snapshot_each_epoch=True, snapshot_milestones=[2 / 3])
+    on_step = RunControl.on_step
+
+    def crash(self, driver, logs):
+        if driver.ctx.clock.step == 4:
+            raise RuntimeError("allocation lost after milestone")
+        on_step(self, driver, logs)
+
+    monkeypatch.setattr(RunControl, "on_step", crash)
+    with pytest.raises(RuntimeError, match="allocation lost"):
+        run(config)
+    root = tmp_path / "run"
+    latest = torch.load(root / "snapshot_latest.pth", weights_only=False)
+    assert latest["context"]["clock"]["step"] == 3
+    kept = root / "snapshot_epoch_001.pth"
+    kept_bytes = kept.read_bytes()
+    abandoned = {
+        name: (root / name).read_bytes()
+        for name in ("snapshot_epoch_002.pth", "snapshot_066pct.pth")
+    }
+    # Pause at the restored step to inspect retirement before any new update.
+    monkeypatch.setattr(RunControl, "on_step", on_step)
+    config["run_control"]["stop_after_steps"] = 3
+    assert run(config) == PREFLIGHT_STOP
+    for name, contents in abandoned.items():
+        assert not (root / name).exists()
+        [archived] = (root / "abandoned_snapshots").glob(f"*/{name}")
+        assert archived.read_bytes() == contents
+    assert kept.read_bytes() == kept_bytes
+    # Missing milestones behind the restored step cannot be reconstructed later.
+    kept.unlink()
+    config["run_control"]["stop_after_steps"] = 0
+    assert run(config) == 0
+    assert not kept.exists()
+    for name, contents in abandoned.items():
+        assert (root / name).read_bytes() != contents
+        state = torch.load(root / name, weights_only=False)
+        assert state["context"]["clock"]["step"] == 4
 
 
 def test_invalid_update_cannot_overwrite_a_valid_snapshot(tmp_path):

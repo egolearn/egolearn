@@ -145,6 +145,9 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- MAE resume archives milestones ahead of the restored checkpoint and recreates them at their scheduled updates.
+- MAE records intentional stops as paused and counts preparation and checkpoint replay toward its wall-clock budget.
+
 - VoE probes reject videos shorter than `num_frames`, preventing repeated frames
   from affecting IntPhys 2 and GRASP scores.
 - Offline training raises on non-finite or empty losses, preserving batch order

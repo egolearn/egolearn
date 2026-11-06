@@ -125,16 +125,22 @@ batch while training. Prefetch does not commit the next batch's sequence until
 it is consumed, and its worker thread is joined before pausing.
 
 Each run records its recipe, budget, installed-source digest, and numerical
-dependency versions in an immutable manifest, plus JSONL loss/LR metrics,
-a status file, one rolling resumable snapshot every 5,000 updates, and archived
-snapshots after every IID epoch (including the short final epoch), at the same
-updates in streaming. Files are named `snapshot_epoch_001.pth` through
+dependency versions in an immutable manifest. It also writes JSONL loss/LR metrics,
+a status file, and one rolling resumable snapshot every 5,000 updates.
+Archived snapshots follow every IID epoch, including the short final epoch,
+at the same updates in streaming. Files are named `snapshot_epoch_001.pth` through
 `snapshot_epoch_016.pth`. `final.pth` is written only on completion.
+
 Full-pass `final.pth` and `snapshot_*.pth` files contain resumable training state.
 When evaluating snapshots you created or otherwise trust, pass
 `trusted_snapshot=true`, or [export safetensors](../../docs/cli.md#exporting-weights) first.
+
 The full-pass runner automatically resumes `snapshot_latest.pth` and refuses
-to reuse a directory with changed scientific settings. CPU tests check exact
+to reuse a directory with changed scientific settings. Milestones ahead of the
+restored update move into `abandoned_snapshots/<attempt>/` before training resumes.
+They are recreated as the resumed run reaches each threshold. Existing milestones
+at or before the restored update remain unchanged, and missing past milestones
+are not reconstructed. CPU tests check exact
 interrupted-versus-uninterrupted model equality in both modes; CUDA kernels
 are not guaranteed bitwise deterministic.
 
@@ -143,12 +149,22 @@ can change between attempts; these throughput settings are recorded separately
 under `attempts/`. The source/runtime fingerprint and scientific recipe still
 must match. Pinning is disabled automatically when CUDA is unavailable.
 
-`run_control.max_seconds` (default 46 hours) or SIGUSR1 requests a pause after
-a completed update. The runner saves a snapshot and exits **75** for scheduler requeue. `run_control.stop_after_steps=N` supports a
+`run_control.max_seconds` (default 46 hours) counts preparation and checkpoint
+replay as well as training. SIGUSR1 is handled throughout those stages. A pending
+pause takes effect once initial or restored state is ready, or after a completed
+update during training. Preparation and replay finish before the runner can save
+a resumable snapshot, so the limit is not a hard deadline.
+The runner saves a snapshot and exits **75** for scheduler requeue.
+
+`run_control.stop_after_steps=N` supports a
 short preflight/resume check without changing the full LR schedule or budget,
 and exits **76** so preflights cannot accidentally enter a requeue loop.
+Both stops produce a `paused` run record with `pause_exit_code` and the completed
+step count. Exceptions still produce failed records, and nonfinite metrics retain
+their `nonfinite` status.
+
 Set `run_control.expected_frames` from an independent archive inventory to
-reject an incomplete mount. An initial snapshot protects startup failures.
+reject an incomplete mount. An initial snapshot permits recovery before the first update.
 Streaming prefetch and gradient accumulation are disabled in this runner.
 IID prefetch is supported with process workers.
 
