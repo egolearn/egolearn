@@ -51,8 +51,7 @@ search engines can read these tags. Blocking crawling prevents search engines fr
 seeing `noindex`, so linked URLs can still appear in search results, as explained in
 [Google's indexing guidance](https://developers.google.com/search/docs/crawling-indexing/block-indexing).
 For the public release, set `EGOLEARN_SITE_STAGING=false` in Cloudflare's production
-environment only, leaving
-it unset in the preview environment.
+environment only, leaving it unset in the preview environment.
 The script also forces staging when Cloudflare's `CF_PAGES_BRANCH` differs from
 `main`, even if a preview inherits the production setting.
 
@@ -66,7 +65,7 @@ This rebuild removes the staging tags and generated robots files from `dist/`.
 
 ## Cold-build timing
 
-A cold build took **9.18 seconds** on Linux x86_64 with Python 3.12 and local
+A cold build took **7.49 seconds** on Linux x86_64 with Python 3.12 and local
 temporary storage, below the 20-minute build limit. This includes uv bootstrap,
 downloads into empty pip and uv caches, dependency installation, strict rendering,
 and assembly of `dist/`. The locked versions were MkDocs 1.6.1 and Material 9.7.7.
