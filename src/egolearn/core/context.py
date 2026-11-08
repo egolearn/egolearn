@@ -52,6 +52,9 @@ class Clock:
         # tensors.  Committed only when a batch is handed to training, never
         # while a prefetch is in flight, so snapshots stay consistent.
         self.compose_seq = 0
+        # training iterations still owed to the last stream advance; a run
+        # stopped inside a quantum finishes it on resume before advancing
+        self.quantum_left = 0
         self.total_observations = total_observations
 
     @property
@@ -118,6 +121,7 @@ class Context:
                 "admitted": self.clock.admitted,
                 "events_emitted": self.clock.events_emitted,
                 "compose_seq": self.clock.compose_seq,
+                "quantum_left": self.clock.quantum_left,
                 "total_observations": self.clock.total_observations,
             },
             "rngs": {k: v.getstate() for k, v in self._rngs.items()},
@@ -145,4 +149,6 @@ class Context:
         self.clock.admitted = c["admitted"]
         self.clock.events_emitted = c["events_emitted"]
         self.clock.compose_seq = c["compose_seq"]
+        # snapshots written before quantum_left existed resumed at the next advance
+        self.clock.quantum_left = c.get("quantum_left", 0)
         self.clock.total_observations = c["total_observations"]

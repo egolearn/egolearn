@@ -79,7 +79,9 @@ it if the image root moves.
 `probe:labeled_s_linear` uses the canonical 26-class split with 2,886 training
 images and 2,901 evaluation images. Obtain the restricted images through
 [SAYCam access](#saycam-access), keeping their category folders.
-This protocol differs from BabyCL's reported 24-class linear evaluation.
+The BabyCL paper instead probes every image, with a per-category 80/20 split
+drawn in memory from the same folders; `probe:labeled_s_stratified_linear`
+provides that protocol and takes only `data_root`.
 
 The adapter verifies the split metadata against a pinned SHA-256. With
 `split_file: null`, it downloads the small split file from an immutable upstream

@@ -10,7 +10,8 @@ Submodules:
   * transformer -- ViT blocks + 3D rotary positions, shared by video_vit and
                    the vjepa predictor
   * masking     -- token-grid mask samplers for masked video prediction
-  * generative  -- reserved interface for generative/autoregressive parts
+  * generative  -- generative components (openai_chat); base.py documents the
+                   contract and the Video input type
   * losses      -- the standard loss library (ntxent, tcl, clip_infonce, vjepa)
 """
 

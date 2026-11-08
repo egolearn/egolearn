@@ -98,12 +98,41 @@ Cloudflare Pages builds both with `scripts/docs/build.sh`:
 
 - Build command: `bash scripts/docs/build.sh`
 - Output directory: `dist`
-- Environment: `PYTHON_VERSION=3.12`; `EGOLEARN_SITE_STAGING=false` only for the public
-  production build (staging adds `noindex` and a `robots.txt` that blocks crawlers)
+- Environment: `PYTHON_VERSION=3.12`, `SKIP_DEPENDENCY_INSTALL=1`;
+  `EGOLEARN_SITE_STAGING=false` only for the public
+  production build (staging adds `noindex` and lets crawlers read the tags)
+
+The build uses pinned uv and a separate environment under `build/docs-venv/`.
+See the [site build README](scripts/docs/README.md) for deployment settings,
+preview behavior, and cold-build timing.
 
 Images in `landing/media/` are either drawn or generated for the page, or come
 from published, openly licensed sources and the datasets' own project pages; the
 page credits each one.
+
+### Generated reference
+
+The Reference section is generated in memory on each build; do not add its
+pages under `docs/`. Component entries come from registry decorators, with
+constructor arguments and defaults read from source, including inherited
+constructors. Add a docstring to describe a component in the catalog.
+
+Each package under `evaluation/benchmarks/` defines a literal
+`BENCHMARK_METADATA` mapping in its `__init__.py`. It contains five nonempty
+strings: `name`, `source`, `license`, `access`, and `prepare`. Use Markdown links
+for sources and code spans for preparation commands. Distinguish data terms
+from code licenses, and state when no preparer exists. Access is `public`,
+`gated`, `IRB`, or `upstream-licensed`, following the
+[access tiers](docs/evaluation/hub.md#access-tiers).
+
+The curated Python API list lives in `scripts/docs/reference.py`. Entries name
+their defining modules, such as `egolearn.pipeline.build`, rather than lazy
+package exports. Mkdocstrings uses
+[Griffe's static analysis](https://mkdocstrings.github.io/python/usage/configuration/general/#allow_inspection)
+with inspection disabled, so the docs environment needs neither EgoLearn nor
+Torch installed. The CLI reference reads the parser's argument notation and
+help text; the config reference reads YAML header comments. Source edits also
+trigger a rebuild during `mkdocs serve`.
 
 ## Porting policy
 

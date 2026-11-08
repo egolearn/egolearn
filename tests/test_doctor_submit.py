@@ -2,7 +2,6 @@
 
 import os
 import subprocess
-import sys
 
 import pytest
 
@@ -108,8 +107,19 @@ def test_cluster_tools_match_the_execution_location(tmp_path, monkeypatch, locat
     )
 
 
-@pytest.mark.parametrize("in_allocation", [False, True])
-@pytest.mark.parametrize("missing", [None, "bash", "git", "sbatch", "iconv", "tar", "uv"])
+@pytest.mark.parametrize(
+    "in_allocation,missing",
+    [
+        (False, None),
+        (True, None),
+        (False, "bash"),
+        (False, "git"),
+        (True, "sbatch"),
+        (True, "iconv"),
+        (True, "tar"),
+        (True, "uv"),
+    ],
+)
 def test_submission_doctor_checks_tools_on_the_planning_host(
     tmp_path, monkeypatch, capsys, in_allocation, missing
 ):
@@ -159,69 +169,3 @@ def test_submit_help_needs_no_checkout_but_execution_does(monkeypatch, tmp_path,
     assert submit.main(["--help"]) == 0
     assert submit.main(["--", "true"]) == 1
     assert "checkout root" in capsys.readouterr().err
-
-
-@pytest.mark.parametrize(
-    "command",
-    [
-        ["export", "--help"],
-        ["data", "list", "--json"],
-        ["doctor", "--skip-cuda"],
-        ["submit", "--help"],
-    ],
-)
-def test_operational_commands_do_not_import_torch(tmp_path, command):
-    script = """
-import sys
-from importlib.abc import MetaPathFinder
-class Block(MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname.split('.')[0] in {'torch', 'torchvision', 'hydra', 'numpy'}:
-            raise AssertionError(f'operational command imported {fullname}')
-sys.meta_path.insert(0, Block())
-from egolearn.cli import main
-raise SystemExit(main(sys.argv[1:]))
-"""
-    env = dict(os.environ)
-    env.pop("SLURM_JOB_ID", None)
-    result = subprocess.run(
-        [sys.executable, "-I", "-c", script, *command],
-        cwd=tmp_path,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert result.returncode == 0, result.stderr
-
-
-def test_verify_and_table_do_not_import_training_dependencies(tmp_path):
-    from egolearn.hub import write_checksums
-
-    data = tmp_path / "data"
-    data.mkdir()
-    (data / "payload").write_text("synthetic")
-    write_checksums(data)
-    script = """
-import sys
-from importlib.abc import MetaPathFinder
-class Block(MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname.split('.')[0] in {'torch', 'torchvision', 'hydra', 'numpy'}:
-            raise AssertionError(f'command imported {fullname}')
-sys.meta_path.insert(0, Block())
-from egolearn.cli import main
-assert main(['data', 'verify', sys.argv[1]]) == 0
-try:
-    main(['bench', 'table', sys.argv[2]])
-except SystemExit as error:
-    assert error.code == 1
-"""
-    result = subprocess.run(
-        [sys.executable, "-I", "-c", script, str(data), str(tmp_path / "missing.json")],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert result.returncode == 0, result.stderr

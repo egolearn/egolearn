@@ -48,7 +48,7 @@ the supplied paths.
 
 | Argument | Default | Behavior |
 | --- | --- | --- |
-| `checkpoint` | Required | Local checkpoint, exported directory, or explicit Hub model-file reference |
+| `checkpoint` | Required | Local checkpoint, exported directory, or explicit Hub model-file reference; `None` builds the model from `model_config` alone, for models without EgoLearn-trained weights such as a client of a served VLM |
 | `benchmarks` | Required | Nonempty sequence of `Benchmark` instances or configuration mappings |
 | `model_config` | `None` | Construction mapping or config file; required when absent from the checkpoint |
 | `device` | `"cpu"` | PyTorch device on which to load and evaluate the model |

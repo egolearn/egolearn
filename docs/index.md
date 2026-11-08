@@ -20,3 +20,11 @@ or schedule small benchmarks during training.
   SAYCam in a single chronological pass.
 - **[Memory Storyboard](projects/storyboard.md)**: streaming visual
   self-supervised learning with temporal segmentation.
+
+## Benchmarks
+
+Evaluate object recognition with Labeled-S, BabyView, and ImageNet, or test
+image–text alignment with VTWT and Baby Winoground. Shape bias, spatial relations,
+and IntPhys 2 measure generalization beyond category labels. The
+[evaluation guide](evaluation.md) lists protocols and data requirements.
+[Benchmark suites](benchmark_suites.md) run reproducible comparisons across models.

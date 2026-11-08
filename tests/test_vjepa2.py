@@ -20,7 +20,6 @@ from egolearn.methods.vjepa2.masking import multiblock
 from egolearn.methods.vjepa2.train import run
 from egolearn.model.transformer import Attention, Block, _rotate, rope_3d
 from egolearn.training.hooks import Hook
-from egolearn.utils.snapshot import load_snapshot, save_snapshot
 
 CONFIGS = Path(__file__).resolve().parents[1] / "projects/vjepa2/configs"
 
@@ -147,37 +146,6 @@ def test_training_baseline_diagnostics_and_checkpoint_reload(tmp_path):
         run(cfg)
 
 
-def test_resume_keeps_exact_model_optimizer_and_ema_with_same_schedule(tmp_path):
-    cfg = config(tmp_path / "reference")
-    reference = egolearn.build(cfg)
-    reference.driver.fit()
-
-    class Pause(Hook):
-        def on_step(self, driver, logs):
-            if driver.ctx.clock.step == 2:
-                save_snapshot(str(tmp_path / "resume.pth"), driver)
-                raise InterruptedError
-
-    split = egolearn.build({**cfg, "run_dir": str(tmp_path / "partial")})
-    split.driver.hooks.append(Pause())
-    with pytest.raises(InterruptedError):
-        split.driver.fit()
-    resumed = egolearn.build({**cfg, "run_dir": str(tmp_path / "resumed")})
-    load_snapshot(str(tmp_path / "resume.pth"), resumed.driver)
-    resumed.driver.fit()
-    for name, value in reference.model.state_dict().items():
-        torch.testing.assert_close(value, resumed.model.state_dict()[name], rtol=0, atol=0)
-    assert resumed.ctx.clock.compose_seq == reference.ctx.clock.compose_seq
-    for state_id, state in reference.driver.optimizer.state_dict()["state"].items():
-        for name, value in state.items():
-            torch.testing.assert_close(
-                value,
-                resumed.driver.optimizer.state_dict()["state"][state_id][name],
-                rtol=0,
-                atol=0,
-            )
-
-
 @pytest.mark.parametrize(
     "change, message",
     [
@@ -298,6 +266,11 @@ def test_runner_resume_preserves_baseline_ema_and_canonical_metrics(tmp_path, mo
     assert (tmp_path / "partial/random.pth").read_bytes() == baseline
     for name, value in reference.model.state_dict().items():
         torch.testing.assert_close(value, resumed.model.state_dict()[name], rtol=0, atol=0)
+    assert resumed.ctx.clock.compose_seq == reference.ctx.clock.compose_seq
+    actual_optimizer = resumed.driver.optimizer.state_dict()["state"]
+    for state_id, state in reference.driver.optimizer.state_dict()["state"].items():
+        for name, value in state.items():
+            torch.testing.assert_close(value, actual_optimizer[state_id][name], rtol=0, atol=0)
     rows = [json.loads(line) for line in metrics.read_text().splitlines()]
     assert [row["step"] for row in rows] == [1, 2, 3, 4]
     assert [row["elapsed_s"] for row in rows] == sorted(row["elapsed_s"] for row in rows)

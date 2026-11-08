@@ -3,11 +3,15 @@
 `egl bench` runs a declared set of seeds and generates tables from their local
 records. A suite is a versioned YAML file; [the toy suite](../benchmarks/toy.yaml)
 is a runnable CPU example. It reports the last training step's loss and step count,
-not an evaluation score or an average over training. Records retain skipped-step
-counts. Ordinary training retains its nonfinite-step skip behavior and marks the
-final record `nonfinite`; these runs cannot enter a normal table. Suites set the
-managed `record_fail_on_nonfinite=true` option to stop immediately on divergence.
-Final configured probe results are recorded separately.
+not an evaluation score or an average over training. Final configured probe results
+are recorded separately.
+
+Records retain counts of skipped and nonfinite steps. Ordinary streaming training
+skips nonfinite losses and marks the final record `nonfinite`. Ordinary offline
+training raises on the first nonfinite or empty loss and records `failed`, without
+writing a final checkpoint. Suites set the managed `record_fail_on_nonfinite=true`
+option, which stops immediately on nonfinite losses and records `nonfinite` in
+either mode. Failed and nonfinite records cannot enter a normal table.
 
 ```yaml
 version: 1
@@ -249,8 +253,10 @@ generated tables contain metrics and diagnostics suitable for a README after rev
 training with seeds 1337, 1338 and 1339. It uses the default BabyCL training config
 with `+benchmark=labeled_s` to select Labeled-S 4AFC plus canonical 26-class
 fixed-feature linear decoding. Tables use final-model probe scores as fractions,
-with mean and sample SD. The linear protocol differs from the paper's 24-class
-split and embedding representation; this suite does not assert numerical parity.
+with mean and sample SD. The linear protocol differs from the paper's split of
+all 26-class Labeled-S images and its embedding, which
+`probe:labeled_s_stratified_linear` follows; this suite does not assert
+numerical parity.
 
 Set these artifact paths and digests in your local environment:
 

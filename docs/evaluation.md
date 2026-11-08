@@ -127,12 +127,20 @@ running evaluation.
 | Spatial relations | `spatial_relations_eval` | [Monitoring subsets and scoring](evaluation/spatial_relations.md) | `<name>/accuracy`; 0.5 chance |
 | Labeled-S 4AFC | `probe:four_afc` | [4,150 frozen trials over 23 categories](evaluation/data.md#labeled-s-4afc-data) | `four_afc_acc`; 0.25 chance |
 | Labeled-S linear decoding | `probe:labeled_s_linear` | [Canonical 26-class split](evaluation/data.md#labeled-s-linear-data) | `top1`; 1/26 uniform-guess accuracy |
+| Labeled-S linear decoding, BabyCL paper protocol | `probe:labeled_s_stratified_linear` | [All images, per-category 80/20 split](evaluation/data.md#labeled-s-linear-data) | `top1`; 1/26 uniform-guess accuracy |
+| mini-ImageNet linear decoding | `probe:mini_imagenet_linear` | 100-class `train/` and `val/` class folders | `top1`; 1/100 uniform-guess accuracy |
 | BabyView 4AFC | `probe:four_afc` | [Frozen trials on vocabulary-matched categories](#babyview-protocols) | `four_afc_acc`; 0.25 chance |
 | BabyView linear decoding | `probe:linear` | [Frozen split over all 72 categories](#babyview-protocols) | `top1`; 1/72 uniform-guess accuracy |
 | VTWT | `probe:vtwt` | [CSV labels, frames, and training vocabulary](evaluation/data.md#babyvlm-benchmark-data) | `vtwt_acc`; 0.5 chance |
 | Baby Winoground | `probe:baby_winoground` | [CSV labels, positive/negative images, and training vocabulary](evaluation/data.md#babyvlm-benchmark-data) | `bw_group_acc`; 0.25 for independent random choices |
 | IntPhys 2 | `probe:intphys2` | [Video inputs and score limitations](evaluation/intphys2.md) | `voe_acc`, `voe_auroc`; 0.5 chance |
 | GRASP Level 2 | `probe:grasp` | [Pair manifest and score limitations](evaluation/grasp.md) | `voe_acc`, `voe_auroc`; 0.5 chance |
+| EgoSchema | `egoschema_eval` | [Served model, videos and scoring](evaluation/egoschema.md) | `acc`; 0.2 chance |
+| Ego4D NLQ | `ego4d_nlq_eval` | [Served model, clips and scoring](evaluation/ego4d_nlq.md) | `r1_iou0.3`, `r1_iou0.5` |
+
+EgoSchema and Ego4D NLQ score a generative model, such as a vision-language
+model on a vLLM server, instead of an EgoLearn encoder. Their configs set
+`checkpoint: null` and build the model from `model_config`.
 
 Accuracies are fractions rather than percentages. Baby Winoground requires both
 image-phrase choices to be correct, so its group baseline assumes independent
@@ -193,7 +201,8 @@ complete [BabyVLM](evaluation/data.md#babyvlm-evaluation-config) and
 | Protocol | Target | Registration module |
 | --- | --- | --- |
 | Labeled-S 4AFC | `probe:four_afc` | `egolearn.evaluation.benchmarks.labeled_s_4afc` |
-| Labeled-S linear | `probe:labeled_s_linear` | `egolearn.evaluation.benchmarks.labeled_s_linear` |
+| Labeled-S linear | `probe:labeled_s_linear`, `probe:labeled_s_stratified_linear` | `egolearn.evaluation.benchmarks.labeled_s_linear` |
+| mini-ImageNet linear | `probe:mini_imagenet_linear` | `egolearn.evaluation.benchmarks.mini_imagenet_linear` |
 | BabyView 4AFC and linear | `probe:four_afc`, `probe:linear` | `egolearn.evaluation.benchmarks.babyview_4afc` |
 | Generic fixed-feature linear | `probe:linear` | `egolearn.evaluation.linear_probe` |
 | Generic SGD linear | `probe:linear_sgd` | `egolearn.evaluation.linear_sgd_probe` |
@@ -210,6 +219,7 @@ comparing linear-decoding scores. The defaults differ across implementations:
 | Target | Classifier input and fitting | Default view | Default size |
 | --- | --- | --- | --- |
 | `probe:linear`, `probe:labeled_s_linear` | Fixed features, train-split standardization, deterministic L-BFGS logistic regression | `center_crop` | 224 pixels |
+| `probe:labeled_s_stratified_linear`, `probe:mini_imagenet_linear` | Fixed features scaled to unit length, deterministic L-BFGS logistic regression with scikit-learn's `C=0.316` | `center_crop` | 224 pixels |
 | `probe:linear_sgd` | Fresh stochastic training crops each epoch, SGD/LARC | `imagenet_center_crop` for evaluation | 112 pixels |
 | `benchmark:imagenet_linear_sgd` | Full ImageNet train/val splits, stochastic training crops, SGD/LARC | `imagenet_center_crop` for evaluation | 224 pixels |
 
@@ -222,8 +232,9 @@ while SGD protocols use their own `seed`.
 Set `view` and `size` explicitly for comparisons, along with the same `encoder`
 and optional `head`. Matching those settings does not make the classifier
 protocols equivalent. Labeled-S linear decoding uses 2,886 training and 2,901
-evaluation images over 26 classes. It differs from BabyCL's reported 24-class
-split and embedding representation.
+evaluation images over 26 classes. The BabyCL paper's protocol,
+`probe:labeled_s_stratified_linear`, uses the same 26 classes but splits all
+57,727 images 80/20 per class and probes a different embedding.
 
 ### BabyView protocols
 

@@ -269,6 +269,9 @@ def test_iid_preset_keeps_babycl_losses_without_streaming_components():
     assert cfg["hooks"]["checkpoint_every"] == 5000
     assert streaming["hooks"]["checkpoint_every"] == 500
     for key in ("model", "losses", "solver", "views", "tokenizer"):
+        if key == "solver":
+            # only the streaming run reproduces the original's fixed step budget
+            assert streaming[key]["schedule"].pop("total_steps") == 26568
         assert cfg[key] == streaming[key], key
     for key in ("memories", "admission", "routes", "recipe", "embedders", "probes"):
         assert not cfg[key], key

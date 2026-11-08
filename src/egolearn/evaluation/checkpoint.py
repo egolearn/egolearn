@@ -60,13 +60,25 @@ def _construction_config(source: str | Path | Mapping) -> tuple[dict, list[str],
 
 
 def _load_model(
-    checkpoint: str | Path,
+    checkpoint: str | Path | None,
     *,
     model_config: str | Path | Mapping | None,
     device: str | torch.device,
     imports: Sequence[str],
     trusted_snapshot: bool,
 ) -> tuple[ComposedModel, dict[str, Any]]:
+    if checkpoint is None:
+        # A model with no EgoLearn-trained weights, such as a client of a served VLM.
+        if model_config is None:
+            raise ValueError("evaluation needs a checkpoint, or a model_config without one")
+        config, model_imports, vocab_size = _construction_config(model_config)
+        model = build_model(
+            config,
+            vocab_size=vocab_size,
+            imports=list(dict.fromkeys([*model_imports, *imports])),
+        )
+        model.to(device).eval()
+        return model, {}
     state, metadata = read_checkpoint(checkpoint, trusted_snapshot=trusted_snapshot)
     source = model_config if model_config is not None else state.get("model_config")
     if source is None:
@@ -119,7 +131,7 @@ def load_model(
 
 
 def evaluate_checkpoint(
-    checkpoint: str | Path,
+    checkpoint: str | Path | None,
     *,
     benchmarks: Sequence[Benchmark | Mapping],
     model_config: str | Path | Mapping | None = None,
@@ -129,9 +141,13 @@ def evaluate_checkpoint(
     record_json: str | Path | None = "auto",
     trusted_snapshot: bool = False,
 ) -> EvaluationResult:
-    """Load a trained model and evaluate it independently of its training data."""
+    """Load a trained model and evaluate it independently of its training data.
+
+    Without a checkpoint the model is built from ``model_config`` alone, for models
+    whose weights EgoLearn does not train (a generative client of a served VLM).
+    """
     config: dict[str, Any] = {
-        "checkpoint": str(checkpoint),
+        "checkpoint": None if checkpoint is None else str(checkpoint),
         "model_config": model_config,
         "benchmarks": benchmark_configs(benchmarks),
         "device": str(device),
@@ -154,7 +170,7 @@ def evaluate_checkpoint(
             imports=imports,
             trusted_snapshot=trusted_snapshot,
         )
-        if record is not None:
+        if record is not None and plain["checkpoint"] is not None:
             # Hub resolution was frozen to a local path before loading. Keep its origin.
             origin = record.value["input_provenance"].get("checkpoint", {})
             metadata = {**origin, **metadata}
@@ -169,11 +185,11 @@ def evaluate_checkpoint(
                 record=record,
             )
         except EvaluationError as exc:
-            exc.partial_result.checkpoint = metadata
+            exc.partial_result.checkpoint = metadata or None
             if record is not None:
                 record.evaluation(exc.partial_result)
             raise
-        result.checkpoint = metadata
+        result.checkpoint = metadata or None
         if record is not None:
             record.evaluation(result)
         return result

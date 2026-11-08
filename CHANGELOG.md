@@ -10,6 +10,10 @@ patch releases for fixes during 0.x development.
 ### Added
 
 - Full-network fine-tuning supports deferred metrics, optional GPU kernel optimizations, and warmed throughput comparisons across batch sizes.
+- EgoSchema and Ego4D NLQ score generative models zero-shot through generic multiple-choice and temporal-grounding scorers with configurable prompts and reply parsers.
+- `generative:openai_chat` queries OpenAI-compatible servers such as vLLM, caching replies on disk by full request.
+- Composed models carry generative components, and `egl eval` builds a model from `model_config` when `checkpoint` is null.
+- The docs site generates component, Python API, CLI, config, and benchmark references from source on every build.
 - KrishnaCam IID configurations support instance-only SimCLR and temporal-only classification with explicit update budgets.
 - Linear SGD evaluation exposes batch prefetching and worker persistence without changing sampled inputs.
 
@@ -85,11 +89,28 @@ patch releases for fixes during 0.x development.
 - `egl doctor` checks environment dependencies, CUDA, data roots, and cluster
   storage without modifying settings.
 - The documentation site uses MkDocs under `/docs/`, with a landing page at the
-  site root and crawler blocking enabled for staging.
+  site root and `noindex` tags enabled for staging.
 - Contribution guidance includes a PR template and a local PR-message checker.
+- `saycam_default` reproduces the BabyCL paper's run, including its 26568-step
+  budget, mixed precision, and 2-D Gaussian blur.
+- `solver.schedule.total_steps` indexes the cosine schedule by gradient steps.
+- `driver.amp` runs encoder forwards and losses under float16 or bfloat16
+  autocast, with named slots kept in float32.
+- `stream.transcript_first` surfaces an utterance before a frame with the same
+  timestamp, on frame directories and packed frame stores alike.
+- `paper_evals.yaml` runs the BabyCL paper's seven end-of-training evaluations
+  with the paper's protocols.
+- `probe:labeled_s_stratified_linear` and `probe:mini_imagenet_linear` follow the
+  BabyCL paper's linear decoding protocols.
+- `probe:linear` accepts `feature_norm: l2` and a scikit-learn-style penalty `c`.
+- The BabyCL README reports per-seed SAYCam results next to the paper's numbers,
+  with each protocol difference stated.
 
 ### Changed
 
+- The `generation` capability becomes `text_generation`, and generative components must produce text.
+- Site builds use pinned uv in a separate Python 3.12 environment and keep Cloudflare previews unindexed.
+- The test suite trims repetitive validation matrices and consolidates training, CLI, recording, and import checks.
 - VoE probes report pooled-surprise AUROC alongside pairwise accuracy, with
   optional group metrics for labeled pairs.
 - The documentation separates task guides from reference material and corrects
@@ -122,6 +143,11 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- Staging sites allow crawlers to read `noindex` tags without `robots.txt` blocking access to the pages.
+- VoE probes reject videos shorter than `num_frames`, preventing repeated frames
+  from affecting IntPhys 2 and GRASP scores.
+- Offline training raises on non-finite or empty losses, preserving batch order
+  and closing loader workers without writing a final checkpoint.
 - Temporal IID training validates empty recordings and rejects snapshot resumes
   when the temporal-label manifest changes or its saved identity is unavailable.
 - Video benchmarks fall back to the CPU count on platforms without CPU affinity
@@ -165,6 +191,15 @@ patch releases for fixes during 0.x development.
   executing Python on login nodes.
 - The combined site build retains a root 404 page and applies the staging
   setting consistently to the landing page and documentation.
+- A session's last segment gets its own training steps instead of sharing the
+  next session's quantum.
+- `driver.max_steps` stops at exactly that step, also inside a quantum.
+- A run resumed from a snapshot taken inside a quantum finishes that quantum
+  before reading more of the stream.
+- A float16 run resumed with a partial gradient-accumulation window applies the
+  pending gradients once, under the restored loss scale.
+- `driver.max_steps` preserves pending accumulated gradients when it interrupts
+  the final quantum after stream exhaustion.
 
 ### Security
 
