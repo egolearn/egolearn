@@ -9,7 +9,7 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
-- Full-network fine-tuning supports deferred metrics, optional GPU kernel optimizations, and warmed throughput comparisons across batch sizes.
+- `benchmark:imagenet_full_finetune` supports full-network ImageNet evaluation through `egl eval`, resumable adaptation, and optional execution optimizations.
 - EgoSchema and Ego4D NLQ score generative models zero-shot through generic multiple-choice and temporal-grounding scorers with configurable prompts and reply parsers.
 - `generative:openai_chat` queries OpenAI-compatible servers such as vLLM, caching replies on disk by full request.
 - Composed models carry generative components, and `egl eval` builds a model from `model_config` when `checkpoint` is null.

@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-import argparse
 import fcntl
 import hashlib
 import json
 import math
-import os
 import random
 import time
+from contextlib import nullcontext
+from copy import deepcopy
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import torch
-from omegaconf import OmegaConf
 from torch import nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
@@ -23,12 +23,44 @@ from torchvision.ops import StochasticDepth
 from torchvision.transforms import v2
 
 from egolearn.config.registry import VIEWS
+from egolearn.core.context import _stable_seed
 from egolearn.data.views import IMAGENET_MEAN, IMAGENET_STD
-from egolearn.evaluation.benchmarks.imagenet_linear.benchmark import build_split
-from egolearn.evaluation.benchmarks.labeled_s_linear.probe import load_split_text, parse_split
+from egolearn.evaluation.evaluator import _isolated_evaluation_rng
+from egolearn.evaluation.image_data import ImageDataset
 from egolearn.evaluation.linear_probe import ClassificationSplit
-from egolearn.evaluation.linear_sgd import _ImageDataset
-from egolearn.model.build import build_model
+from egolearn.model.model import ComposedModel
+
+
+def validate_config(config: dict) -> None:
+    """Reject invalid fine-tuning settings before enumerating data."""
+    for key in ("size", "batch_size", "accumulation", "epochs", "eval_every"):
+        if type(config[key]) is not int or config[key] < 1:
+            raise ValueError(f"{key} must be a positive integer")
+    if type(config["workers"]) is not int or config["workers"] < 0:
+        raise ValueError("workers must be a nonnegative integer")
+    if not 0 <= config["warmup_epochs"] < config["epochs"]:
+        raise ValueError("warmup must be shorter than training")
+    for key in ("lr", "clip_grad", "layer_decay", "crop_min"):
+        if not math.isfinite(config[key]) or config[key] <= 0:
+            raise ValueError(f"{key} must be finite and positive")
+    for key in ("weight_decay", "mixup", "cutmix", "erase_probability", "smoothing", "drop_path"):
+        if not math.isfinite(config[key]) or config[key] < 0:
+            raise ValueError(f"{key} must be finite and nonnegative")
+    for key in ("crop_min", "layer_decay", "erase_probability", "smoothing"):
+        if config[key] > 1:
+            raise ValueError(f"{key} must not exceed one")
+    if config["drop_path"] >= 1:
+        raise ValueError("drop_path must be less than one")
+    if config["pooling"] not in ("default", "mae_global"):
+        raise ValueError("pooling must be default or mae_global")
+    if config["drop_path"] and config["pooling"] != "mae_global":
+        raise ValueError("drop_path requires mae_global pooling")
+    if (
+        config.get("device") is not None
+        and config["amp"]
+        and not config["device"].startswith("cuda")
+    ):
+        raise ValueError("BF16 AMP requires CUDA")
 
 
 def digest(path: str | Path) -> str:
@@ -40,6 +72,11 @@ def write_json(path: Path, value: dict) -> None:
     temporary = path.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
     temporary.replace(path)
+
+
+def epoch_seed(seed: int, epoch: int) -> int:
+    """Derive independent epoch streams for each fine-tuning run seed."""
+    return _stable_seed(seed, f"evaluation.full_finetune:epoch:{epoch}")
 
 
 def seed_all(seed: int) -> None:
@@ -58,21 +95,24 @@ class Classifier(nn.Module):
     def __init__(self, encoder: nn.Module, classes: int, pooling: str, drop_path: float):
         super().__init__()
         self.encoder = encoder
-        self.fc_norm = nn.Identity()
+        out_dim = int(cast(Any, encoder).out_dim)
+        self.fc_norm: nn.Module = nn.Identity()
         if pooling == "mae_global":
             if not all(hasattr(encoder, name) for name in ("blocks", "patch_embed", "norm")):
                 raise ValueError("mae_global pooling requires an MAE encoder")
             # Normalize after averaging raw patch tokens, as in MAE fine-tuning.
-            encoder.norm = nn.Identity()
-            encoder.pooling = "mean"
-            self.fc_norm = nn.LayerNorm(encoder.out_dim, eps=1e-6)
-            for index, block in enumerate(encoder.blocks):
-                probability = drop_path * index / max(1, len(encoder.blocks) - 1)
+            mae_encoder = cast(Any, encoder)
+            mae_encoder.norm = nn.Identity()
+            mae_encoder.pooling = "mean"
+            self.fc_norm = nn.LayerNorm(out_dim, eps=1e-6)
+            blocks = mae_encoder.blocks
+            for index, block in enumerate(blocks):
+                probability = drop_path * index / max(1, len(blocks) - 1)
                 block.dropout1 = StochasticDepth(probability, "row")
                 block.dropout2 = StochasticDepth(probability, "row")
         elif pooling != "default":
             raise ValueError(f"unknown pooling {pooling}")
-        self.head = nn.Linear(encoder.out_dim, classes)
+        self.head = nn.Linear(out_dim, classes)
         nn.init.trunc_normal_(self.head.weight, std=2e-5)
         nn.init.zeros_(self.head.bias)
         self.requires_grad_(True)
@@ -84,41 +124,54 @@ class Classifier(nn.Module):
         return self.head(self.fc_norm(features))
 
 
-def load_classifier(config: dict, classes: int) -> tuple[Classifier, dict]:
-    path = config["checkpoint"]
-    checkpoint_hash = digest(path)
-    if checkpoint_hash != config["checkpoint_sha256"]:
-        raise ValueError("checkpoint SHA-256 changed")
-    state = torch.load(path, map_location="cpu", weights_only=True)
-    construction = state["model_config"]
-    model = build_model(
-        construction["model"],
-        imports=construction.get("_imports_", []),
-        initialize_pretrained=False,
+def select_encoder(model: ComposedModel, selector: str) -> nn.Module:
+    """Resolve an encoder name or modality using the model's normal routing."""
+    encoder = (
+        model.encoders[selector] if selector in model.encoders else model.encoder_for(selector)
     )
-    if state.get("export_contract") != model.export_contract():
-        raise ValueError("checkpoint model contract mismatch")
-    model.load_state_dict(state["model"], strict=True)
-    encoder = model.encoders[config.get("encoder", "vision")]
-    classifier = Classifier(encoder, classes, config["pooling"], config["drop_path"])
-    return classifier, {
-        "checkpoint": path,
-        "checkpoint_sha256": checkpoint_hash,
-        "pretraining_step": state.get("step"),
-        "construction": construction,
-        "trainable_parameters": sum(p.numel() for p in classifier.parameters()),
+    if encoder is None:
+        raise KeyError(f"model has no encoder {selector!r}")
+    if encoder.modality != "image":
+        raise ValueError("full fine-tuning requires an image encoder")
+    return encoder
+
+
+def make_classifier(model: ComposedModel, classes: int, config: dict) -> Classifier:
+    """Copy the selected encoder so adaptation cannot change the evaluated model."""
+    encoder = deepcopy(select_encoder(model, config["encoder"]))
+    return Classifier(encoder, classes, config["pooling"], config["drop_path"])
+
+
+def encoder_identity(model: ComposedModel, encoder: str) -> dict:
+    """Identify starting weights and construction before fine-tuning."""
+    sha = hashlib.sha256()
+    module = select_encoder(model, encoder)
+    for name, tensor in module.state_dict().items():
+        sha.update(json.dumps([name, str(tensor.dtype), list(tensor.shape)]).encode())
+        sha.update(
+            tensor.detach().cpu().contiguous().reshape(-1).view(torch.uint8).numpy().tobytes()
+        )
+    return {
+        "encoder_sha256": sha.hexdigest(),
+        "construction": model.construction_config,
+        "encoder_type": f"{type(module).__module__}.{type(module).__qualname__}",
     }
 
 
 def parameter_groups(model: Classifier, weight_decay: float, layer_decay: float) -> list[dict]:
-    depth = len(model.encoder.blocks) if hasattr(model.encoder, "blocks") else 0
+    depth = len(getattr(model.encoder, "blocks", ()))
     groups: dict[tuple[int, bool], dict] = {}
     for name, parameter in model.named_parameters():
         layer = depth + 1
         if depth and name.startswith("encoder."):
-            layer = 0
             if name.startswith("encoder.blocks."):
                 layer = int(name.split(".")[2]) + 1
+            elif name.startswith("encoder.patch_embed.") or name in {
+                "encoder.cls_token",
+                "encoder.pos_embed",
+            }:
+                layer = 0
+            # Final normalization and the classifier keep the full learning rate.
         decay = parameter.ndim > 1 and not name.endswith(("cls_token", "pos_embed"))
         group = groups.setdefault(
             (layer, decay),
@@ -130,48 +183,6 @@ def parameter_groups(model: Classifier, weight_decay: float, layer_decay: float)
         )
         group["params"].append(parameter)
     return list(groups.values())
-
-
-def load_split(config: dict) -> ClassificationSplit:
-    dataset = config["dataset"]
-    if dataset["kind"] == "imagenet":
-        split = build_split(dataset["root"], expected_classes=dataset["classes"])
-    else:
-        if digest(dataset["manifest"]) != dataset["manifest_sha256"]:
-            raise ValueError("split manifest SHA-256 changed")
-        if dataset["kind"] == "labeled_s":
-            text, _, _ = load_split_text(dataset["manifest"])
-            split = parse_split(text, dataset["root"])
-        elif dataset["kind"] == "manifest":
-            split = ClassificationSplit.from_mapping(
-                json.loads(Path(dataset["manifest"]).read_text())
-            )
-        else:
-            raise ValueError("unknown dataset kind")
-    if (len(split.train), len(split.test), len(split.classes)) != (
-        dataset["train_size"],
-        dataset["test_size"],
-        dataset["classes"],
-    ):
-        raise ValueError("dataset counts differ from the pinned protocol")
-    train_paths = {item.image for item in split.train}
-    if train_paths.intersection(item.image for item in split.test):
-        raise ValueError("training and held-out images overlap")
-    return split
-
-
-def split_identity(split: ClassificationSplit) -> dict:
-    sha = hashlib.sha256(json.dumps(split.classes).encode())
-    for name in ("train", "test"):
-        sha.update(name.encode())
-        for item in getattr(split, name):
-            sha.update(json.dumps([item.image, item.label]).encode() + b"\n")
-    return {
-        "classes": list(split.classes),
-        "membership_sha256": sha.hexdigest(),
-        "n_train": len(split.train),
-        "n_test": len(split.test),
-    }
 
 
 def train_transform(config: dict):
@@ -203,13 +214,13 @@ def learning_rate(config: dict, progress: float) -> float:
 
 def make_loader(items, transform, config: dict, *, training: bool, epoch: int = 0):
     return DataLoader(
-        _ImageDataset(items, transform),
+        ImageDataset(items, transform),
         batch_size=config["batch_size"],
         shuffle=training,
         num_workers=config["workers"],
         pin_memory=config["device"].startswith("cuda"),
         worker_init_fn=seed_worker,
-        generator=torch.Generator().manual_seed(config["seed"] + epoch),
+        generator=torch.Generator().manual_seed(epoch_seed(config["seed"], epoch)),
         persistent_workers=False,
         drop_last=False,
     )
@@ -220,7 +231,8 @@ def prepare_model(model: nn.Module, config: dict) -> nn.Module:
     torch.backends.cudnn.benchmark = config.get("cudnn_benchmark", False)
     model.to(config["device"])
     if config.get("channels_last", False):
-        model.to(memory_format=torch.channels_last)
+        # PyTorch accepts memory_format here, but its Module.to overloads omit it.
+        model.to(memory_format=torch.channels_last)  # type: ignore[call-overload]
     mode = config.get("compile_mode")
     if mode is not None:
         # In-place compilation preserves checkpoint keys and encoder/head attributes.
@@ -241,7 +253,7 @@ def accuracy(model, loader, config: dict) -> dict:
     model.eval()
     deferred = config.get("defer_metrics", False)
     correct = torch.zeros((), dtype=torch.int64, device=config["device"]) if deferred else 0
-    top5 = torch.zeros_like(correct) if deferred else 0
+    top5 = torch.zeros((), dtype=torch.int64, device=config["device"]) if deferred else 0
     finite = torch.ones((), dtype=torch.bool, device=config["device"])
     total = 0
     for images, labels in loader:
@@ -339,71 +351,92 @@ def train_epoch(model, loader, optimizer, config: dict, epoch: int, progress_cal
     }
 
 
-def run(config: dict, *, max_epochs: int | None = None, max_seconds: float | None = None) -> int:
-    if config["batch_size"] < 1 or config["accumulation"] < 1:
-        raise ValueError("batch_size and accumulation must be positive")
-    if not 0 <= config["warmup_epochs"] < config["epochs"]:
-        raise ValueError("warmup must be shorter than training")
-    if config["amp"] and not config["device"].startswith("cuda"):
-        raise ValueError("BF16 AMP requires CUDA")
-    out = Path(config["output_dir"])
-    out.mkdir(parents=True, exist_ok=True)
-    with (out / ".lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return run_locked(config, out, max_epochs=max_epochs, max_seconds=max_seconds)
+class FineTunePaused(RuntimeError):
+    """Signal an incomplete run whose last completed epoch can be resumed."""
 
 
-def run_locked(config: dict, out: Path, *, max_epochs, max_seconds) -> int:
+def fit(
+    model: ComposedModel,
+    split: ClassificationSplit,
+    config: dict,
+    *,
+    output_dir: str | Path | None = None,
+    max_epochs: int | None = None,
+    max_seconds: float | None = None,
+) -> dict[str, float]:
+    """Fine-tune a private encoder copy and return final-epoch classification scores.
+
+    An output directory enables epoch-boundary resume. Resume requires identical
+    starting weights, construction, configuration, split membership and runtime.
+    Split hashes identify paths and labels, not image contents. Execution budgets
+    raise FineTunePaused after saving an epoch rather than returning partial scores.
+    """
+    validate_config(config)
+    if max_epochs is not None and max_epochs < 1:
+        raise ValueError("max_epochs must be positive")
+    if max_seconds is not None and max_seconds <= 0:
+        raise ValueError("max_seconds must be positive")
+    out = Path(output_dir) if output_dir is not None else None
+    if out is not None:
+        out.mkdir(parents=True, exist_ok=True)
+    previous_autotuning = torch.backends.cudnn.benchmark
+    try:
+        with (
+            (out / ".lock").open("a") if out is not None else nullcontext() as lock,
+            _isolated_evaluation_rng(config["seed"]),
+            torch.inference_mode(False),
+            torch.enable_grad(),
+        ):
+            if lock is not None:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return _fit_locked(model, split, config, out, max_epochs, max_seconds)
+    finally:
+        torch.backends.cudnn.benchmark = previous_autotuning
+
+
+def _fit_locked(source, split, config, out, max_epochs, max_seconds) -> dict[str, float]:
+    import torchvision
+
+    from egolearn.evaluation import image_data
+
     started = time.monotonic()
-    torch.set_num_threads(config.get("threads", 1))
+    provenance = {
+        **encoder_identity(source, config["encoder"]),
+        "dataset": split.metadata(),
+        "config": config,
+        "engine_sha256": digest(__file__),
+        "image_data_sha256": digest(image_data.__file__),
+        "torch": str(torch.__version__),
+        "torchvision": str(torchvision.__version__),
+    }
+    provenance = json.loads(json.dumps(provenance, allow_nan=False))
+    fingerprint = hashlib.sha256(json.dumps(provenance, sort_keys=True).encode()).hexdigest()
+    if out is not None:
+        provenance_path = out / "provenance.json"
+        if provenance_path.exists():
+            if json.loads(provenance_path.read_text()) != provenance:
+                raise ValueError("fine-tuning resume provenance changed")
+        else:
+            if any((out / name).exists() for name in ("latest.pth", "results.json")):
+                raise ValueError("fine-tuning resume provenance is missing")
+            write_json(provenance_path, provenance)
     seed_all(config["seed"])
-    fingerprint = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
-    if (out / "config.json").exists():
-        if json.loads((out / "config.json").read_text()) != config:
-            raise ValueError("output directory belongs to a different configuration")
-    else:
-        write_json(out / "config.json", config)
-    if (out / "results.json").exists():
-        print(f"Already complete: {out}", flush=True)
-        return 0
-    split = load_split(config)
-    model, provenance = load_classifier(config, len(split.classes))
+    model = make_classifier(source, len(split.classes), config)
     prepare_model(model, config)
     optimizer = torch.optim.AdamW(
         parameter_groups(model, config["weight_decay"], config["layer_decay"]), lr=config["lr"]
     )
-    import torchvision
-
-    import egolearn
-
-    provenance.update(
-        dataset=split_identity(split),
-        config_sha256=fingerprint,
-        runner_sha256=digest(__file__),
-        package_file=egolearn.__file__,
-        torch=str(torch.__version__),
-        torchvision=str(torchvision.__version__),
-        job_id=os.environ.get("SLURM_JOB_ID"),
-        gpu=torch.cuda.get_device_name() if config["amp"] else None,
-    )
-    provenance_path = out / "provenance.json"
     start_epoch = 0
     history = []
-    if (out / "latest.pth").exists():
+    if out is not None and (out / "latest.pth").exists():
         state = torch.load(out / "latest.pth", map_location="cpu", weights_only=True)
-        if state["config_sha256"] != fingerprint:
-            raise ValueError("resume configuration mismatch")
-        previous = json.loads(provenance_path.read_text())
-        for key in ("dataset", "runner_sha256", "torch", "torchvision", "package_file"):
-            if previous[key] != provenance[key]:
-                raise ValueError(f"resume provenance changed: {key}")
+        if state["provenance_sha256"] != fingerprint:
+            raise ValueError("fine-tuning checkpoint provenance changed")
         model.load_state_dict(state["model"], strict=True)
         optimizer.load_state_dict(state["optimizer"])
         start_epoch = state["epoch"]
         history = state["history"]
         del state
-    else:
-        write_json(provenance_path, provenance)
     eval_loader = make_loader(
         split.test, VIEWS.get(config["eval_view"])(size=config["size"]), config, training=False
     )
@@ -411,83 +444,58 @@ def run_locked(config: dict, out: Path, *, max_epochs, max_seconds) -> int:
         min(config["epochs"], start_epoch + max_epochs) if max_epochs else config["epochs"]
     )
     for epoch in range(start_epoch, final_epoch):
-        seed_all(config["seed"] + epoch)
+        seed_all(epoch_seed(config["seed"], epoch))
         loader = make_loader(
             split.train, train_transform(config), config, training=True, epoch=epoch
         )
         epoch_started = time.monotonic()
 
         def report(batch, batches, loss, epoch=epoch, epoch_started=epoch_started):
-            value = {
-                "state": "running",
-                "epoch": epoch + 1,
-                "epochs": config["epochs"],
-                "batch": batch,
-                "batches": batches,
-                "loss": loss,
-                "job_id": os.environ.get("SLURM_JOB_ID"),
-                "epoch_seconds": time.monotonic() - epoch_started,
-            }
-            write_json(out / "status.json", value)
-            print(json.dumps(value), flush=True)
+            if out is not None:
+                write_json(
+                    out / "status.json",
+                    {
+                        "state": "running",
+                        "epoch": epoch + 1,
+                        "epochs": config["epochs"],
+                        "batch": batch,
+                        "batches": batches,
+                        "loss": loss,
+                        "epoch_seconds": time.monotonic() - epoch_started,
+                    },
+                )
 
         metrics = train_epoch(model, loader, optimizer, config, epoch, report)
         if (epoch + 1) % config["eval_every"] == 0 or epoch + 1 == config["epochs"]:
             metrics.update(accuracy(model, eval_loader, config))
-        metrics.update(epoch=epoch + 1, seconds=time.monotonic() - epoch_started)
+        metrics.update(epoch=epoch + 1)
         history.append(metrics)
-        state = {
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "epoch": epoch + 1,
-            "config_sha256": fingerprint,
-            "history": history,
-        }
-        torch.save(state, out / "latest.pth.tmp")
-        (out / "latest.pth.tmp").replace(out / "latest.pth")
-        write_json(out / "history.json", {"epochs": history})
-        print(json.dumps(metrics), flush=True)
+        if out is not None:
+            state = {
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "epoch": epoch + 1,
+                "provenance_sha256": fingerprint,
+                "history": history,
+            }
+            torch.save(state, out / "latest.pth.tmp")
+            (out / "latest.pth.tmp").replace(out / "latest.pth")
+            write_json(out / "history.json", {"epochs": history})
         if max_seconds and time.monotonic() - started >= max_seconds:
             break
     complete = bool(history) and history[-1]["epoch"] == config["epochs"]
-    status = {
-        "state": "complete" if complete else "paused",
-        "epoch": history[-1]["epoch"],
-        "epochs": config["epochs"],
-        "job_id": os.environ.get("SLURM_JOB_ID"),
-    }
-    write_json(out / "status.json", status)
-    if complete:
+    if out is not None:
         write_json(
-            out / "results.json",
+            out / "status.json",
             {
-                "status": "complete",
-                "metrics": history[-1],
-                "provenance": provenance,
-                "config": config,
+                "state": "complete" if complete else "paused",
+                "epoch": history[-1]["epoch"],
+                "epochs": config["epochs"],
             },
         )
-    return 0 if complete else 75
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("config", type=Path)
-    parser.add_argument("--max-epochs", type=int)
-    parser.add_argument("--max-seconds", type=float)
-    args = parser.parse_args()
-    config = OmegaConf.to_container(OmegaConf.load(args.config), resolve=True)
-    try:
-        raise SystemExit(run(config, max_epochs=args.max_epochs, max_seconds=args.max_seconds))
-    except Exception as error:
-        out = Path(config["output_dir"])
-        if out.is_dir():
-            write_json(
-                out / "failure.json",
-                {"error": repr(error), "job_id": os.environ.get("SLURM_JOB_ID")},
-            )
-        raise
-
-
-if __name__ == "__main__":
-    main()
+    if not complete:
+        raise FineTunePaused("fine-tuning paused at an epoch boundary; rerun to resume")
+    metrics = {key: float(value) for key, value in history[-1].items()}
+    if out is not None:
+        write_json(out / "results.json", {"metrics": metrics, "provenance_sha256": fingerprint})
+    return metrics
