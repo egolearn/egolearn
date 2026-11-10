@@ -169,13 +169,22 @@ synchronization actor. A merge-commit PR in the private repository would create
 private-only history, so do not merge synchronization PRs.
 
 Before the first synchronization, configure the private repository's PR rule to
-allow that actor to bypass the PR requirement. For rulesets, put the PR rule in
-its own ruleset with the designated actor's bypass. Keep deletion and
+allow that actor to bypass the PR requirement. For
+[rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository), put the PR rule in
+its own ruleset with the designated actor's bypass set to **Always allow**.
+Keep deletion and
 non-fast-forward prohibitions in a separate ruleset without a bypass. For classic
 branch protection, use
 [specified actors allowed to bypass required pull requests](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/managing-a-branch-protection-rule).
 Keep required checks enabled and do not add this synchronization exception to
-public `main`. The protection setup script does not configure this exception.
+public `main`. The protection setup script requires an explicit repository and
+does not preserve or configure this exception. Do not run it against private
+`main` after setting up synchronization.
+
+If the private repository lacks check results for the public commit, push that
+commit to a temporary private branch and open a validation PR to run CI. After
+checks pass, close the PR without merging it. The designated actor then performs
+the fast-forward push; do not use the PR's merge button.
 
 After public merges and successful checks, run from a checkout with `origin`
 pointing to the public repository and `dev` pointing to the private repository:
@@ -187,11 +196,8 @@ git merge-base --is-ancestor dev/main origin/main &&
   git push dev refs/remotes/origin/main:refs/heads/main
 ```
 
-If the private repository lacks check results for that commit, push it to a
-temporary private branch and open a validation PR to run CI. After checks pass,
-the designated actor performs the fast-forward push and closes that PR without
-merging it. If the ancestry check fails, stop and have the release owners resolve
-the divergence. Never force-push either `main`; keep unpublished commits on
+If the ancestry check fails, stop and have the release owners resolve the
+divergence. Never force-push either `main`; keep unpublished commits on
 private project branches so private `main` can follow public history.
 
 ## Later releases

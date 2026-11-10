@@ -112,6 +112,7 @@ patch releases for fixes during 0.x development.
 
 - The README starts with dataset-free CPU training, and the release guide publishes only explicitly audited refs.
 - Advisory reviews pin both the upstream workflow and reviewer code, with fork PRs excluded explicitly.
+- The branch-protection setup script requires an explicit repository, preventing accidental changes to the private development repository.
 
 - The `generation` capability becomes `text_generation`, and generative components must produce text.
 - Site builds use pinned uv in a separate Python 3.12 environment and keep Cloudflare previews unindexed.

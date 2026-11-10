@@ -2,14 +2,17 @@
 # Apply branch protection to main. Requires GitHub Team (or public repo) and admin rights.
 #
 # Usage:
-#   bash scripts/setup_branch_protection.sh [owner/repo] [approvals] [enforce_admins]
-#   bash scripts/setup_branch_protection.sh                              # defaults: 1 approval, admins enforced
+#   bash scripts/setup_branch_protection.sh owner/repo [approvals] [enforce_admins]
+#   bash scripts/setup_branch_protection.sh egolearn/egolearn             # defaults: 1 approval, admins enforced
 #   bash scripts/setup_branch_protection.sh agentic-learning-ai-lab/egolearn 1 false
 #                                                                        # setup phase: PI can bypass
 #
 # Review gate: approvals must come from a CODE OWNER (.github/CODEOWNERS), so only
 # code-owner approvals count. enforce_admins=false lets repo admins (org owners)
-# bypass the gate — use only during repo setup, then re-run with the default (true).
+# bypass the gate — use only during repo setup, then restore true on that repository.
+# Do not apply this template to private main after configuring its sync exception:
+# it replaces classic protection without PR bypass allowances and can add a second
+# PR requirement on top of a ruleset.
 #
 # Notes:
 # - required_linear_history stays FALSE: this repo merges with merge commits only
@@ -18,7 +21,12 @@
 # - The checks list must match the job names in .github/workflows/ci.yml.
 set -euo pipefail
 
-REPO="${1:-agentic-learning-ai-lab/egolearn}"
+if [[ $# -eq 0 ]]; then
+  echo "usage: $0 owner/repo [approvals] [enforce_admins]" >&2
+  exit 2
+fi
+
+REPO="$1"
 APPROVALS="${2:-1}"
 ENFORCE_ADMINS="${3:-true}"
 

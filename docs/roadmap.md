@@ -105,6 +105,6 @@ real workloads before choosing an implementation.
 
 ## Ongoing
 
-- BabyCL's public code release accompanies publication; its implementation is already
-  available in this private repository.
-- Further egocentric QA and streaming-memory work arrives via `-dev` branches.
+Unpublished research stays on branches of the private development repository.
+Project branches enter the public repository after the publication review
+described in [RELEASING.md](../RELEASING.md).
