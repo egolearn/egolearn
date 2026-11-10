@@ -28,6 +28,8 @@ revision, resolved commit, and verification status recorded in
 `.egolearn-fetch.json`. Missing `checksums.sha256` requires `--allow-unverified`;
 incorrect checksums always fail. Use `--repo org/name` to override the dataset
 repository, and use a commit ID when the revision must be immutable.
+The catalog keeps explicit repository IDs for existing lab-hosted collections,
+so these commands retain their configured repository locations.
 
 ## Packaged collections
 
@@ -135,6 +137,11 @@ distribution rights. Dataset uploads include non-hidden payload files, so
 inspect the directory first and exclude credentials, restricted data, embedded
 frames, and personal run metadata.
 
+The lower-level `egolearn.hub` fetch and push commands default to
+`egolearn/<name>`, without adding a repository-name prefix. Use `--repo org/name`
+to select another repository. Unlike `egl data fetch`, the lower-level fetch
+command does not consult the dataset catalog.
+
 To upload a prepared dataset directory:
 
 ```bash
@@ -153,9 +160,10 @@ uv run python -m egolearn.hub push exports/babycl-saycam-seed0 \
 Replace the paths, names, and license with the approved values for your artifact.
 Model uploads require a validated `model.safetensors` and `model.json` pair,
 and reject other payloads, including `.pth` files. Model repository
-names follow `egolearn-<method>-<data>-seed<n>`. Pass only
-`<method>-<data>-seed<n>` as `--name`, because `push` adds the `egolearn-` prefix.
-An explicit `--repo org/name` overrides that repository name.
+names can include the method, training data, and seed. The example targets
+`egolearn/babycl-saycam-seed0`. An explicit `--repo org/name` overrides that
+repository ID. Revisioned `hf://` references always use their explicit
+organization and repository, including existing lab-hosted artifacts.
 
 Released SAYCam and BabyView checkpoints use public repositories with manual
 approval. Applicants must email evidence of access to the corresponding dataset

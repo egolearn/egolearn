@@ -23,7 +23,7 @@ CHECKSUMS = "checksums.sha256"
 CARD = "README.md"
 FETCH_RECORD = ".egolearn-fetch.json"
 _CHUNK = 1 << 20
-ORG = "agentic-learning-ai-lab"
+ORG = "egolearn"
 
 
 def resolve(path: str | Path, *, repo_type: str = "dataset") -> Path:
@@ -158,7 +158,7 @@ def _check_repo_name(name: str, what: str) -> None:
 
 def _check_name(name: str) -> None:
     """A collection name is one path segment and a Hub repo name: it names
-    ``dest/<name>`` and the repo ``<org>/egolearn-<name>``, so it stays
+    ``dest/<name>`` and the repo ``<org>/<name>``, so it stays
     within the repo-name charset — no separators, whitespace or Markdown
     punctuation can be in it."""
     _check_repo_name(name, "the collection name")
@@ -278,7 +278,7 @@ def fetch(
     target = root / name
     if target.exists() and not replace:
         raise FileExistsError(f"destination already exists: {target}; pass --replace to replace it")
-    rid = repo or f"{ORG}/egolearn-{name}"
+    rid = repo or f"{ORG}/{name}"
     info = HfApi().repo_info(repo_id=rid, repo_type=repo_type, revision=revision)
     if not info.sha:
         raise RuntimeError(f"no commit returned for {rid}@{revision}")
@@ -360,7 +360,7 @@ def push(
     src = Path(src)
     if not src.is_dir():
         raise NotADirectoryError(src)
-    rid = repo or f"{ORG}/egolearn-{name}"
+    rid = repo or f"{ORG}/{name}"
     with tempfile.TemporaryDirectory(prefix="egolearn-push-") as temporary:
         stage = Path(temporary)
         for relative in _listed_files(src):

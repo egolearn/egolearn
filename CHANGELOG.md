@@ -110,6 +110,8 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- Hub fetches and uploads default to `egolearn/<name>`, while cataloged datasets retain their existing repository IDs.
+
 - SAYCam and BabyView checkpoint access instructions require evidence of access
   to the corresponding Databrary dataset.
 - The README starts with dataset-free CPU training, and the release guide publishes only explicitly audited refs.
