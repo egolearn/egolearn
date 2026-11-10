@@ -78,20 +78,17 @@ Reversible triage defaults, revisited whenever a project shows the need:
 - Plugin registries — hydra `_target_` instantiation covers it.
 - Streaming-pipeline frameworks — adopt only against a measured bottleneck.
 
-## Port triage findings (2026-08-02)
+## Porting approach
 
-Promote when needed: temporal segmentation core; replay buffer family; SSL
-losses; guaranteed-overlap two-crop; extraction CLI, ffprobe rotation, metadata
-cache; LLM provider switch and prompt-template contract.
+Ports adapt each method to seeded randomness, deterministic stream ordering,
+configuration-driven paths, and the shared training and evaluation interfaces.
+Current fixed-feature readouts use frozen train/test splits and fixed settings.
+A readout that tunes settings must select them on a separate validation split.
 
-Fix at port time, don't replicate: dead imports in the main storyboard trainer;
-unsorted stream order; test-set model selection in kNN/SVM readout; missing
-seeding; lifelong-memory's `end=3` default, swallowed caption-merge exception,
-and broken rate-limit handling.
-
-Leave behind: per-ablation model classes; seven trainer copies; apex dependency;
-GPU-burning dummy ops; `sys.path` hacks; hardcoded cluster paths; shuffled-access
-mp4 reader machinery.
+Method-specific components remain under `methods/<name>/`. Shared components
+enter the library when a concrete experiment needs them, with attribution and
+tests for the supported behavior. The [roadmap](../roadmap.md) records candidates
+for later ports.
 
 ## Licensing rules
 

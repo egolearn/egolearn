@@ -9,6 +9,9 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- EgoLearn includes software citation metadata and package links for documentation, source code, and issue reports.
+- Source and wheel distributions include the NVIDIA Apex, V-JEPA 2, and Ego4D license notices.
+- BabyCL documents its frame layout, aligned transcript format, vocabulary source, and training prerequisites.
 - EgoSchema and Ego4D NLQ score generative models zero-shot through generic multiple-choice and temporal-grounding scorers with configurable prompts and reply parsers.
 - `generative:openai_chat` queries OpenAI-compatible servers such as vLLM, caching replies on disk by full request.
 - Composed models carry generative components, and `egl eval` builds a model from `model_config` when `checkpoint` is null.
@@ -106,6 +109,9 @@ patch releases for fixes during 0.x development.
   with each protocol difference stated.
 
 ### Changed
+
+- The README starts with dataset-free CPU training, and the release guide publishes only explicitly audited refs.
+- Advisory reviews pin both the upstream workflow and reviewer code, with fork PRs excluded explicitly.
 
 - The `generation` capability becomes `text_generation`, and generative components must produce text.
 - Site builds use pinned uv in a separate Python 3.12 environment and keep Cloudflare previews unindexed.

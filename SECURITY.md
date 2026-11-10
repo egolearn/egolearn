@@ -1,8 +1,13 @@
 # Security and repo hygiene
 
-This repo's full git history becomes public at first release and **can never be
-rewritten afterward** (history is shared with the private mirror). Prevention is the
-only defense — hence gitleaks in pre-commit and CI, and the 500 KB file blocker.
+Every commit reachable from a published branch or tag becomes public, including
+files removed in later commits. The existing development repository stays private;
+the separate `egolearn/egolearn` repository receives only audited release refs.
+See [RELEASING.md](RELEASING.md) for the audit and publication procedure.
+
+Public and private repositories share released history. Do not rewrite that
+history to remove an exposure: copies may already exist elsewhere. Gitleaks in
+pre-commit and CI, together with the 500 KB file blocker, help prevent exposures.
 
 ## Never commit
 
@@ -52,8 +57,10 @@ snapshots remain local run artifacts and are never published to model repos.
 
 1. **Rotate it immediately** — assume it is compromised the moment it is pushed.
 2. Tell the PI.
-3. While the repo is still private, a coordinated history rewrite is possible.
-   After the public flip it is not; rotation is the only remedy.
+3. For unpublished history, coordinate any cleanup with the release owners before
+   copying refs to the public repository. Rewriting history does not revoke a
+   credential or remove copies already fetched by others. Do not rewrite shared
+   released history as a substitute for rotation.
 
 ## Reporting a vulnerability
 

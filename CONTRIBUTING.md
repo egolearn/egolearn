@@ -12,8 +12,8 @@ uv run pre-commit install
 - `main` is protected: all changes land via PR with green CI.
 - Branch off `main`: `feat/<topic>`, `fix/<topic>`, or `proj/<name>` for paper projects.
 - **Merge commits only — squash and rebase merges are disabled at the repo level.**
-  Commit hashes must stay shared with the private `-dev` mirror after the public flip
-  (see RELEASING.md); rewriting history breaks that permanently.
+  Public and private repositories share the history of released work. Preserve
+  those commit hashes when synchronizing them (see [RELEASING.md](RELEASING.md)).
 - Keep long-lived branches fresh with `git merge main`, never rebase.
 - Never force-push a shared branch.
 
@@ -191,4 +191,7 @@ safety, and data-integrity checks when trimming redundant smoke tests.
 ## Confidentiality
 
 Research is confidential until published. See SECURITY.md for the never-commit list —
-remember that today's private history becomes public at first release.
+all history reachable from a published branch or tag becomes public with it.
+The existing `agentic-learning-ai-lab/egolearn` repository stays private;
+`egolearn/egolearn` receives only audited release refs. After publication, start
+unpublished work from public `main` and push it only to the private repository.

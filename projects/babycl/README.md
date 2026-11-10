@@ -11,8 +11,8 @@ For silent KrishnaCam videos, use the
 
 Use the [default config](configs/saycam_default.yaml) for streaming training.
 Override `stream.root_dir`, `stream.transcript_json`, and `tokenizer.vocab_json`
-with your input paths. BabyCL expects upright SAYCam frames, already flipped from
-their raw orientation.
+with your input paths. The [training input guide](docs/training_data.md) specifies
+the 5 fps frame layout, orientation, transcript format, and vocabulary source.
 
 The [shared settings](configs/saycam_shared.yaml) also construct Labeled-S 4AFC,
 VTWT, and Baby Winoground probes. Override their manifest, CSV, image, and vocabulary
@@ -20,10 +20,17 @@ paths, or set `probes=[]` to disable them. Their manifest, CSV, and vocabulary f
 must exist even for `dry_run=true`. See the
 [evaluation data guide](../../docs/evaluation/data.md) for access and preparation.
 
+Set `SAYCAM_ROOT`, `SAYCAM_TRANSCRIPTS`, and `BABYCL_VOCAB` to the prepared inputs,
+then validate the training pipeline without constructing the evaluation probes:
+
 ```bash
-egl train projects/babycl/configs/saycam_default.yaml dry_run=true
-egl train projects/babycl/configs/saycam_default.yaml
+uv run egl train projects/babycl/configs/saycam_default.yaml \
+  stream.root_dir="$SAYCAM_ROOT" stream.transcript_json="$SAYCAM_TRANSCRIPTS" \
+  tokenizer.vocab_json="$BABYCL_VOCAB" probes=[] dry_run=true
 ```
+
+Remove `dry_run=true` to train on a GPU. The default frozen segmenter needs
+ImageNet ResNeXt-50 weights, which torchvision downloads if they are not cached.
 
 The recipe combines visual instance discrimination, temporal classification, and
 image–text contrastive learning. Each full batch contains three visual segments

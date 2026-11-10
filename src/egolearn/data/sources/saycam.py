@@ -16,9 +16,9 @@ finished.  The RAW timestamp list travels in the payload (text.timestamps)
 because BabyCL's AN chunk emitter splits non-contiguous runs into separate
 chunks.
 
-Dataset-level preprocessing (5fps decoding, orientation fixes) happens in
-the prepare scripts before training; adapters only read what is already on
-disk.
+Dataset-level preprocessing (5fps decoding, orientation fixes) happens before
+training; adapters only read what is already on disk. See
+projects/babycl/docs/training_data.md for the frame and transcript contracts.
 """
 
 from __future__ import annotations

@@ -14,7 +14,7 @@
 # Notes:
 # - required_linear_history stays FALSE: this repo merges with merge commits only
 #   (squash/rebase are disabled at the repo level) so hashes remain shared with the
-#   private -dev mirror after the public flip. Linear history would forbid that.
+#   private development repository. Linear history would forbid that.
 # - The checks list must match the job names in .github/workflows/ci.yml.
 set -euo pipefail
 
