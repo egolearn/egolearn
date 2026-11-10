@@ -142,6 +142,8 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- The landing page provides runnable synthetic training commands and identifies available dataset and physics benchmarks.
+
 - Staging sites allow crawlers to read `noindex` tags without `robots.txt` blocking access to the pages.
 - VoE probes reject videos shorter than `num_frames`, preventing repeated frames
   from affecting IntPhys 2 and GRASP scores.
