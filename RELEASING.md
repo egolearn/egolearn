@@ -176,6 +176,9 @@ Keep required checks, deletion prohibitions, and non-fast-forward prohibitions
 in a separate ruleset without a bypass. For classic
 branch protection, use
 [specified actors allowed to bypass required pull requests](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/managing-a-branch-protection-rule).
+Keep all five required checks and `enforce_admins=true` on that classic rule.
+Enable administrator enforcement by editing the existing rule in repository
+settings, preserving the designated actor's PR bypass.
 
 Do not add this synchronization exception to public `main`.
 The protection setup script requires an explicit repository and
@@ -205,7 +208,8 @@ gh run list --repo agentic-learning-ai-lab/egolearn --workflow ci.yml \
 ```
 
 Wait for that run to finish successfully, with all five required checks and the
-docs build passing. Verify its `headSha` equals `sync_commit`. Keep the selected
+docs build passing. Stop if the run fails, is cancelled, or does not appear.
+Verify its `headSha` equals `sync_commit`. Keep the selected
 commit unchanged, then refresh private `main` and push with the designated actor:
 
 ```bash
@@ -214,7 +218,8 @@ git merge-base --is-ancestor dev/main "$sync_commit" &&
   git push dev "$sync_commit:refs/heads/main"
 ```
 
-If the ancestry check fails, stop and have the release owners resolve the
+If the ancestry check fails, stop and check whether another synchronization
+already advanced private `main`. Have the release owners resolve any actual
 divergence. Never force-push either `main`; keep unpublished commits on
 private project branches so private `main` can follow public history. Delete
 the temporary `release-sync/<sha>` branch after a successful synchronization.
