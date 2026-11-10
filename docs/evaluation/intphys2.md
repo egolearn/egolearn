@@ -1,10 +1,17 @@
 # IntPhys 2
 
-**Task:** violation-of-expectation (VoE) on synthetic physics videos. A video
-model that has learned intuitive physics should find a physically impossible
+The IntPhys 2 probe measures violation-of-expectation on synthetic physics
+videos. It reports pairwise accuracy and AUROC, with higher scores better and 50% chance
+performance.
+
+Scores from this probe are not directly comparable to the paper's tables.
+The probe samples each whole video into one window, while the paper's
+[prediction-based protocol](https://arxiv.org/html/2506.09849v1)
+evaluates overlapping windows.
+
+A video model that has learned intuitive physics should find an impossible
 video more surprising than its matched possible twin. Surprise is the model's
-own prediction error; no classifier is trained. The headline is **pairwise
-accuracy** (higher is better; chance is 50%).
+prediction error, without a trained classifier.
 
 The benchmark is Bordes et al.,
 [*IntPhys 2: Benchmarking Intuitive Physics Understanding In Complex Synthetic
@@ -51,11 +58,14 @@ registered evaluation `view`, which must be a per-image view such as `resize`
 `center_crop`; the `clip_*` views expect clip tensors. The clip is scored as a
 single window.
 
+Each video must contain at least `num_frames` frames (64 by default). A shorter
+video raises an error with its path and frame count before scoring the pair.
+
 For each context length C in `context_frames`, the first C frames are the context
-and the remaining frames the target. Surprise is the V-JEPA training objective:
-the context encoder sees only the context tokens, the predictor fills in the
-target tokens, and surprise is their mean L1 distance to the frozen target
-encoder's layer-normalized tokens at the same positions. `distance: l2` uses the
+and the remaining frames the target. The context encoder sees only the context
+tokens, and the predictor fills in the target tokens. Surprise is their mean
+L1 distance to the frozen target encoder's layer-normalized tokens at the same
+positions, matching the V-JEPA training objective. `distance: l2` uses the
 mean squared error instead. Context lengths must be multiples of the encoder's
 tubelet size. All context lengths share one decode and one target-encoder pass
 per video.
@@ -63,27 +73,28 @@ per video.
 A pair is correct when the impossible video is strictly more surprising than
 the possible one. `voe_acc_ctx<C>` scores each context length alone. `voe_acc`
 first averages each video's surprise over all context lengths, then compares
-once per pair.
-
-This is not the paper's prediction-based protocol, which slides 48-frame windows
-over the video (frame step 10) and sweeps context lengths 12-42 with a growing
-context. Scores from this probe are therefore not directly comparable to the
-paper's tables.
+once per pair. `voe_auroc` ranks every video by that pooled surprise without
+pairing. It measures the probability that an impossible video is more surprising
+than a possible one, counting ties as one half (chance 50%).
 
 ## Registered evaluation probe
 
-`probe:intphys2` requires `video_representation` and `prediction`. It reaches the
-model only by name: the context encoder (`context`, default `video`), the frozen
-target encoder (`target`, default `video_target`), and the predictor
-(`predictor`, default `pred`), as in a `loss:vjepa` model. It runs during
+`probe:intphys2` requires `video_representation` and `prediction`. It uses named
+model components as in a `loss:vjepa` model. These are the context encoder
+(`context`, default `video`), frozen target encoder (`target`, default
+`video_target`), and predictor (`predictor`, default `pred`). It runs during
 training through `probes:` or on a checkpoint through the standalone evaluator.
 
-Merge this fragment into an evaluation config (set the dataset root):
+Save this standalone config as `intphys2_eval.yaml` and set the dataset root:
 
 ```yaml
+defaults:
+  - /evaluate
+  - _self_
+
 _imports_:
   - egolearn.evaluation.benchmarks.intphys2
-probes:
+benchmarks:
   - _target_: "probe:intphys2"
     name: intphys2
     data_root: /datasets/intphys2/Main
@@ -94,12 +105,24 @@ probes:
     size: 224
 ```
 
-The values shown are the defaults; `context_frames` also accepts a single
-integer. For standalone evaluation, place the same entry under `benchmarks:`
-(see [the evaluation guide](../evaluation.md)). Metrics are `voe_acc` and one
+The values shown are the defaults, and `context_frames` also accepts a single
+integer. Compose the config without opening the dataset, then evaluate your
+checkpoint on a compatible GPU:
+
+```bash
+uv run egl eval intphys2_eval.yaml checkpoint=run/final.pth --cfg job
+uv run egl eval intphys2_eval.yaml \
+  checkpoint=run/final.pth device=cuda output_json=intphys2_results.json
+```
+
+The evaluator defaults to CPU if you omit `device=cuda`.
+
+For training, use the same entry under the training config's `probes` list and
+retain its registration module in `_imports_`. Metrics are `voe_acc`, `voe_auroc`, and one
 `voe_acc_ctx<C>` per context length, and the evaluator records the full probe
 configuration, including defaults, with the results. Before scoring, the probe
 checks that all 1,012 videos exist.
 
-Each run decodes all 1,012 videos one after another (several minutes), which
-pauses training when the probe runs inside it, so schedule it sparingly there.
+Each run decodes all 1,012 videos one after another, and its duration depends on
+the model, device, and storage. It pauses training when run as a probe, so
+schedule it sparingly there.

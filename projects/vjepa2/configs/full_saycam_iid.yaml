@@ -1,0 +1,8 @@
+defaults:
+  - shared
+  - source_saycam
+  - full_shared
+  - _self_
+run_dir: runs/vjepa2_full_saycam_iid
+hydra:
+  searchpath: [pkg://egolearn.configs]

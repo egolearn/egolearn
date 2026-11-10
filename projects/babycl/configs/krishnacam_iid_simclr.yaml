@@ -1,0 +1,14 @@
+defaults:
+  - krishnacam_iid_shared
+  - _self_
+
+hydra:
+  searchpath: [pkg://egolearn.configs]
+
+run_dir: ${oc.env:EGOLEARN_ARTIFACTS,runs}/iid_simclr_krishnacam/seed_${seed}
+model:
+  heads:
+    proj128: {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 128]}
+losses:
+  - {_target_: "loss:ntxent", name: instance,
+     slots: [frames], head: proj128, temperature: 0.2, weight: 1.0}

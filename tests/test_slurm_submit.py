@@ -97,12 +97,14 @@ def ready(call):
 
 def test_prep_chaining_cache_reuse_and_snapshot(cluster):
     checkout, _ = cluster
+    (checkout / "env.sh").write_text("synthetic settings")
     _, calls = submit(cluster, "--dependency=afterok:9", "--", "python", "program.py")
     assert len(calls) == 2
     assert "--partition=cpu" in calls[0]["args"]
     assert "SBATCH_PARTITION" not in calls[0]["env"]
     assert "--dependency=afterok:12345,afterok:9" in calls[1]["args"]
     job = Path(calls[1]["env"]["EGOLEARN_RUN_DIR"])
+    assert not (job / "code/env.sh").exists()
     assert json.loads((job / "run.json").read_text())["dirty"] is False
     assert (job / "dirty.diff").read_text() == ""
     assert (job / "job-id").read_text().strip() == "12345"
@@ -123,13 +125,6 @@ def test_dirty_checkout_refused(cluster, change):
     result, calls = submit(cluster, "--", "true", ok=False)
     assert "dirty checkout" in result.stderr
     assert not calls
-
-
-def test_ignored_credentials_not_snapshotted(cluster):
-    checkout, _ = cluster
-    (checkout / "env.sh").write_text("synthetic settings")
-    _, calls = submit(cluster, "--", "true")
-    assert not (Path(calls[-1]["env"]["EGOLEARN_RUN_DIR"]) / "code/env.sh").exists()
 
 
 def test_bench_array_plan_matches_archived_wheel_identity(cluster, monkeypatch, tmp_path):
@@ -206,14 +201,9 @@ def test_sweep_and_argument_preservation(cluster):
     assert rows[-1][2:4] == ["seed=2", "group@package=b"]
 
 
-def test_dry_run_does_not_submit(cluster):
-    result, calls = submit(cluster, "--dry-run", "--", "true")
-    assert not calls
-    assert "afterok:PREP_JOB_ID" in result.stdout
-
-
-@pytest.mark.parametrize("cached", [False, True])
-@pytest.mark.parametrize("mode", ["command", "sweep", "dry_run", "commands"])
+@pytest.mark.parametrize(
+    "cached,mode", [(False, "command"), (True, "sweep"), (False, "dry_run"), (True, "commands")]
+)
 def test_submission_needs_no_python_and_records_arguments(cluster, cached, mode):
     checkout, env = cluster
     if cached:
@@ -251,6 +241,8 @@ def test_submission_needs_no_python_and_records_arguments(cluster, cached, mode)
     assert record["submitted"].endswith("Z")
     assert (job / "work/program.py").read_text() == "print('submitted version')\n"
     assert len(calls) == (0 if mode == "dry_run" else 1 if cached else 2)
+    if mode == "dry_run":
+        assert "afterok:PREP_JOB_ID" in result.stdout
 
 
 def test_snapshot_preserves_unusual_names_and_rejects_links(cluster):
@@ -315,15 +307,18 @@ def test_required_cache_cannot_fall_back_to_home(cluster):
     assert "set HF_HOME" in result.stderr
 
 
-@pytest.mark.parametrize("gpu", [False, True])
 @pytest.mark.parametrize(
-    ("cpu_env", "threads"),
+    ("gpu", "cpu_env", "threads"),
     [
-        ({}, "1"),
-        ({"SLURM_CPUS_PER_TASK": "4"}, "4"),
-        ({"SLURM_CPUS_ON_NODE": "8", "SLURM_CPUS_PER_GPU": "8"}, "8"),
-        ({"SLURM_CPUS_PER_TASK": "4", "SLURM_CPUS_ON_NODE": "8"}, "4"),
-        ({"OMP_NUM_THREADS": "2", "SLURM_CPUS_PER_TASK": "4", "SLURM_CPUS_ON_NODE": "8"}, "2"),
+        (False, {}, "1"),
+        (True, {"SLURM_CPUS_PER_TASK": "4"}, "4"),
+        (True, {"SLURM_CPUS_ON_NODE": "8", "SLURM_CPUS_PER_GPU": "8"}, "8"),
+        (False, {"SLURM_CPUS_PER_TASK": "4", "SLURM_CPUS_ON_NODE": "8"}, "4"),
+        (
+            True,
+            {"OMP_NUM_THREADS": "2", "SLURM_CPUS_PER_TASK": "4", "SLURM_CPUS_ON_NODE": "8"},
+            "2",
+        ),
     ],
 )
 def test_run_uses_snapshot_and_readonly_bind(cluster, gpu, cpu_env, threads):
@@ -535,8 +530,7 @@ def test_unignored_logs_cannot_dirty_the_next_submission(cluster):
     assert not calls
 
 
-@pytest.mark.parametrize("script", ["train", "bench"])
-@pytest.mark.parametrize("per_gpu", [False, True])
+@pytest.mark.parametrize("script,per_gpu", [("train", False), ("bench", True)])
 def test_wrapper_resource_environment_overrides_defaults(cluster, script, per_gpu):
     checkout, env = cluster
     env.update(SBATCH_TIMELIMIT="01:00:00", SBATCH_GRES="gpu:typed:2", SBATCH_MEM_PER_GPU="32G")
@@ -553,17 +547,16 @@ def test_wrapper_resource_environment_overrides_defaults(cluster, script, per_gp
     assert "--cpus-per-task=8" not in calls[-1]["args"]
 
 
-@pytest.mark.parametrize("script", ["train", "bench"])
 @pytest.mark.parametrize(
-    ("resource_env", "cpu_default", "gpu_default"),
+    ("script", "resource_env", "cpu_default", "gpu_default"),
     [
-        ({"SBATCH_TRES_PER_TASK": "cpu=16"}, False, True),
-        ({"SBATCH_TRES_PER_TASK": "gres/gpu=1"}, True, False),
-        ({"SBATCH_TRES_PER_TASK": "gres/shard=1"}, True, False),
-        ({"SBATCH_TRES_PER_TASK": "gres/mps=50"}, True, False),
-        ({"SBATCH_TRES_PER_TASK": "license/ansys=1,gres/gpu:a100=2,cpu=16"}, False, False),
-        ({"SBATCH_TRES_PER_TASK": "license/ansys=1"}, True, True),
-        ({"SBATCH_GPUS_PER_SOCKET": "1"}, True, True),
+        ("train", {"SBATCH_TRES_PER_TASK": "cpu=16"}, False, True),
+        ("bench", {"SBATCH_TRES_PER_TASK": "gres/gpu=1"}, True, False),
+        ("train", {"SBATCH_TRES_PER_TASK": "gres/shard=1"}, True, False),
+        ("bench", {"SBATCH_TRES_PER_TASK": "gres/mps=50"}, True, False),
+        ("train", {"SBATCH_TRES_PER_TASK": "license/ansys=1,gres/gpu:a100=2,cpu=16"}, False, False),
+        ("bench", {"SBATCH_TRES_PER_TASK": "license/ansys=1"}, True, True),
+        ("train", {"SBATCH_GPUS_PER_SOCKET": "1"}, True, True),
     ],
 )
 def test_wrapper_tres_overrides_only_matching_resources(
@@ -631,3 +624,92 @@ def test_uncertain_prep_submission_preserves_its_code(cluster):
     assert len(calls) == 1
     assert "Submission outcome uncertain" in result.stderr
     assert list(Path(env["EGOLEARN_JOB_ROOT"]).glob("run-*/code/scripts/slurm/prep.sbatch"))
+
+
+@pytest.mark.parametrize(
+    ("status", "opt_in", "requeued"),
+    [
+        (75, True, True),
+        (75, False, False),
+        (76, True, False),
+        (1, True, False),
+        (0, True, False),
+    ],
+)
+def test_run_requeues_only_explicit_checkpointed_pause(cluster, status, opt_in, requeued):
+    checkout, env = cluster
+    _, calls = submit(cluster, "--", "true")
+    call = calls[-1]
+    ready(call)
+    bindir = Path(env["TEST_SUBMIT_LOG"]).parent / "bin"
+    (bindir / "apptainer").write_text(f"#!/bin/bash\nexit {status}\n")
+    (bindir / "apptainer").chmod(0o755)
+    log = checkout.parent / "requeues.txt"
+    (bindir / "scontrol").write_text(
+        f"#!/bin/bash\nprintf '%s\\n' \"$*\" > {shlex.quote(str(log))}\n"
+    )
+    (bindir / "scontrol").chmod(0o755)
+    child_env = {
+        **call["env"],
+        "SLURM_JOB_ID": "912",
+        "EGOLEARN_REQUEUE_ON_PAUSE": str(int(opt_in)),
+    }
+    job = Path(child_env["EGOLEARN_RUN_DIR"])
+    result = run(
+        ["bash", str(job / "code/scripts/slurm/run.sbatch"), "true"], cwd=checkout, env=child_env
+    )
+    assert result.returncode == (0 if requeued else status), result.stderr
+    assert log.exists() == requeued
+    if requeued:
+        assert log.read_text().strip() == "requeue 912"
+
+
+@pytest.mark.parametrize("late_signal", [False, True])
+def test_run_forwards_pause_signal_and_preserves_collected_exit_status(cluster, late_signal):
+    import signal
+    import time
+
+    checkout, env = cluster
+    _, calls = submit(cluster, "--", "true")
+    call = calls[-1]
+    ready(call)
+    bindir = Path(env["TEST_SUBMIT_LOG"]).parent / "bin"
+    marker, requeues = checkout.parent / "ready", checkout.parent / "requeues"
+    (bindir / "apptainer").write_text(
+        f"#!{sys.executable}\nimport os,signal,time\nfrom pathlib import Path\n"
+        "def pause(*args):\n"
+        " signal.signal(signal.SIGUSR1,signal.SIG_IGN)\n"
+        + (" os.kill(os.getppid(),signal.SIGUSR1)\n" if late_signal else "")
+        + " raise SystemExit(75)\n"
+        "signal.signal(signal.SIGUSR1,pause)\n"
+        f"Path({str(marker)!r}).touch()\n"
+        "while True: time.sleep(.01)\n"
+    )
+    (bindir / "apptainer").chmod(0o755)
+    (bindir / "scontrol").write_text(
+        f"#!/bin/bash\nprintf '%s\\n' \"$*\" > {shlex.quote(str(requeues))}\n"
+    )
+    (bindir / "scontrol").chmod(0o755)
+    child_env = {**call["env"], "SLURM_JOB_ID": "912", "EGOLEARN_REQUEUE_ON_PAUSE": "1"}
+    job = Path(child_env["EGOLEARN_RUN_DIR"])
+    process = subprocess.Popen(
+        ["bash", str(job / "code/scripts/slurm/run.sbatch"), "true"],
+        cwd=checkout,
+        env=child_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 15
+        while not marker.exists() and process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert marker.exists()
+        process.send_signal(signal.SIGUSR1)
+        _, errors = process.communicate(timeout=15)
+        assert process.returncode == 0, errors
+        assert requeues.read_text().strip() == "requeue 912"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()

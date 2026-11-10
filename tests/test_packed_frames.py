@@ -5,6 +5,7 @@ import json
 import os
 import pickle
 import random
+from collections import OrderedDict
 
 import numpy as np
 import pytest
@@ -13,7 +14,7 @@ from PIL import Image
 
 from egolearn.config.instantiate import instantiate
 from egolearn.core.refs import ItemRef
-from egolearn.data.loading import Loader
+from egolearn.data.loading import Loader, _decode_clip
 from egolearn.data.packed import PackedFrameStore, main, pack_frame_dirs, verify_store
 from egolearn.data.sources.packed import PackedFrameStream
 from egolearn.data.sources.saycam import SaycamStream
@@ -111,6 +112,28 @@ def test_store_is_byte_identical_and_refs_interchangeable(packed):
     store.close()
 
 
+@pytest.mark.parametrize("transcript_first", [False, True])
+def test_equal_time_order_matches_the_frame_dirs(packed, transcript_first):
+    # both fixture utterances end on a frame time, so stream.transcript_first
+    # decides each tie; a packed store must break it the same way
+    root, transcript, out, _ = packed
+    src = SaycamStream(
+        str(root), transcript_json=str(transcript), include="S_*", transcript_first=transcript_first
+    )
+    dst = PackedFrameStream(
+        str(out), transcript_json=str(transcript), transcript_first=transcript_first
+    )
+    for a, b in zip(src.sessions(), dst.sessions(), strict=True):
+        obs_a = [(o.channel, o.t, o.ref) for o in a.observations()]
+        obs_b = [(o.channel, o.t, o.ref) for o in b.observations()]
+        assert obs_a == obs_b
+        if "transcript" in b.channels:
+            k = next(i for i, (channel, _, _) in enumerate(obs_b) if channel == "transcript")
+            tie = obs_b[k + 1] if transcript_first else obs_b[k - 1]
+            assert tie[:2] == ("video", obs_b[k][1])
+    dst.close()
+
+
 def test_windows_and_clips_read_the_same_frames(packed):
     root, _, out, _ = packed
     src = SaycamStream(str(root), include="S_*")
@@ -141,6 +164,35 @@ def test_windows_and_clips_read_the_same_frames(packed):
     tb = Loader(dst, views).clip_views(short, ["ce"], 6, 1, random.Random(1), seed=2)
     assert torch.equal(ta, tb) and torch.equal(tb[0, 2], tb[0, 5])  # clamped repeats
     dst.close()
+
+
+def test_clip_cache_batches_only_missing_packed_frames(packed, monkeypatch):
+    root, _, out, _ = packed
+    src = SaycamStream(str(root))
+    dst = PackedFrameStream(str(out))
+    ref = ItemRef(S2, "video", 3.0, 3.8, (S2, 0, N2))
+    cache: OrderedDict = OrderedDict()
+    reads = []
+    read_many = dst.store.read_many
+
+    def counted_read(keys):
+        reads.append(keys)
+        return read_many(keys)
+
+    monkeypatch.setattr(dst.store, "read_many", counted_read)
+    try:
+        expected = _decode_clip(src, ref, 0, 7, 1)
+        # The clip is larger than the cache and pads its last frame twice.
+        for _ in range(2):
+            actual = _decode_clip(dst, ref, 0, 7, 1, cache, 3)
+            assert torch.equal(actual, expected)
+            assert len(cache) == 3
+        assert [len(keys) for keys in reads] == [5, 2]
+        # A fully cached suffix needs no further storage access.
+        assert torch.equal(_decode_clip(dst, ref, 2, 5, 1, cache, 3), expected[2:])
+        assert len(reads) == 2
+    finally:
+        dst.close()
 
 
 def test_stream_pickles_small_and_workers_match_in_process(packed):

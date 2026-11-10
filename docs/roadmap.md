@@ -18,13 +18,12 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
 
 ## Phase 1 — Streaming & video base
 
-- [x] StreamIndex: deterministic, temporally ordered index of typed records;
-      captions, transcripts, and in-stream QA interleave by timestamp
+- [x] Ordered stream sessions with time-aligned video and transcript channels
 - [ ] Offline frame-extraction CLI + frame-dir reads; on-the-fly mp4 reader
       deferred
 - [ ] Video metadata cache, one schema
-- [x] Streaming dataset with mutable shared-memory labels and deterministic
-      ordering
+- [x] Deterministic stream ordering and labels resolved at batch time through
+      a revisable `LabelStore`
 - [ ] Pair-consistent transforms; guaranteed-overlap two-crop
       (clip-consistent transforms shipped; guaranteed-overlap two-crop pending)
 - [ ] Dataset registry: SAYCam, KrishnaCam, BabyView, Ego4D, Walking Tours —
@@ -45,8 +44,7 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
       as the reference) trains on clip slots in both loops; VideoMAE-class
       masked modeling reuses the same sockets (mask samplers, visible-token
       forward, token outputs) and needs only its decoder + pixel loss
-- [x] Composable `SSLModel(backbone, heads, losses)` replacing per-ablation
-      classes
+- [x] Composable models with named encoders, heads, predictors, and separate losses
 - [x] One streaming trainer — seeded, resumable, state-dict checkpoints —
       replacing the seven trainer scripts
 - [x] Memory Storyboard lands as `src/egolearn/methods/storyboard` + `projects/storyboard`
@@ -62,8 +60,8 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
       `probe:linear_sgd` provides a stochastic-view, L2-normalized SGD/LARC/cosine
       decoder while isolating its RNG. Frozen adapters cover
       BabyView and Labeled-S; ImageNet supports stochastic-view SGD decoding.
-- [x] Violation-of-expectation probe: IntPhys 2 pairwise accuracy from V-JEPA
-      surprise (`probe:intphys2`)
+- [x] Violation-of-expectation probes: IntPhys 2 and GRASP Level 2 pairwise
+      accuracy and AUROC from V-JEPA surprise (`probe:intphys2`, `probe:grasp`)
 - [ ] kNN/SVM readout with explicit split files and validation-based selection
 
 ## Phase 5 — Memory & QA
@@ -84,20 +82,17 @@ Package skeleton, CI gates, pre-commit, branch protection, governance docs.
 
 ## Performance ledger (from PR review, 2026-08)
 
-Deliberately NOT addressed yet: the determinism tests (same seed = same
-weights; resumed = uninterrupted; stream tail trains) are the safety net,
-and pipelining is exactly where determinism tends to break.  With those
-tests green, run the bench scripts on real data first and let the numbers
-decide the order.
+Worker loading and prefetch are implemented, with equality and resume tests covering
+their sampling behavior. The remaining candidates below require measurements on
+real workloads before choosing an implementation.
 
-- [x] Decode+augment fans out to worker processes (`loader.workers`), with
-      per-item seeds so the worker count never changes what a run computes;
-      frames and clips travel in one pool submission per batch.
-- [x] The composer double-buffers against the GPU step (`driver.prefetch`):
-      every batch's randomness derives from its own sequence number, so
-      prefetch on/off is provably identical (equality + resume tests), and
-      components that mutate sampling state between steps can declare it to
-      opt out.
+- [x] Decode and augmentation use worker processes (`loader.workers`), with
+      per-item seeds preserving sample choices and augmentations across supported
+      worker counts. Frames and clips travel in one pool submission per batch.
+- [x] Batch prefetch overlaps loading with training (`driver.prefetch`), using
+      batch-specific seeds. Equality and resume tests cover supported configurations.
+      Components that mutate sampling state between updates declare that constraint,
+      preventing incompatible prefetch configurations.
 - [ ] Worker→trainer transport still pays pickle+pipe for every augmented
       tensor (~40MB/batch on BabyCL): move to shared-memory buffers, or ship
       uint8 and normalize on the GPU (needs views to declare a device
@@ -110,5 +105,6 @@ decide the order.
 
 ## Ongoing
 
-- BabyCL — continual visual and verbal learning — releases its code here when published.
+- BabyCL's public code release accompanies publication; its implementation is already
+  available in this private repository.
 - Further egocentric QA and streaming-memory work arrives via `-dev` branches.

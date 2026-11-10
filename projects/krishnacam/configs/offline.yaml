@@ -1,0 +1,17 @@
+# Same visual objective; shuffle frames and train without replay memory.
+defaults:
+  - shared
+  - _self_
+
+hydra:
+  searchpath: [pkg://egolearn.configs]
+
+run_dir: runs/krishnacam_offline
+
+driver:
+  mode: offline
+  batch: {slot: frames, n: 64, views: [v1, v2]}
+  epochs: 1
+  subsample: 6
+  prefetch: true
+  max_steps: 1000

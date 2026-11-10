@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -73,6 +74,25 @@ def import_evaluations(
             scores = document.get("results", {}).get(name, {})
             if metric not in scores:
                 continue
+            count_keys = {
+                "vtwt": ("vtwt_n", "vtwt_skipped"),
+                "baby_winoground": ("bw_n", "bw_skipped"),
+            }.get(name)
+            if count_keys:
+                evaluated_key, skipped_key = count_keys
+                evaluated, skipped = scores.get(evaluated_key), scores.get(skipped_key)
+                if (
+                    type(evaluated) not in (int, float)
+                    or not math.isfinite(evaluated)
+                    or evaluated <= 0
+                    or evaluated % 1 != 0
+                    or type(skipped) not in (int, float)
+                    or skipped != 0
+                ):
+                    raise ValueError(
+                        f"incomplete {name} evaluation in {path.name}: "
+                        f"require a positive integer {evaluated_key} and zero {skipped_key}"
+                    )
             original_settings = document["configs"][name]
             settings = {
                 k: v for k, v in original_settings.items() if k not in INPUT_PATHS | OUTPUT_PATHS

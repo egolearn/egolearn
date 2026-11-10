@@ -39,6 +39,7 @@ def test_multiblock_masks_split_the_grid():
 
 def test_video_vit_tokens_positions_and_visible_forward():
     from egolearn.model.encoders.video import VideoViTEncoder
+    from egolearn.model.predictors import VJEPAPredictor
 
     enc = VideoViTEncoder(dim=32, depth=2, heads=2, patch=16, tubelet=2)
     enc.eval()
@@ -58,20 +59,13 @@ def test_video_vit_tokens_positions_and_visible_forward():
     kept = torch.tensor([[0, 3, 5], [1, 2, 7]])
     part = enc(x, visible=kept)
     assert part.tokens is not None and part.tokens.shape == (2, 3, 32)
+    predictor = VJEPAPredictor(encoder_dim=32, dim=16, depth=1, heads=2)
+    targets = torch.tensor([[1, 2, 4], [0, 3, 6]])
+    predicted = predictor(part.tokens, ctx_pos=kept, tgt_pos=targets, grid=(2, 2, 2))
+    assert predicted.shape == (2, 3, 32)
 
     with pytest.raises(ValueError, match="divisible"):
         enc(torch.rand(2, 5, 3, 32, 32))  # T=5 does not divide tubelet 2
-
-
-def test_vjepa_predictor_fills_target_positions():
-    from egolearn.model.predictors import VJEPAPredictor
-
-    pred = VJEPAPredictor(encoder_dim=32, dim=16, depth=1, heads=2)
-    tokens = torch.rand(2, 5, 32)
-    ctx_pos = torch.arange(5).expand(2, -1)
-    tgt_pos = torch.tensor([[5, 6, 7], [5, 6, 7]])
-    out = pred(tokens, ctx_pos=ctx_pos, tgt_pos=tgt_pos, grid=(2, 2, 2))
-    assert out.shape == (2, 3, 32)  # predictions back at encoder width
 
 
 def test_own_forward_slots_spares_shared_consumers():
@@ -198,29 +192,21 @@ def _vjepa_cfg(tmp_path):
     }
 
 
-def test_vjepa_trains_and_ema_target_tracks(tmp_path):
-    pipe = egolearn.build(_vjepa_cfg(tmp_path))
-    assert {"video_representation", "prediction"} <= pipe.model.capabilities()
-    # the jepa slot is skipped by the shared pooled precompute
-    assert pipe.driver._skip_feats == frozenset({"clips"})
-
-    tgt0 = {k: v.clone() for k, v in pipe.model.encoders["video_target"].state_dict().items()}
-    pipe.driver.fit()
-    assert pipe.ctx.clock.step == 2  # every step produced a finite loss
-
-    tgt = pipe.model.encoders["video_target"].state_dict()
-    src = pipe.model.encoders["video"].state_dict()
-    # step 0 replaced the target's random init with a copy of the context...
-    assert any(not torch.equal(tgt[k], tgt0[k]) for k in tgt)
-    # ...and the EMA keeps it near-but-not-equal to the trained context
-    assert any(not torch.equal(tgt[k], src[k]) for k in tgt)
-
-
 def test_vjepa_same_seed_twice_gives_identical_weights(tmp_path):
     states = []
     for _ in range(2):
         pipe = egolearn.build(_vjepa_cfg(tmp_path))
+        assert {"video_representation", "prediction"} <= pipe.model.capabilities()
+        assert pipe.driver._skip_feats == frozenset({"clips"})
+        target_before = {
+            k: v.clone() for k, v in pipe.model.encoders["video_target"].state_dict().items()
+        }
         pipe.driver.fit()
+        assert pipe.ctx.clock.step == 2
+        target = pipe.model.encoders["video_target"].state_dict()
+        online = pipe.model.encoders["video"].state_dict()
+        assert any(not torch.equal(target[k], target_before[k]) for k in target)
+        assert any(not torch.equal(target[k], online[k]) for k in target)
         states.append({k: v.clone() for k, v in pipe.model.state_dict().items()})
     for k in states[0]:
         assert torch.equal(states[0][k], states[1][k]), f"weights differ at {k}"

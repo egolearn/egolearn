@@ -21,7 +21,8 @@
 # Capacity notes: capacities are ABSOLUTE counts (what capacity should mean for an
 # open-ended stream is a deliberately deferred question).  Values below derive from
 # SAYCam-S at 5 fps: ~4060 3-minute segments -> short 406 (10%) / long 2030 (50%);
-# 33737 usable utterances -> short 3374 / long 16869.
+# 33737 usable utterances -> short round(3373.7)=3374 / long round(16868.5)=16868
+# (mcl rounds half to even).
 
 defaults:
   - /config          # packaged root: seed, wandb, dry_run, resume
@@ -45,15 +46,18 @@ stream:
   include: "S_*"      # subset when root holds several children (SAYCam A/S/Y)
   transcript_json: /path/to/expand_correct_seg.json    # <- utterances
   fps: 5.0
+  # an utterance ending on a frame's timestamp is visible at that frame (mcl's
+  # feeder: max(ts) <= t), for the segmenter's anchors and the AN chunk emitter
+  transcript_first: true
   # Packed alternative, same refs (build with `python -m egolearn.data.packed pack`;
   # see docs/data_loading.md):
   #   _target_: "stream:packed_frames"
   #   root_dir: /path/to/saycam_5fps_packed
-  # Video-first alternative (same refs, no pre-extracted frames; blocked on
-  # the Poodle integration -- see egolearn/data/decoding/poodle.py):
+  # Direct-video alternative for constant-rate recordings; use source frame
+  # rates and adjust admission strides rather than assuming extracted 5 fps:
   #   _target_: "stream:video"
   #   root_dir: /path/to/saycam_videos
-  #   decoder: {_target_: "decoder:poodle"}
+  #   decoder: {_target_: "decoder:pyav"}
 
 tokenizer:
   vocab_json: /path/to/vocab.json
@@ -63,8 +67,10 @@ views:
   # BabyCL's EFFECTIVE segment augmentation is two-stage in the original
   # (center-crop at gather, strong SimCLR at train) -- fused 1:1 in the
   # project view babycl_ms_aug; generic simclr_strong crops the RAW frame
-  ms_v1: {name: babycl_ms_aug, size: 224, view_idx: 0, scale_min: 0.2}
-  ms_v2: {name: babycl_ms_aug, size: 224, view_idx: 1, scale_min: 0.2}
+  # blur_impl torchvision: the original's 2-D kernel (the separable default
+  # matches it to within one intensity level, faster)
+  ms_v1: {name: babycl_ms_aug, size: 224, view_idx: 0, scale_min: 0.2, blur_impl: torchvision}
+  ms_v2: {name: babycl_ms_aug, size: 224, view_idx: 1, scale_min: 0.2, blur_impl: torchvision}
   pair:  {name: cvcl_aug, size: 224}
   eval:  {name: center_crop, size: 224}
 
@@ -104,7 +110,7 @@ memories:
   pairs:
     tiers:
       short: {capacity: 3374,  update: fifo}
-      long:  {capacity: 16869, update: reservoir}
+      long:  {capacity: 16868, update: reservoir}
     admit_to: [short]
     overflow: {short: long}
 

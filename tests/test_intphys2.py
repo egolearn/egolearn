@@ -18,7 +18,7 @@ from egolearn.evaluation import EvaluationError, evaluate
 from egolearn.evaluation.benchmarks.intphys2 import IntPhys2Probe
 from egolearn.evaluation.benchmarks.intphys2 import probe as intphys2
 from egolearn.evaluation.evaluator import EvaluationContext
-from egolearn.evaluation.voe import read_video
+from egolearn.evaluation.voe import auroc, read_video
 from egolearn.model.build import build_model
 
 pytestmark = pytest.mark.video
@@ -56,13 +56,24 @@ def _intphys2_root(tmp_path, monkeypatch, brightness=None):
     return tmp_path
 
 
-def test_read_video_samples_uniformly_over_the_whole_video(tmp_path):
+@pytest.mark.parametrize(
+    "values", [[6 * i for i in range(40)], [0, 78, 156, 234]], ids=["subsample", "exact_length"]
+)
+def test_read_video_samples_uniformly_over_the_whole_video(tmp_path, values):
     path = tmp_path / "ramp.mp4"
-    _write_video(path, [6 * i for i in range(40)])
+    _write_video(path, values)
     clip = read_video(str(path), 4, T.PILToTensor())
     assert clip.shape == (4, 3, 32, 32)
-    # frames 0, 13, 26, 39 -- the first and last frames included
+    # Include both endpoints; retain every frame when the video has exactly num_frames.
     assert clip.float().mean(dim=(1, 2, 3)).tolist() == pytest.approx([0, 78, 156, 234], abs=4)
+
+
+def test_read_video_rejects_short_videos(tmp_path):
+    path = tmp_path / "short.mp4"
+    _write_video(path, [0, 80, 160])
+    with pytest.raises(ValueError) as caught:
+        read_video(str(path), 4, T.PILToTensor())
+    assert str(caught.value) == f"{path}: video has 3 frames, but num_frames=4 requires at least 4"
 
 
 def test_intphys2_pairs_count_the_impossible_twin_as_more_surprising(tmp_path, monkeypatch):
@@ -75,10 +86,11 @@ def test_intphys2_pairs_count_the_impossible_twin_as_more_surprising(tmp_path, m
         (str(root / "Videos/2_Possible.mp4"), str(root / "Videos/2_Impossible.mp4")),
     ]
     assert probe.metadata() == {"n_pairs": 2, "metadata_sha256": intphys2.METADATA_SHA256}
-    # brighter = more surprising: only the first pair has its impossible video brighter
+    # brighter = more surprising: only the first pair has its impossible video brighter;
+    # unpaired, the two bright and the two dark videos tie, so the AUROC is chance too
     monkeypatch.setattr(probe, "surprise", lambda model, clips: {2: clips.mean(dim=(1, 2, 3, 4))})
     ctx = EvaluationContext(seed=0, device=torch.device("cpu"))
-    assert probe.run(None, ctx) == {"voe_acc_ctx2": 0.5, "voe_acc": 0.5}
+    assert probe.run(None, ctx) == {"voe_acc_ctx2": 0.5, "voe_acc": 0.5, "voe_auroc": 0.5}
 
 
 def test_voe_acc_pools_surprise_over_context_lengths(tmp_path, monkeypatch):
@@ -94,7 +106,14 @@ def test_voe_acc_pools_surprise_over_context_lengths(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(probe, "surprise", lambda model, clips: next(surprise))
     ctx = EvaluationContext(seed=0, device=torch.device("cpu"))
-    assert probe.run(None, ctx) == {"voe_acc_ctx2": 1.0, "voe_acc_ctx4": 0.5, "voe_acc": 0.5}
+    # pooled surprise: pair 1 (2.0, 1.0), pair 2 (0.5, 2.5) -> impossible outranks possible
+    # in 3 of the 4 unpaired comparisons
+    assert probe.run(None, ctx) == {
+        "voe_acc_ctx2": 1.0,
+        "voe_acc_ctx4": 0.5,
+        "voe_acc": 0.5,
+        "voe_auroc": 0.75,
+    }
 
 
 def test_intphys2_verifies_metadata(tmp_path):
@@ -181,6 +200,7 @@ def test_intphys2_scores_a_vjepa_model(tmp_path, monkeypatch):
     probe.prepare()
     assert probe.pairs is not None
     expected = dict.fromkeys(result, 0.0)
+    pooled = []
     with torch.no_grad():
         for pair in probe.pairs:
             clips = torch.stack([read_video(p, 8, probe.transform) for p in pair])
@@ -192,6 +212,9 @@ def test_intphys2_scores_a_vjepa_model(tmp_path, monkeypatch):
             for key, (possible, impossible) in scores.items():
                 assert possible != impossible  # distinct videos -> distinct surprise
                 expected[key] += float(impossible > possible) / len(probe.pairs)
+            pooled.append(scores["voe_acc"].tolist())
+    table = np.asarray(pooled)
+    expected["voe_auroc"] = auroc(table[:, 0], table[:, 1])
     assert result == expected
 
     # L2 surprise scores the same context lengths

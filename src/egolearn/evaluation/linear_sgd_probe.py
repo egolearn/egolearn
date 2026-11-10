@@ -35,6 +35,8 @@ class LinearSGDProbe(LinearSGDEvaluator, Probe):
         seed: int = 0,
         split: ClassificationSplit | None = None,
         view: str = "imagenet_center_crop",
+        prefetch_factor: int = 2,
+        persistent_workers: bool = True,
     ):
         self.name = name
         if (manifest is None) == (split is None):
@@ -53,6 +55,8 @@ class LinearSGDProbe(LinearSGDEvaluator, Probe):
             size=size,
             batch_size=batch_size,
             workers=workers,
+            prefetch_factor=prefetch_factor,
+            persistent_workers=persistent_workers,
             epochs=epochs,
             lr=lr,
             momentum=momentum,

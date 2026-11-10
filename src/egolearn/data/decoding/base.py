@@ -19,14 +19,13 @@ optimize them separately:
     seek to the nearest keyframe and decode forward, batching requests to
     the same file where possible.
 
-The efficient random-access implementation is expected to come from the
-lab's existing video pipeline (see decoding/poodle.py); this class defines
-the interface that integration has to fill in.
+PyAV supplies a CPU backend for constant-rate recordings. The Poodle
+backend remains a placeholder for integration with the lab's video pipeline.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 
 
 class VideoDecoder:
@@ -53,3 +52,9 @@ class VideoDecoder:
 
     def close(self) -> None:
         """Release any cached decode handles."""
+
+    def validate_views(self, specs: dict[str, dict]) -> None:
+        """Reject views incompatible with any preprocessing already applied to pixels."""
+
+    def validate_paths(self, paths: Iterable[str]) -> None:
+        """Check required prepared files; raw decoders leave the iterable unconsumed."""

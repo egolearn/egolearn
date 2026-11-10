@@ -3,6 +3,7 @@
 name: ci
 
 on:
+  # Stacked feature PRs need the same checks before their base reaches main.
   pull_request:
   push:
     branches: [main]
@@ -46,8 +47,9 @@ jobs:
           enable-cache: true
       # train extra: the unit tests exercise the real pipelines, which need
       # torch (CPU is fine; the wheel is cached by setup-uv). docs group: the
-      # docs-hook tests render Markdown.
-      - run: uv sync --locked --extra train --group docs
+      # docs-hook tests render Markdown. qa extra: generative:openai_chat is tested
+      # against a local stand-in server.
+      - run: uv sync --locked --extra train --extra qa --group docs
       # addopts in pyproject.toml already excludes the slow/gpu/llm tiers
       - run: uv run pytest
       - uses: actions/setup-node@v4
@@ -67,11 +69,12 @@ jobs:
   # internal links and anchors.
   docs:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
         with:
-          enable-cache: true
+          python-version: "3.12"
       - run: bash scripts/docs/build.sh
 
   gitleaks:

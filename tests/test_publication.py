@@ -282,6 +282,87 @@ def test_import_binds_to_checkpoint_and_requires_explicit_legacy_opt_in(tmp_path
 
 
 @pytest.mark.parametrize(
+    ("benchmark", "metric", "prefix"),
+    [
+        ("vtwt", "vtwt_acc", "vtwt"),
+        ("baby_winoground", "bw_group_acc", "bw"),
+        ("baby_winoground", "bw_pos_ctx_acc", "bw"),
+    ],
+)
+def test_import_requires_complete_babyvlm_counts(tmp_path, benchmark, metric, prefix):
+    checkpoint = make_run()["checkpoint"]
+    source = evaluation(checkpoint["sha256"])
+    scores = {metric: 0.0, f"{prefix}_n": 100.0, f"{prefix}_skipped": 0.0}
+    source.update(
+        results={benchmark: scores},
+        configs={benchmark: {"csv_path": "/private/trials.csv"}},
+        versions={benchmark: "1"},
+    )
+    column = next(column for column in DEFAULT_COLUMNS if column["benchmark"] == benchmark)
+    kwargs = {
+        "checkpoint": checkpoint,
+        "columns": [{**column, "metric": metric}],
+        "input_hashes": [{"benchmark": benchmark, "kind": "csv_path", "sha256": "a" * 64}],
+    }
+    path = tmp_path / "evaluation.json"
+    path.write_bytes(encoded(source))
+    results, legacy = import_evaluations([path], **kwargs)
+    assert len(results) == 1 and results[0]["value"] == 0.0
+    assert not legacy
+
+    # A complete file can still describe a partially synced image collection.
+    scores[f"{prefix}_skipped"] = 1.0
+    path.write_bytes(encoded(source))
+    with pytest.raises(ValueError, match=f"incomplete {benchmark} evaluation"):
+        import_evaluations([path], **kwargs)
+
+    # The legacy opt-in cannot bypass the coverage check.
+    source["schema_version"] = 1
+    source.pop("status")
+    path.write_bytes(encoded(source))
+    with pytest.raises(ValueError, match=f"incomplete {benchmark} evaluation"):
+        import_evaluations([path], allow_legacy=True, **kwargs)
+
+    scores[f"{prefix}_skipped"] = 0
+    scores[f"{prefix}_n"] = 100
+    path.write_bytes(encoded(source))
+    assert import_evaluations([path], allow_legacy=True, **kwargs)[1]
+
+    # An empty evaluation is invalid even when no items were skipped.
+    scores[f"{prefix}_n"] = 0.0
+    path.write_bytes(encoded(source))
+    with pytest.raises(ValueError, match=f"incomplete {benchmark} evaluation"):
+        import_evaluations([path], allow_legacy=True, **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("vtwt_n", None),
+        ("vtwt_skipped", None),
+        ("vtwt_n", -1),
+        ("vtwt_n", 0.5),
+        ("vtwt_n", "100"),
+        ("vtwt_n", True),
+        ("vtwt_skipped", False),
+    ],
+)
+def test_import_rejects_missing_or_invalid_coverage_counts(tmp_path, field, value):
+    checkpoint = make_run()["checkpoint"]
+    source = evaluation(checkpoint["sha256"])
+    scores = {"vtwt_acc": 0.6, "vtwt_n": 100, "vtwt_skipped": 0}
+    if value is None:
+        scores.pop(field)
+    else:
+        scores[field] = value
+    source["results"] = {"vtwt": scores}
+    path = tmp_path / "evaluation.json"
+    path.write_text(json.dumps(source))
+    with pytest.raises(ValueError, match="incomplete vtwt evaluation"):
+        import_evaluations([path], checkpoint=checkpoint, columns=DEFAULT_COLUMNS, input_hashes=[])
+
+
+@pytest.mark.parametrize(
     "key", ["abstract_2d_manifest", "rendered_3d_manifest", "trials_json", "metadata_csv"]
 )
 def test_custom_file_inputs_require_hashes_and_do_not_publish_paths(tmp_path, key):

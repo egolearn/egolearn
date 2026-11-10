@@ -1,0 +1,41 @@
+defaults:
+  - /config
+  - _self_
+
+seed: 1337
+device: cuda
+
+stream:
+  _target_: "stream:video"
+  root_dir: ${oc.env:KRISHNACAM_ROOT,/path/to/krishnacam/kcam}
+  sessions: null  # null sorts timestamped filenames; a list selects an ordered subset
+  manifest_json: null
+  recursive: false
+  decoder: {_target_: "decoder:pyav", cache_handles: 4, seek_gap: 64, threads: 1}
+
+loader:
+  workers: 4
+
+views:
+  v1: {name: simclr_strong, size: 224, view_idx: 0, scale_min: 0.2}
+  v2: {name: simclr_strong, size: 224, view_idx: 1, scale_min: 0.2}
+
+model:
+  encoders:
+    vision: {_target_: "encoder:resnet18", pretrained: false}
+  heads:
+    proj: {encoder: vision, _target_: "head:mlp", sizes: [512, 512, 128]}
+
+losses:
+  - {_target_: "loss:ntxent", name: instance,
+     slots: [frames], head: proj, temperature: 0.2, weight: 1.0}
+
+solver:
+  opt: adamw
+  groups:
+    - {match: ".*", lr: 1.0e-3, weight_decay: 1.0e-4}
+  schedule: {warmup_frac: 0.02, warmup_min_steps: 10, floor: 0.0}
+
+hooks:
+  log_every: 10
+  checkpoint_every: 500

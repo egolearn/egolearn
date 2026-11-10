@@ -1,0 +1,35 @@
+defaults:
+  - krishnacam_shared
+  - _self_
+
+loader:
+  workers: 32
+
+stream:
+  decoder:
+    _target_: "decoder:babycl_prepared_video"
+    source_root: ${stream.root_dir}
+    prepared_root: ${oc.env:KRISHNACAM_PREPARED,/path/to/krishnacam/prepared}
+    seek_gap: 8
+
+label_stores: []
+embedders: null
+admission: []
+memories: null
+routes: null
+recipe: null
+probes: []
+model:
+  heads: null
+
+driver:
+  mode: offline
+  batch: {slot: frames, n: 128, views: [ms_v1, ms_v2]}
+  epochs: null
+  max_steps: 11900
+  advance: null
+  rate: null
+  warmup: null
+
+hooks:
+  snapshot_milestones: []

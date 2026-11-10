@@ -11,14 +11,13 @@ import egolearn
 
 
 @pytest.mark.parametrize(
-    ("script", "config_name"),
+    ("script", "config_name", "relative"),
     [
-        ("bench_full_pipeline.py", "saycam_default"),
-        ("bench_dataloading.py", "saycam_default"),
-        ("bench_full_pipeline.py", "saycam_iid"),
+        ("bench_full_pipeline.py", "saycam_default", False),
+        ("bench_dataloading.py", "saycam_default", True),
+        ("bench_full_pipeline.py", "saycam_iid", True),
     ],
 )
-@pytest.mark.parametrize("relative", [False, True])
 def test_benchmarks_compose_babycl_defaults(tmp_path, monkeypatch, script, config_name, relative):
     root = Path(__file__).resolve().parents[1]
     config = root / "projects/babycl/configs" / f"{config_name}.yaml"

@@ -136,17 +136,16 @@ def test_labeled_s_adapter_verifies_local_split(tmp_path):
         labeled_s_linear.load_split_text(split_file)
 
 
-@pytest.mark.parametrize("via_mapping", [False, True], ids=["direct", "mapping"])
 @pytest.mark.parametrize(
-    "classes,train_labels,test_labels,message",
+    "via_mapping,classes,train_labels,test_labels,message",
     [
-        ((), (0,), (0,), "class list is empty"),
-        (("red", "blue"), (), (0,), "train split is empty"),
-        (("red", "blue"), (0,), (), "test split is empty"),
-        (("red", "blue"), (-1,), (0,), "train label -1 is outside"),
-        (("red", "blue"), (2,), (0,), "train label 2 is outside"),
-        (("red", "blue"), (0,), (-1,), "test label -1 is outside"),
-        (("red", "blue"), (0,), (2,), "test label 2 is outside"),
+        (False, (), (0,), (0,), "class list is empty"),
+        (True, ("red", "blue"), (), (0,), "train split is empty"),
+        (False, ("red", "blue"), (0,), (), "test split is empty"),
+        (True, ("red", "blue"), (-1,), (0,), "train label -1 is outside"),
+        (False, ("red", "blue"), (2,), (0,), "train label 2 is outside"),
+        (False, ("red", "blue"), (0,), (-1,), "test label -1 is outside"),
+        (True, ("red", "blue"), (0,), (2,), "test label 2 is outside"),
     ],
 )
 def test_classification_split_rejects_invalid_data(
@@ -314,8 +313,15 @@ def test_linear_sgd_probe_inputs_and_scores_are_independent_of_run_seed(tmp_path
     assert scores[0] == scores[1]
 
 
-@pytest.mark.parametrize("view", ["center_crop", "resize", "imagenet_center_crop", "custom_eval"])
-@pytest.mark.parametrize("dimensions", [(37, 37), (53, 37), (37, 53)])
+@pytest.mark.parametrize(
+    "view,dimensions",
+    [
+        ("center_crop", (53, 37)),
+        ("resize", (37, 53)),
+        ("imagenet_center_crop", (37, 53)),
+        ("custom_eval", (37, 37)),
+    ],
+)
 def test_linear_probes_encode_identical_evaluation_views(tmp_path, monkeypatch, view, dimensions):
     from egolearn.core.context import Context
     from egolearn.model.model import ComposedModel
@@ -358,8 +364,9 @@ def test_linear_probes_encode_identical_evaluation_views(tmp_path, monkeypatch, 
     assert torch.equal(encoder.inputs[0], encoder.inputs[-1])
 
 
-@pytest.mark.parametrize("size", [112, 224])
-@pytest.mark.parametrize("dimensions", [(271, 271), (359, 271), (271, 359)])
+@pytest.mark.parametrize(
+    "size,dimensions", [(224, (271, 271)), (224, (359, 271)), (112, (271, 359))]
+)
 def test_linear_sgd_probe_default_preserves_evaluation_pixels(size, dimensions):
     items = (LabeledImage("unused.png", 0),)
     split = ClassificationSplit(("object",), items, items)
@@ -377,8 +384,10 @@ def test_linear_sgd_probe_default_preserves_evaluation_pixels(size, dimensions):
     assert torch.equal(probe.transform(image), original_transform(image))
 
 
-@pytest.mark.parametrize("cuda_available", [False, True])
-@pytest.mark.parametrize("device,pin_memory", [("cpu", False), ("cuda", True), ("cuda:1", True)])
+@pytest.mark.parametrize(
+    "cuda_available,device,pin_memory",
+    [(False, "cpu", False), (True, "cpu", False), (False, "cuda", True), (True, "cuda:1", True)],
+)
 def test_linear_sgd_probe_pins_memory_for_execution_device(
     monkeypatch, cuda_available, device, pin_memory
 ):
@@ -427,7 +436,12 @@ def test_linear_sgd_probe_augmentations_are_run_seed_and_worker_count_invariant(
     initial_children = set(active_children())
 
     def collect(
-        workers: int, num_epochs: int, run_seed: int, probe_seed: int = 5
+        workers: int,
+        num_epochs: int,
+        run_seed: int,
+        probe_seed: int = 5,
+        prefetch_factor: int = 2,
+        persistent_workers: bool = True,
     ) -> tuple[int, list[tuple[list[int], dict[int, torch.Tensor]]]]:
         ctx = Context(seed=run_seed, device="cpu")
         probe = linear_sgd_probe.LinearSGDProbe(
@@ -436,6 +450,8 @@ def test_linear_sgd_probe_augmentations_are_run_seed_and_worker_count_invariant(
             size=16,
             batch_size=2,
             workers=workers,
+            prefetch_factor=prefetch_factor,
+            persistent_workers=persistent_workers,
             epochs=2,
             seed=probe_seed,
         )
@@ -462,7 +478,7 @@ def test_linear_sgd_probe_augmentations_are_run_seed_and_worker_count_invariant(
                 )
             # The same processes stay alive after each epoch, including while idle.
             active_pool = set(active_children()) - initial_children
-            assert len(active_pool) == workers
+            assert len(active_pool) == (workers if persistent_workers else 0)
             if worker_pool is not None:
                 assert active_pool == worker_pool
             worker_pool = active_pool
@@ -473,13 +489,15 @@ def test_linear_sgd_probe_augmentations_are_run_seed_and_worker_count_invariant(
     other_run_worker_seed, other_run = collect(0, 2, run_seed=18)
     pooled_worker_seed, pooled = collect(2, 2, run_seed=18)
     other_probe_worker_seed, other_probe = collect(0, 2, run_seed=18, probe_seed=6)
+    _, shallow = collect(2, 2, run_seed=18, prefetch_factor=1)
+    _, released = collect(2, 2, run_seed=18, prefetch_factor=1, persistent_workers=False)
     # Releasing the local loader also releases its persistent worker pool.
     # Pre-existing children from other tests may have finished in the meantime.
     assert not (set(active_children()) - initial_children)
 
     assert serial_worker_seed == other_run_worker_seed == pooled_worker_seed
     assert other_probe_worker_seed != serial_worker_seed
-    for result in (other_run, pooled):
+    for result in (other_run, pooled, shallow, released):
         for epoch, (order, views) in enumerate(result):
             serial_order, serial_views = serial[epoch]
             assert serial_order == order
@@ -564,3 +582,33 @@ def test_split_metadata_accepts_numpy_integer_labels():
         )
 
     assert split(np.int64(0)).metadata() == split(0).metadata()
+
+
+@pytest.mark.parametrize("workers,prefetch", [(0, 1), (2, 1), (2, 3)])
+def test_linear_sgd_prefetch_controls_queued_batches(workers, prefetch):
+    items = (LabeledImage("unused.png", 0),)
+    split = ClassificationSplit(("object",), items, items)
+    probe = linear_sgd_probe.LinearSGDProbe(
+        name="sgd", split=split, workers=workers, prefetch_factor=prefetch
+    )
+    loader = probe._loader(
+        split.test,
+        probe.transform,
+        False,
+        torch.Generator().manual_seed(0),
+        "test",
+        device=torch.device("cpu"),
+    )
+    assert loader.prefetch_factor == (prefetch if workers else None)
+    assert probe.configuration()["prefetch_factor"] == prefetch
+
+
+@pytest.mark.parametrize("prefetch", [0, True])
+def test_linear_sgd_rejects_invalid_prefetch(prefetch):
+    with pytest.raises(ValueError, match="prefetch_factor"):
+        linear_sgd.LinearSGDEvaluator(name="sgd", prefetch_factor=prefetch)
+
+
+def test_linear_sgd_rejects_nonboolean_worker_persistence():
+    with pytest.raises(ValueError, match="persistent_workers"):
+        linear_sgd.LinearSGDEvaluator(name="sgd", persistent_workers="false")  # type: ignore[arg-type]

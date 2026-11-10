@@ -40,9 +40,14 @@ Use the same condition ID and expected seed set when publishing additional seeds
 and give different configurations distinct condition IDs. The publisher checks the
 saved training seed, but you must identify which experiments share a training condition.
 
+### Evaluation records
+
 Evaluation files use the native `EvaluationResult` format. Each file must identify
 the checkpoint digest and step, benchmark version, evaluation seed, configuration,
 and completed metrics. Failed evaluations cannot enter a publication bundle.
+VTWT and Baby Winoground results must record a positive evaluated count (`vtwt_n`
+or `bw_n`) and zero skipped items (`vtwt_skipped` or `bw_skipped`). Missing counts,
+empty evaluations, and partial image collections are rejected, including legacy imports.
 
 The input-hash file records the identities consumed by the evaluation:
 
@@ -168,7 +173,7 @@ receipt names the results revision and any uploaded models, and is saved as `pub
 
 Both models and results default to private. `--public-results` selects a public results
 destination without making weights public. Existing visibility is preserved, and a mismatch
-fails. Follow the [checkpoint publication rules](evaluation.md#hub-artifacts-and-access-tiers) before
+fails. Follow the [checkpoint publication rules](evaluation/hub.md) before
 redistributing SAYCam-trained weights. Private model cards grant no redistribution license.
 
 Keep the prepared bundle, including `model.json` and `model.safetensors`, after a

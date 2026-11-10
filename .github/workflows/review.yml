@@ -19,10 +19,5 @@ jobs:
     uses: outerloop-science/outerloop/.github/workflows/advisory-review-agent.yml@main
     with:
       bot_login: agentic-learning-bot
-      backend: hermes
-      # openai-direct: same token rate, no OpenRouter platform fee; the
-      # model id is provider-native
-      hermes_provider: openai
-      model: gpt-5.6-terra
     secrets:
       openai_reviewer_key: ${{ secrets.OPENAI_REVIEWER_KEY }}

@@ -1,12 +1,9 @@
 # egolearn
 
-Learning from first-person video streams: streaming self-supervised learning,
-continual learning and replay, temporal segmentation, multimodal learning,
-memory, and egocentric video question answering.
-
-egolearn reads egocentric video as a time-ordered stream, decides what to keep
-in bounded replay buffers, trains models from those buffers, and scores them
-with developmental and vision benchmarks while they train or afterwards.
+EgoLearn trains visual and image–text models from first-person video streams.
+Streaming runs retain observations in bounded replay memory, while offline runs
+use the complete selected dataset. You can evaluate saved models independently
+or schedule small benchmarks during training.
 
 ## Start here
 
@@ -23,3 +20,11 @@ with developmental and vision benchmarks while they train or afterwards.
   SAYCam in a single chronological pass.
 - **[Memory Storyboard](projects/storyboard.md)**: streaming visual
   self-supervised learning with temporal segmentation.
+
+## Benchmarks
+
+Evaluate object recognition with Labeled-S, BabyView, and ImageNet, or test
+image–text alignment with VTWT and Baby Winoground. Shape bias, spatial relations,
+and IntPhys 2 measure generalization beyond category labels. The
+[evaluation guide](evaluation.md) lists protocols and data requirements.
+[Benchmark suites](benchmark_suites.md) run reproducible comparisons across models.

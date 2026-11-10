@@ -37,7 +37,15 @@ from .memory.labels import LabelStore
 from .memory.table import TieredMemory
 from .model.model import ComposedModel
 from .training.driver import LockstepDriver
-from .training.hooks import CheckpointHook, Hook, LogHook, ProbeHook, SnapshotHook, WandbHook
+from .training.hooks import (
+    CheckpointHook,
+    Hook,
+    LogHook,
+    MetricsHook,
+    ProbeHook,
+    SnapshotHook,
+    WandbHook,
+)
 from .training.offline import OfflineDriver
 from .training.solver import ProgressCosine, build_optimizer
 
@@ -146,6 +154,10 @@ def build(cfg: dict) -> Pipeline:
         views,
         workers=workers,
         imports=list(cfg.get("_imports_", [])),
+        pin_memory=loader_cfg.get("pin_memory", False),
+        packed=loader_cfg.get("packed", False),
+        cache_frames=loader_cfg.get("cache_frames", 0),
+        affinity=loader_cfg.get("affinity", False),
         flush_denormal=bool(loader_cfg.get("flush_denormal", True)),
     )
 
@@ -290,6 +302,8 @@ def build(cfg: dict) -> Pipeline:
                 every_steps=hcfg.get("snapshot_every", 0),
             )
         )
+    if hcfg.get("metrics"):
+        hooks.insert(0, MetricsHook(run_dir, every=hcfg.get("log_every", 50)))
     wcfg = cfg.get("wandb") or {}
     if wcfg.get("mode", "disabled") != "disabled":
         hooks.append(
@@ -320,6 +334,19 @@ def build(cfg: dict) -> Pipeline:
                 f"driver.prefetch=true, but {mutators} declare "
                 "mutates_sampling_state: they change what the composer would "
                 "sample between steps, so batches cannot be composed ahead"
+            )
+
+    amp = dcfg.get("amp")
+    if amp and mode == "offline":
+        raise PipelineError("driver.amp is supported by the streaming driver only")
+    if amp and recipe is not None:
+        slot_names = {s.name for s in recipe.slots}
+        if recipe.fallback is not None:
+            slot_names |= {s.name for s in recipe.fallback.slots}
+        unknown = set(amp.get("fp32_slots") or ()) - slot_names
+        if unknown:
+            raise PipelineError(
+                f"driver.amp.fp32_slots names {sorted(unknown)}, which no recipe slot defines"
             )
 
     driver: LockstepDriver | OfflineDriver
@@ -361,10 +388,12 @@ def build(cfg: dict) -> Pipeline:
             advance=dcfg.get("advance"),
             rate=dcfg.get("rate"),
             warmup=dcfg.get("warmup"),
+            strict_batches=dcfg.get("strict_batches", False),
             hooks=hooks,
             max_steps=dcfg.get("max_steps"),
             grad_accumulation=dcfg.get("grad_accumulation", 1),
             prefetch=prefetch,
+            amp=amp,
         )
 
     pipe = Pipeline(
@@ -388,6 +417,21 @@ def build(cfg: dict) -> Pipeline:
     )
     pipe.warnings.extend(build_warnings)
     validate(pipe)
+    for loss in losses:
+        if hasattr(loss, "validate_pipeline"):
+            try:
+                loss.validate_pipeline(pipe)
+            except ValueError as exc:
+                raise PipelineError(str(exc)) from exc
+        if getattr(loss, "requires_offline", False) and mode != "offline":
+            raise PipelineError(f"loss {loss.name}: requires offline clip training")
+        if not getattr(loss, "supports_grad_accumulation", True) and driver.grad_accumulation != 1:
+            raise PipelineError(f"loss {loss.name}: requires grad_accumulation=1")
+        if hasattr(loss, "validate_model"):
+            try:
+                loss.validate_model(model)
+            except (ValueError, KeyError) as exc:
+                raise PipelineError(str(exc)) from exc
     driver.run_config = cfg
     driver.run_inputs = inputs
     return pipe

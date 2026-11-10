@@ -5,7 +5,7 @@ Submodules:
                  toy): sessions of time-aligned channels
   * packed    -- packed frame store (shards + numpy index) behind
                  stream:packed_frames; build/verify CLI
-  * decoding  -- video decode backends (frame_dir, poodle stub): file+time ->
+  * decoding  -- video decode backends (pyav, frame_dir, poodle stub): file+time ->
                  pixels, sequential and random access
   * loading   -- Loader: refs -> tensors, as late as possible
   * views     -- named augmentation pipelines

@@ -45,11 +45,11 @@ Model uploads validate the pair and reject additional payloads, including `.pth`
 files. Dataset uploads retain their existing collection format. Snapshots stay
 in the local run directory.
 
-## Configuration and overrides
-
 `egl publish prepare` and `egl publish push` publish evaluated checkpoints with
 per-seed provenance and update the website's benchmark feed. See
 [publishing results](publishing_results.md) for the manifest and deployment settings.
+
+## Configuration and overrides
 
 ```bash
 egl train toy_streaming seed=42 dry_run=true
@@ -103,7 +103,8 @@ the catalog defaults. Fetch and prepare use the same `ROOT/<name>` collection
 layout; shape-bias source assets live separately under `ROOT/.sources/shape-bias`. Use `egl data prepare NAME --help` for each preparer's
 options; this help works in a base installation without training extras.
 Preparation still needs the dependencies and source assets documented
-in the [evaluation guide](evaluation.md). It does not bypass data access requirements.
+in the [benchmark selection guide](evaluation.md#benchmark-selection) and
+[SAYCam evaluation data guide](evaluation/data.md). It does not bypass data access requirements.
 
 Each preparer also runs directly as an installed Python module:
 
@@ -114,6 +115,7 @@ Each preparer also runs directly as an installed Python module:
 | `shape-bias` | `python -m egolearn.evaluation.benchmarks.shape_bias.prepare` |
 | `spatial-relations` | `python -m egolearn.evaluation.benchmarks.spatial_relations.prepare` |
 | `spatial-monitoring` | `python -m egolearn.evaluation.benchmarks.spatial_relations.subset` |
+| `grasp` | `python -m egolearn.evaluation.benchmarks.grasp.prepare` |
 
 Append `--help` to a module command to see its arguments and options.
 Direct module calls do not apply the CLI's shared-root defaults or its

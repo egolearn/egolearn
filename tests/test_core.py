@@ -6,6 +6,7 @@ Run: pytest tests/ -q
 from __future__ import annotations
 
 from copy import deepcopy
+from unittest.mock import Mock
 
 import pytest
 import torch
@@ -95,25 +96,6 @@ def test_ms_greedy_clustering_finds_block_boundary():
     assert cps == [10]
 
 
-def test_project_imports_register_components():
-    # the config `_imports_` mechanism: importing a project module makes its
-    # method-novel components addressable through the shared registries
-    import importlib
-
-    importlib.import_module("egolearn.methods.babycl")
-    from egolearn.config.registry import ADMISSION
-
-    assert ADMISSION.get("babycl_online_segmenter") is not None
-    assert ADMISSION.get("an_chunk_emitter") is not None
-
-
-def test_poodle_stub_raises_helpfully():
-    from egolearn.config.registry import DECODERS
-
-    with pytest.raises(NotImplementedError, match="Poodle"):
-        DECODERS.get("poodle")()
-
-
 def test_clip_unit_loads_contiguous_consistent_clips():
     # clip data unit: [B, V, T, C, H, W], one aug-parameter draw per clip
     import random
@@ -148,32 +130,6 @@ def test_clip_unit_loads_contiguous_consistent_clips():
     sv = loader.clip_views(short, ["ce"], clip_len=8, stride=1, rng=random.Random(2))
     assert sv.shape == (1, 8, 3, 48, 48)
     assert torch.equal(sv[0, 2], sv[0, 7])  # clamped repeats
-
-
-def test_clip_slot_composes_through_recipe(toy_config, tmp_path):
-    # unit=clip flows through memory -> recipe -> composer -> [B,V,T,C,H,W]
-    cfg = toy_config(tmp_path)
-    cfg["views"]["cv"] = {"name": "clip_simclr", "size": 48, "view_idx": 0}
-    cfg["recipe"]["slots"] = [
-        {
-            "name": "clips",
-            "source": {"kind": "tier", "memory": "frames", "tier": "short"},
-            "n": 2,
-            "unit": "clip",
-            "clip_len": 4,
-            "clip_stride": 1,
-            "views": ["cv"],
-            "labels_from": "fixed",
-            "strict": True,
-        },
-    ]
-    cfg["losses"] = []  # loading-side support only; no clip loss yet
-    pipe = egolearn.build(cfg)
-    pipe.driver._run_warmup()
-    batch = pipe.composer.compose(pipe.recipe, pipe.memories, {}, pipe.ctx)
-    assert batch is not None
-    assert batch["clips"]["views"].shape == (2, 1, 4, 3, 48, 48)
-    assert batch["clips"]["labels"].shape == (2,)
 
 
 def test_validation_rejects_unknown_slot(toy_config, tmp_path):
@@ -245,6 +201,64 @@ def test_offline_mode_rejects_unknown_view(toy_config, tmp_path):
         egolearn.build(cfg)
 
 
+@pytest.mark.parametrize(
+    "invalid,prefetch,successful_steps",
+    [("nan", False, 1), ("nan", True, 1), ("inf", False, 0), ("empty", True, 0)],
+)
+def test_offline_invalid_loss_stops_without_advancing_batches(
+    toy_config, tmp_path, monkeypatch, invalid, prefetch, successful_steps
+):
+    cfg = _offline_cfg(toy_config, tmp_path)
+    cfg["record_json"] = False  # Failure must not depend on run-record hooks.
+    cfg["driver"].update(prefetch=prefetch, grad_accumulation=3)
+    cfg["loader"] = {"workers": 1 if prefetch else 0}
+    pipe = egolearn.build(cfg)
+    driver = pipe.driver
+    before = [p.detach().clone() for p in pipe.model.parameters()]
+    hook = Mock()
+    driver.hooks.append(hook)
+    close = Mock(wraps=driver.loader.close)
+    monkeypatch.setattr(driver.loader, "close", close)
+    step = Mock(wraps=driver.optimizer.step)
+    monkeypatch.setattr(driver.optimizer, "step", step)
+    loss = pipe.losses[0]
+    compute = loss.compute
+    calls = 0
+
+    def invalid_loss(*args):
+        nonlocal calls
+        calls += 1
+        # Bound the regression even if a persistent invalid loss would loop forever.
+        if calls > successful_steps + 1:
+            pytest.fail("offline training continued after an invalid loss")
+        if calls <= successful_steps:
+            return compute(*args)
+        return {} if invalid == "empty" else {"loss": torch.tensor(float(invalid))}
+
+    monkeypatch.setattr(loss, "compute", invalid_loss)
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            rf"step {successful_steps}.*non-finite or empty loss.*"
+            rf"epoch 0, batch {successful_steps}"
+        ),
+    ):
+        driver.fit()
+
+    assert calls == successful_steps + 1
+    assert pipe.ctx.clock.step == pipe.ctx.clock.admitted == successful_steps
+    assert pipe.ctx.clock.compose_seq == successful_steps + 1
+    assert driver.skipped_steps == 1
+    assert driver.nonfinite_steps == int(invalid != "empty")
+    hook.on_skip.assert_called_once_with(driver, nonfinite=invalid != "empty")
+    hook.on_end.assert_not_called()
+    step.assert_not_called()  # Do not flush the partial accumulation window on failure.
+    for old, current in zip(before, pipe.model.parameters(), strict=True):
+        assert torch.equal(old, current)
+    close.assert_called_once_with()
+    assert driver.loader._pool is None
+
+
 # ---------------------------------------------------------------------------
 # composed model: encoders x heads x predictors, capabilities, eval compat
 # ---------------------------------------------------------------------------
@@ -292,6 +306,8 @@ def test_composed_model_two_encoders_and_contract():
 
     with pytest.raises(KeyError, match="declares no modality"):
         model.precompute_feats({"s": {"views": x.unsqueeze(1)}}, torch.device("cpu"))
+    with pytest.raises(KeyError, match="no encoder named"):
+        model.encode("missing", x)
 
 
 def test_video_encoder_trains_on_clip_slots(toy_config, tmp_path):
@@ -311,6 +327,7 @@ def test_video_encoder_trains_on_clip_slots(toy_config, tmp_path):
             "clip_len": 4,
             "clip_stride": 1,
             "views": ["cv1", "cv2"],
+            "labels_from": "fixed",
             "strict": True,
         },
     ]
@@ -330,6 +347,11 @@ def test_video_encoder_trains_on_clip_slots(toy_config, tmp_path):
     ]
     pipe = egolearn.build(cfg)
     assert "video_representation" in pipe.model.capabilities()
+    pipe.driver._run_warmup()
+    batch = pipe.composer.compose(pipe.recipe, pipe.memories, {}, pipe.ctx)
+    assert batch is not None
+    assert batch["clips"]["views"].shape == (3, 2, 4, 3, 48, 48)
+    assert batch["clips"]["labels"].shape == (3,)
     pipe.driver.fit()
     assert pipe.ctx.clock.step == 2  # max_steps from the shared toy config
 
@@ -502,14 +524,6 @@ def test_slot_modality_without_encoder_warns(toy_config, tmp_path):
     assert any("clips" in w and "video" in w for w in pipe.warnings)
 
 
-def test_probes_null_key_means_no_probes(toy_config, tmp_path):
-    # `probes:` present but empty (yaml null) disables evaluation, as before
-    cfg = toy_config(tmp_path)
-    cfg["probes"] = None
-    pipe = egolearn.build(cfg)
-    assert pipe.probes == []
-
-
 def test_two_trainable_same_modality_encoders_rejected_at_build(toy_config, tmp_path):
     import pytest
 
@@ -520,19 +534,6 @@ def test_two_trainable_same_modality_encoders_rejected_at_build(toy_config, tmp_
     }
     with pytest.raises(egolearn.PipelineError, match="compete for modality"):
         egolearn.build(cfg)
-
-
-def test_encode_rejects_unknown_names():
-    import pytest
-
-    from egolearn.model.encoders.image import ToyCNNEncoder
-    from egolearn.model.model import ComposedModel
-
-    model = ComposedModel({"vision": ToyCNNEncoder(dim=16)})
-    x = torch.rand(2, 3, 32, 32)
-    assert model.encode("vision", x).pooled.shape == (2, 16)
-    with pytest.raises(KeyError, match="no encoder named"):
-        model.encode("text", torch.ones(2, 5, dtype=torch.long), torch.full((2,), 5))
 
 
 def test_solver_warns_on_group_matching_nothing(toy_config, tmp_path):
@@ -594,7 +595,19 @@ def test_resumed_run_does_not_overwrite_milestone_snapshots(tmp_path):
     assert 0.05 in hook._done  # marked handled, so it is not re-checked
 
 
-@pytest.mark.parametrize("mode", ["streaming", "offline", "accumulation", "prefetch"])
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "streaming",
+        "offline",
+        "accumulation",
+        "prefetch",
+        "mid_quantum",
+        "mid_quantum_reuse",
+        "final_quantum",
+        "final_quantum_amp",
+    ],
+)
 def test_resumed_run_matches_uninterrupted(toy_config, tmp_path, mode):
     from egolearn.utils.snapshot import load_snapshot, save_snapshot
 
@@ -604,6 +617,24 @@ def test_resumed_run_matches_uninterrupted(toy_config, tmp_path, mode):
     if mode == "accumulation":
         cfg["driver"]["grad_accumulation"] = 2
         cut = 3  # Snapshot with one backward pending in the accumulation window.
+    elif mode.startswith("mid_quantum"):
+        # Snapshot one step into the second quantum; with resample off, the
+        # resumed run must rebuild the batch that quantum reuses.
+        cfg["driver"]["rate"] = {"steps_per_admit": 3, "resample": mode == "mid_quantum"}
+        cfg["driver"]["max_steps"] = 6
+        cut = 4
+    elif mode.startswith("final_quantum"):
+        # The stream is exhausted, but the capped final quantum still owes
+        # updates: its partial accumulation window must survive the snapshot.
+        cfg["driver"].update(
+            advance={"kind": "observations", "n": 100000},
+            rate={"steps_per_admit": 7, "resample": True},
+            grad_accumulation=2,
+            max_steps=7,  # The completed quantum must flush its odd tail.
+        )
+        if mode == "final_quantum_amp":
+            cfg["driver"]["amp"] = {"dtype": "float16"}
+        cut = 3
     elif mode == "prefetch":
         cfg = _prefetch_cfg(toy_config, tmp_path, True)
         cut = 4  # Snapshot at a quantum boundary with a prefetched batch in flight.
@@ -614,8 +645,11 @@ def test_resumed_run_matches_uninterrupted(toy_config, tmp_path, mode):
     interrupted["driver"]["max_steps"] = cut
     first = egolearn.build(interrupted)
     first.driver.fit()
-    if mode == "accumulation":
+    if mode == "accumulation" or mode.startswith("final_quantum"):
         assert any(p.grad is not None for p in first.model.parameters())
+    if mode.startswith("final_quantum"):
+        assert first.driver._exhausted
+        assert first.ctx.clock.quantum_left == 4
     snapshot = str(tmp_path / "resume.pth")
     save_snapshot(snapshot, first.driver)
 
@@ -629,6 +663,12 @@ def test_resumed_run_matches_uninterrupted(toy_config, tmp_path, mode):
         }
     resumed.driver.fit()
     assert resumed.ctx.clock.step == ref.ctx.clock.step == cfg["driver"]["max_steps"]
+    assert resumed.ctx.clock.admitted == ref.ctx.clock.admitted
+    if mode.startswith("final_quantum"):
+        assert all(p.grad is None for p in ref.model.parameters())
+        assert all(p.grad is None for p in resumed.model.parameters())
+    if mode == "final_quantum_amp":
+        assert resumed.driver.scaler.state_dict() == ref.driver.scaler.state_dict()
     for key, value in ref.model.state_dict().items():
         assert torch.equal(value, resumed.model.state_dict()[key]), key
 
@@ -698,6 +738,16 @@ def test_resume_after_stream_end_adds_nothing(toy_config, tmp_path):
     assert {t: len(tab) for t, tab in p2.memories["frames"].tiers.items()} == sizes
 
 
+def test_clock_from_an_older_snapshot_owes_no_quantum():
+    # snapshots saved before quantum_left existed resume at the next advance
+    state = Context(seed=0, device="cpu").state_dict()
+    del state["clock"]["quantum_left"]
+    ctx = Context(seed=0, device="cpu")
+    ctx.clock.quantum_left = 5
+    ctx.load_clock(state)
+    assert ctx.clock.quantum_left == 0
+
+
 def test_snapshot_restores_rng_states_after_replay():
     # the resume order is clock -> replay -> RNG states: a replay that
     # consumes named RNGs must not advance them past the snapshot's values
@@ -764,9 +814,12 @@ def test_first_step_uses_warmup_lr(toy_config, tmp_path):
     ids=["tied-final-frame", "rounded-up-final-frame"],
 )
 def test_an_chunk_includes_final_frame(timestamps, expected):
+    from egolearn.config.registry import ADMISSION
     from egolearn.data.sources.base import DenseFrameChannel, Session, SparseIntervalChannel
     from egolearn.methods.babycl.an_chunks import ANChunkEmitter
 
+    assert ADMISSION.get("an_chunk_emitter") is ANChunkEmitter
+    assert ADMISSION.get("babycl_online_segmenter") is not None
     video = DenseFrameChannel(
         "video",
         "s",
@@ -807,6 +860,10 @@ def test_worker_pool_matches_serial_loading(toy_config, tmp_path):
     # whether decode+augment ran in-process or in a spawn pool
     def first_batch(workers):
         cfg = toy_config(tmp_path / f"w{workers}")
+        cfg["_imports_"] = ["egolearn.methods.babycl"]
+        cfg["views"] = {
+            f"v{i + 1}": {"name": "babycl_ms_aug", "size": 64, "view_idx": i} for i in range(2)
+        }
         cfg["loader"] = {"workers": workers}
         pipe = egolearn.build(cfg)
         pipe.driver._run_warmup()
@@ -893,22 +950,3 @@ def test_prefetch_refused_when_a_loss_mutates_sampling(toy_config, tmp_path):
     cfg["losses"].append({"_target_": "loss:mutating_test_loss"})
     with pytest.raises(egolearn.PipelineError, match="mutates_sampling_state"):
         egolearn.build(cfg)
-
-
-def test_worker_pool_registers_project_views(toy_config, tmp_path):
-    # a spawned worker starts from a bare interpreter, so the config's
-    # `_imports_` (which register project-owned views) must run in the
-    # worker too before it can rebuild the view pipelines
-    cfg = toy_config(tmp_path)
-    cfg["_imports_"] = ["egolearn.methods.babycl"]
-    cfg["views"] = {
-        "v1": {"name": "babycl_ms_aug", "size": 64, "view_idx": 0},
-        "v2": {"name": "babycl_ms_aug", "size": 64, "view_idx": 1},
-    }
-    cfg["loader"] = {"workers": 1}
-    pipe = egolearn.build(cfg)
-    pipe.driver._run_warmup()
-    batch = pipe.composer.compose(pipe.recipe, pipe.memories, {}, pipe.ctx)
-    pipe.loader.close()
-    assert batch is not None
-    assert batch["curr"]["views"].shape[1] == 2

@@ -1,0 +1,16 @@
+defaults:
+  - krishnacam_shared
+  - _self_
+
+hydra:
+  searchpath: [pkg://egolearn.configs]
+
+loader:
+  workers: 32
+
+stream:
+  decoder:
+    _target_: "decoder:babycl_prepared_video"
+    source_root: ${stream.root_dir}
+    prepared_root: ${oc.env:KRISHNACAM_PREPARED,/path/to/krishnacam/prepared}
+    seek_gap: 8

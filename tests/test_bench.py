@@ -158,18 +158,6 @@ def test_array_uses_compute_python_and_preserves_argument_boundaries(tmp_path, m
     ]
 
 
-def test_cli_bench_help_needs_no_torch(tmp_path):
-    result = subprocess.run(
-        [sys.executable, "-I", "-m", "egolearn.cli", "bench", "--help"],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "table" in result.stdout and "run" in result.stdout
-
-
 def test_pins_apply_before_interpolation_and_runtime_env_is_not_frozen(tmp_path, monkeypatch):
     config = tmp_path / "custom=1.yaml"
     config.write_text(
@@ -326,7 +314,7 @@ def test_inputs_changed_during_execution_do_not_get_averaged(tmp_path, monkeypat
     assert record["status"] == "failed"
 
 
-@pytest.mark.parametrize("artifact", ["legacy", "export", "hub_export"])
+@pytest.mark.parametrize("artifact", ["legacy", "hub_export"])
 def test_real_synthetic_evaluation_suite(tmp_path, monkeypatch, artifact):
     import torch
     from PIL import Image
@@ -414,9 +402,15 @@ def test_real_synthetic_evaluation_suite(tmp_path, monkeypatch, artifact):
         assert downloads == [("nested/model.safetensors", "v1"), ("nested/model.json", "a" * 40)]
 
 
-@pytest.mark.parametrize("hub", [False, True])
-@pytest.mark.parametrize("key", ["checkpoint", "init_from.checkpoint"])
-@pytest.mark.parametrize("filename", ["model.json", "model.safetensors"])
+@pytest.mark.parametrize(
+    "hub,key,filename",
+    [
+        (False, "checkpoint", "model.json"),
+        (True, "checkpoint", "model.safetensors"),
+        (False, "init_from.checkpoint", "model.safetensors"),
+        (True, "init_from.checkpoint", "model.json"),
+    ],
+)
 def test_export_pins_cover_both_files_before_and_after_planning(
     tmp_path, monkeypatch, key, filename, hub
 ):

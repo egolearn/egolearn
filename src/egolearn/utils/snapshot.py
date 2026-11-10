@@ -1,7 +1,8 @@
 """Save and resume training snapshots.
 
 A snapshot captures everything a run needs to continue -- model, optimizer,
-clocks/RNG states, memory tables, label stores, and the LR-schedule anchor.
+clocks/RNG states, memory tables, label stores, the LR-schedule anchor, and the
+float16 loss scaler when `driver.amp` uses one.
 `load_snapshot` restores all of it AND prepares the driver (the object that
 runs the training loop) to continue:
 
@@ -63,6 +64,7 @@ def save_snapshot(path: str, driver) -> str:
             if p.grad is not None
         },
         "driver": {
+            "metadata": getattr(driver, "snapshot_metadata", None),
             "exhausted": bool(getattr(driver, "_exhausted", False)),
             "skipped_steps": getattr(driver, "skipped_steps", 0),
             "nonfinite_steps": getattr(driver, "nonfinite_steps", 0),
@@ -74,6 +76,10 @@ def save_snapshot(path: str, driver) -> str:
         "label_stores": {name: store.state_dict() for name, store in label_stores.items()},
         "schedule": (
             driver.schedule.state_dict() if getattr(driver, "schedule", None) is not None else None
+        ),
+        # float16 amp: the loss scale and its growth counter
+        "grad_scaler": (
+            driver.scaler.state_dict() if getattr(driver, "scaler", None) is not None else None
         ),
     }
     torch.save(state, path + ".tmp")
@@ -110,6 +116,8 @@ def load_snapshot(path: str, driver) -> None:
         if record is not None:
             record.value["input_provenance"]["resume"] = identity
     state = torch.load(resolve(path, repo_type="model"), map_location="cpu", weights_only=False)
+    if validate := getattr(driver, "validate_snapshot", None):
+        validate(state)
     if identity is not None:
         identity["training_provenance"] = state.get("run_provenance") or "unavailable"
 
@@ -127,6 +135,8 @@ def load_snapshot(path: str, driver) -> None:
     driver.optimizer.load_state_dict(state["optimizer"])
     if state.get("schedule") is not None and getattr(driver, "schedule", None) is not None:
         driver.schedule.load_state_dict(state["schedule"])
+    if state.get("grad_scaler") is not None and getattr(driver, "scaler", None) is not None:
+        driver.scaler.load_state_dict(state["grad_scaler"])
 
     # Order matters: clock first (the replay below needs to know how far to
     # go), RNG states LAST.  The replay re-runs admission from the start of

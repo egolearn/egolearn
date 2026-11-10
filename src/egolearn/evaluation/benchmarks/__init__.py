@@ -11,7 +11,7 @@ Available: labeled_s_4afc/ and babyview_4afc/ (trial manifests for the
 generic probe:four_afc; babyview also ships a probe:linear split),
 labeled_s_linear/ (fixed-feature L-BFGS linear decoding), vtwt/
 (probe:vtwt), baby_winoground/ (probe:baby_winoground), shape_bias/
-(probe:shape_bias), intphys2/ (probe:intphys2, on the shared VoE readout),
-and imagenet_linear/ (benchmark:imagenet_linear_sgd).
+(probe:shape_bias), intphys2/ and grasp/ (probe:intphys2, probe:grasp, on the
+shared VoE readout), and imagenet_linear/ (benchmark:imagenet_linear_sgd).
 Planned: rvs_ego/, egolife/ ...
 """

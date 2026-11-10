@@ -1,0 +1,29 @@
+driver:
+  mode: streaming
+  prefetch: false
+  strict_batches: true
+  advance: {kind: events, schema: VisualSegment, n: '${run_control.advance_clips}', require_events: true}
+  warmup: {events_emitted: 30}  # batch_size - advance_clips; checked by runner
+  rate: {steps_per_admit: 1, resample: true}
+admission:
+  - _target_: 'admission:dense_clip'
+    clip_len: ${driver.batch.clip_len}
+    clip_stride: ${driver.batch.clip_stride}
+    max_frame_gap: ${driver.batch.max_frame_gap}
+memories:
+  clips:
+    tiers:
+      window: {capacity: '${run_control.batch_size}', update: fifo}
+    admit_to: [window]
+    overflow: {}
+routes: {VisualSegment: clips}
+recipe:
+  slots:
+    - name: clips
+      source: {kind: tier, memory: clips, tier: window}
+      n: ${run_control.batch_size}
+      unit: clip
+      views: ${driver.batch.views}
+      clip_len: ${driver.batch.clip_len}
+      clip_stride: ${driver.batch.clip_stride}
+      strict: true
