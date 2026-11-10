@@ -5,7 +5,7 @@
 
 # egolearn
 
-[![ci](https://github.com/agentic-learning-ai-lab/egolearn/actions/workflows/ci.yml/badge.svg)](https://github.com/agentic-learning-ai-lab/egolearn/actions/workflows/ci.yml)
+[![ci](https://github.com/egolearn/egolearn/actions/workflows/ci.yml/badge.svg)](https://github.com/egolearn/egolearn/actions/workflows/ci.yml)
 
 EgoLearn is a Python library for training and evaluating models on first-person
 video. It supports streaming and offline self-supervised learning, bounded replay
@@ -19,7 +19,7 @@ uv installs Python 3.12 and the training dependencies. On cluster login nodes,
 use the [shell launcher](docs/cluster.md) to request a compute allocation first.
 
 ```bash
-git clone https://github.com/agentic-learning-ai-lab/egolearn.git
+git clone https://github.com/egolearn/egolearn.git
 cd egolearn
 uv sync --extra train
 uv run egl train toy_streaming dry_run=true

@@ -9,7 +9,7 @@ from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = "egolearn.config.registry"
-GITHUB = "https://github.com/agentic-learning-ai-lab/egolearn"
+GITHUB = "https://github.com/egolearn/egolearn"
 
 # Curated entry points use their definitions, never the package's lazy exports.
 API = {

@@ -110,6 +110,8 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- Package metadata, citation information, README links, and generated documentation
+  target the public repository and website.
 - SAYCam and BabyView checkpoint access instructions require evidence of access
   to the corresponding Databrary dataset.
 - The README starts with dataset-free CPU training, and the release guide publishes only explicitly audited refs.

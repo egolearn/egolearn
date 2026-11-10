@@ -2,7 +2,7 @@ site_name: egolearn
 site_url: https://egolearn.org/docs/
 site_description: Learning from first-person video streams.
 
-repo_url: https://github.com/agentic-learning-ai-lab/egolearn
+repo_url: https://github.com/egolearn/egolearn
 repo_name: egolearn
 edit_uri: edit/main/docs/
 
@@ -96,7 +96,7 @@ extra:
   staging: !ENV [EGOLEARN_SITE_STAGING, true]
   social:
     - icon: lab/github
-      link: https://github.com/agentic-learning-ai-lab/egolearn
+      link: https://github.com/egolearn/egolearn
       name: GitHub
 
 validation:
