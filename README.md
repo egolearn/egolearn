@@ -77,11 +77,14 @@ the corresponding training dataset on Databrary.
 
 To request access:
 
-1. Submit an access request on the model's Hugging Face page.
-2. Email [mengye@nyu.edu](mailto:mengye@nyu.edu) with your Hugging Face username,
-   the model name, your intended use, and evidence that you can access the
-   corresponding dataset on Databrary. For example, attach a screenshot of your
-   Databrary access permissions for SAYCam or BabyView, matching the model's training dataset.
+1. Open the access-request form on the model's Hugging Face page.
+2. Describe your **Intended use**, then enter a proof URL in
+   **Link to Databrary access proof**.
+   A screenshot of your Databrary permissions should identify you and the
+   corresponding dataset, SAYCam or BabyView. Make sure EgoLearn reviewers can
+   open the link. Redact unrelated personal information and exclude dataset
+   images or videos.
+3. Submit the form. No separate email is needed.
 
 The EgoLearn team reviews the evidence before granting access to the weights.
 KrishnaCam and WalkingTours checkpoints are available without an access request.

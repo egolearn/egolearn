@@ -110,6 +110,8 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- SAYCam and BabyView checkpoint requests collect Databrary proof links directly
+  in the Hugging Face form instead of requiring a separate email.
 - Hub fetches and uploads default to `egolearn/<name>`, while cataloged datasets retain their existing repository IDs.
 
 - SAYCam and BabyView checkpoint access instructions require evidence of access

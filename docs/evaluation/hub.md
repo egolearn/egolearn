@@ -165,10 +165,6 @@ names can include the method, training data, and seed. The example targets
 repository ID. Revisioned `hf://` references always use their explicit
 organization and repository, including existing lab-hosted artifacts.
 
-Released SAYCam and BabyView checkpoints use public repositories with manual
-approval. Applicants must email evidence of access to the corresponding dataset
-on Databrary. See [model checkpoint access](../../README.md#model-checkpoints).
-
 `push` creates a staging copy, adds checksums and a minimal card, and leaves
 the local source unchanged. New repositories are private by default.
 `--public` is required to create or upload to a public repository; it does not
@@ -177,6 +173,28 @@ change an existing repository's visibility.
 An upload replaces the remote payload and removes stale files, preserving
 `.gitattributes`. Unsupported license identifiers fail before repository
 creation and report the accepted list.
+
+### Checkpoint access forms
+
+Released SAYCam and BabyView checkpoints use public repositories with manual
+approval. Applicants submit their intended use and a link to Databrary access
+proof in the Hugging Face request form. See
+[model checkpoint access](../../README.md#model-checkpoints).
+
+Keep manual approval enabled in each checkpoint repository's settings. Add these
+[custom fields](https://huggingface.co/docs/hub/models-gated#customize-requested-information)
+to the model card's existing YAML metadata:
+
+```yaml
+extra_gated_fields:
+  Link to Databrary access proof: text
+  Intended use: text
+```
+
+The gate description should name the corresponding dataset and explain what
+proof to provide. Review the submitted answers under **Settings → Review access
+requests** before granting access. Preserve these fields and the access instructions
+when replacing a model card during an upload.
 
 ## Local verification
 
