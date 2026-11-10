@@ -69,6 +69,23 @@ contracts, the [data-loading guide](docs/data_loading.md) for storage and worker
 settings, and the [initialization guide](docs/initialization.md) for starting from
 selected checkpoint weights.
 
+## Model checkpoints
+
+Published checkpoints are available from [EgoLearn on Hugging Face](https://huggingface.co/egolearn).
+SAYCam and BabyView models require manual approval. You must already have access to
+the corresponding training dataset on Databrary.
+
+To request access:
+
+1. Submit an access request on the model's Hugging Face page.
+2. Email [mengye@nyu.edu](mailto:mengye@nyu.edu) with your Hugging Face username,
+   the model name, your intended use, and evidence that you can access the
+   corresponding dataset on Databrary. For example, attach a screenshot of your
+   Databrary access permissions for SAYCam or BabyView, matching the model's training dataset.
+
+The EgoLearn team reviews the evidence before granting access to the weights.
+KrishnaCam and WalkingTours checkpoints are available without an access request.
+
 ## Evaluation
 
 Evaluate saved checkpoints independently with `egl eval` or the

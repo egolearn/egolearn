@@ -110,6 +110,8 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- SAYCam and BabyView checkpoint access instructions require evidence of access
+  to the corresponding Databrary dataset.
 - The README starts with dataset-free CPU training, and the release guide publishes only explicitly audited refs.
 - Advisory reviews pin both the upstream workflow and reviewer code, with fork PRs excluded explicitly.
 - CI validates temporary `release-sync/**` branches before private `main` follows the public commit.

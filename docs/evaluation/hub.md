@@ -156,8 +156,10 @@ and reject other payloads, including `.pth` files. Model repository
 names follow `egolearn-<method>-<data>-seed<n>`. Pass only
 `<method>-<data>-seed<n>` as `--name`, because `push` adds the `egolearn-` prefix.
 An explicit `--repo org/name` overrides that repository name.
-SAYCam-trained weights remain
-private until publication rights under the Databrary agreement are confirmed.
+
+Released SAYCam and BabyView checkpoints use public repositories with manual
+approval. Applicants must email evidence of access to the corresponding dataset
+on Databrary. See [model checkpoint access](../../README.md#model-checkpoints).
 
 `push` creates a staging copy, adds checksums and a minimal card, and leaves
 the local source unchanged. New repositories are private by default.
