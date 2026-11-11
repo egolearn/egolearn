@@ -287,6 +287,8 @@ def test_import_binds_to_checkpoint_and_requires_explicit_legacy_opt_in(tmp_path
         ("vtwt", "vtwt_acc", "vtwt"),
         ("baby_winoground", "bw_group_acc", "bw"),
         ("baby_winoground", "bw_pos_ctx_acc", "bw"),
+        ("vtwt_224", "vtwt_acc", "vtwt"),
+        ("custom_image_text", "bw_group_acc", "bw"),
     ],
 )
 def test_import_requires_complete_babyvlm_counts(tmp_path, benchmark, metric, prefix):
@@ -298,10 +300,10 @@ def test_import_requires_complete_babyvlm_counts(tmp_path, benchmark, metric, pr
         configs={benchmark: {"csv_path": "/private/trials.csv"}},
         versions={benchmark: "1"},
     )
-    column = next(column for column in DEFAULT_COLUMNS if column["benchmark"] == benchmark)
+    column = next(column for column in DEFAULT_COLUMNS if column["metric"].startswith(f"{prefix}_"))
     kwargs = {
         "checkpoint": checkpoint,
-        "columns": [{**column, "metric": metric}],
+        "columns": [{**column, "benchmark": benchmark, "metric": metric}],
         "input_hashes": [{"benchmark": benchmark, "kind": "csv_path", "sha256": "a" * 64}],
     }
     path = tmp_path / "evaluation.json"

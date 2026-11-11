@@ -74,12 +74,12 @@ def import_evaluations(
             scores = document.get("results", {}).get(name, {})
             if metric not in scores:
                 continue
-            count_keys = {
+            for benchmark, (evaluated_key, skipped_key) in {
                 "vtwt": ("vtwt_n", "vtwt_skipped"),
                 "baby_winoground": ("bw_n", "bw_skipped"),
-            }.get(name)
-            if count_keys:
-                evaluated_key, skipped_key = count_keys
+            }.items():
+                if name != benchmark and skipped_key not in scores:
+                    continue
                 evaluated, skipped = scores.get(evaluated_key), scores.get(skipped_key)
                 if (
                     type(evaluated) not in (int, float)

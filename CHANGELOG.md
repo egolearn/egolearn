@@ -145,7 +145,7 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
-- `egl publish prepare` rejects incomplete VTWT and Baby Winoground evaluations before importing their scores.
+- `egl publish prepare` rejects incomplete VTWT and Baby Winoground evaluations, including those with custom benchmark names.
 - Staging sites allow crawlers to read `noindex` tags without `robots.txt` blocking access to the pages.
 - VoE probes reject videos shorter than `num_frames`, preventing repeated frames
   from affecting IntPhys 2 and GRASP scores.
