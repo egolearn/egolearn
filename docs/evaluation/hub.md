@@ -149,7 +149,7 @@ uv run python -m egolearn.hub push prepared/ \
   --name shape-bias --license cc-by-4.0
 ```
 
-To export and upload model weights:
+To export and upload model weights to a new repository:
 
 ```bash
 uv run egl export runs/example/final.pth exports/babycl-saycam-seed0
@@ -166,7 +166,10 @@ repository ID. Revisioned `hf://` references always use their explicit
 organization and repository, including existing lab-hosted artifacts.
 
 `push` creates a staging copy, adds checksums and a minimal card, and leaves
-the local source unchanged. New repositories are private by default.
+the local source unchanged. It ignores the source `README.md` and overwrites
+the remote card, including custom access fields and instructions. For released
+gated checkpoints, use the [update procedure below](#updating-gated-checkpoints).
+New repositories are private by default.
 `--public` is required to create or upload to a public repository; it does not
 change an existing repository's visibility.
 
@@ -193,8 +196,53 @@ extra_gated_fields:
 
 The gate description should name the corresponding dataset and explain what
 proof to provide. Review the submitted answers under **Settings → Review access
-requests** before granting access. Preserve these fields and the access instructions
-when replacing a model card during an upload.
+requests** before granting access.
+
+### Updating gated checkpoints
+
+For an existing gated repository containing the exported model pair, upload only
+the replacement pair and its checksums to preserve the remote `README.md`, access
+form, and instructions throughout the update.
+Use an export from `egl export` and authenticate with a write-enabled `HF_TOKEN`,
+then replace the directory and repository ID below with the destination you
+intend to update:
+
+```python
+from pathlib import Path
+
+from huggingface_hub import CommitOperationAdd, HfApi
+
+from egolearn.hub import write_checksums
+from egolearn.utils.model_artifact import validate_export
+
+export_dir = Path("exports/babycl-saycam-seed0")
+repo_id = "egolearn/babycl-saycam-seed0"
+validate_export(export_dir, publishing=True)
+write_checksums(export_dir)
+
+api = HfApi()
+head = api.repo_info(repo_id=repo_id, repo_type="model").sha
+api.create_commit(
+    repo_id=repo_id,
+    repo_type="model",
+    operations=[
+        CommitOperationAdd(path_in_repo=name, path_or_fileobj=export_dir / name)
+        for name in ("model.safetensors", "model.json", "checksums.sha256")
+    ],
+    parent_commit=head,
+    commit_message="update exported weights and checksums",
+)
+```
+
+The [Hub commit API](https://huggingface.co/docs/huggingface_hub/package_reference/hf_api#huggingface_hub.HfApi.create_commit)
+uploads these three files in one commit without deleting other remote files.
+The parent commit check rejects concurrent repository changes, which you should
+inspect before retrying the upload. This procedure assumes the standard export
+layout and leaves any stale payloads from older layouts in place.
+
+For card-only changes, edit the existing remote `README.md` and retain its
+`extra_gated_fields`, gate description, and access instructions. After either
+update, check that manual approval is enabled and both form fields still appear.
 
 ## Local verification
 
