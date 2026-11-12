@@ -146,7 +146,8 @@ To upload a prepared dataset directory:
 
 ```bash
 uv run python -m egolearn.hub push prepared/ \
-  --name shape-bias --license cc-by-4.0
+  --name shape-bias --repo agentic-learning-ai-lab/egolearn-shape-bias \
+  --license cc-by-4.0
 ```
 
 To export and upload model weights:
