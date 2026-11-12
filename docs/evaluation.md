@@ -54,6 +54,87 @@ the search paths and overrides described in
 For repeated runs with pinned inputs and several seeds, use
 [benchmark suites](benchmark_suites.md).
 
+## Full-network fine-tuning
+
+Use `imagenet_full_finetune_eval` to train a checkpoint's encoder and a new
+classification head on ImageNet. The benchmark scores final-epoch validation
+accuracy and leaves the original model unchanged. Run it in a compute
+allocation with the training extra installed:
+
+```bash
+uv run egl eval imagenet_full_finetune_eval \
+  checkpoint="$CHECKPOINT" data_root="$IMAGENET_ROOT" \
+  benchmarks.0.encoder=vision output_json=finetune.json
+```
+
+The default `benchmarks.0.encoder=image` follows the model's image-modality
+routing. You can also select an encoder by its checkpoint name. The packaged
+config uses 100 epochs of AdamW with cosine decay, five warm-up epochs, and
+physical batches of 64 accumulated over four steps. It applies RandAugment,
+MixUp/CutMix, label smoothing, and random erasing. These defaults define a
+configurable protocol; they do not reproduce every model's published recipe.
+Use `egl eval imagenet_full_finetune_eval --cfg job` to inspect all settings.
+
+The registered target is `benchmark:imagenet_full_finetune`. You can combine it
+with other benchmarks under `benchmarks` or use the packaged config in a
+[benchmark suite](benchmark_suites.md). Its seed follows the top-level seed in
+the packaged config. Results use the standard evaluation schema with checkpoint
+identity, protocol settings and version, class order, sample counts, and a split
+membership hash. Membership hashes cover paths and labels, not image contents.
+
+### Execution and resume
+
+BF16 AMP and the execution options are disabled by default. Enable them through
+Hydra overrides when comparing performance on your GPU:
+
+```bash
+uv run egl eval imagenet_full_finetune_eval \
+  checkpoint="$CHECKPOINT" data_root="$IMAGENET_ROOT" \
+  benchmarks.0.encoder=vision benchmarks.0.amp=true \
+  benchmarks.0.defer_metrics=true benchmarks.0.channels_last=true \
+  benchmarks.0.cudnn_benchmark=true benchmarks.0.compile_mode=default
+```
+
+Compilation preserves checkpoint keys. Channels-last applies to model weights
+and input images. Deferred metrics reduce device-to-host transfers; invalid
+losses and gradients are rejected before optimizer updates. Kernel choices can
+change numerical rounding, and cuDNN autotuning can select different algorithms
+between runs. Larger physical batches also change BatchNorm statistics and
+MixUp/CutMix grouping, even when the effective batch stays constant.
+
+Set `benchmarks.0.output_dir` to save epoch checkpoints, progress, and training
+history. Rerun with the same directory to resume from the last completed epoch.
+Use a distinct directory for each checkpoint, seed, and configuration. Resume
+validates the starting encoder, construction, split membership, settings, and
+fine-tuning code and library versions. A changed protocol requires a new directory.
+The default `null` keeps adaptation in memory without saving epoch checkpoints.
+
+### Throughput comparisons
+
+Save a resolved evaluation config, then pass it to the throughput script:
+
+```bash
+uv run egl eval imagenet_full_finetune_eval \
+  checkpoint="$CHECKPOINT" data_root="$IMAGENET_ROOT" \
+  benchmarks.0.encoder=vision benchmarks.0.amp=true \
+  --cfg job --resolve > "$FINETUNE_CONFIG"
+uv run python scripts/bench/bench_imagenet_finetune.py "$FINETUNE_CONFIG" \
+  --output "$BENCHMARK_OUTPUT"
+```
+
+The config must contain one ImageNet full-fine-tuning benchmark with an effective
+batch size of 256. The output directory must not exist. Each variant uses the
+packaged training implementation, starting with execution options disabled for
+the baseline. Variants enable deferred metrics, kernel options, and larger
+physical batches independently or in combination.
+
+The script reads the sampled image subset before timing. Each variant excludes
+16 warm-up updates and measures three windows of 64 updates. The report includes
+individual timings, peak GPU memory, differences in model state, and a repeated
+baseline to measure drift. Timing excludes validation and checkpoint writes.
+These short runs measure throughput; compare converged accuracy before adopting
+execution changes in a reported evaluation protocol.
+
 ## Benchmark selection
 
 Choose a protocol compatible with the model and prepare its inputs before
