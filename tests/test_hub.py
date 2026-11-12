@@ -171,18 +171,20 @@ def test_checksum_rejects_symlinks_outside_and_duplicate(remote, tmp_path):
         hub.verify_checksums(root)
 
 
-def test_fetch_replaces_and_pins_revision(remote, tmp_path):
+@pytest.mark.parametrize("repo", [None, "legacy/egolearn-sample"])
+def test_fetch_replaces_and_pins_revision(remote, tmp_path, repo):
     _, state = remote
     dest = tmp_path / "data"
     old = dest / "sample"
     old.mkdir(parents=True)
     (old / "old").touch()
-    result = hub.fetch("sample", dest, revision="v1")
+    result = hub.fetch("sample", dest, revision="v1", repo=repo)
     assert not (result / "old").exists()
-    assert state.downloads[0][2] == "a" * 40
+    assert state.downloads[0] == (repo or "egolearn/sample", "dataset", "a" * 40)
     record = json.loads((result / hub.FETCH_RECORD).read_text())
     assert record["revision"] == "v1" and record["verified"] is True
     assert record["commit"] == "a" * 40
+    assert record["repo"] == (repo or "egolearn/sample")
 
 
 def test_fetch_failure_preserves_previous(remote, tmp_path):
@@ -222,13 +224,16 @@ def test_fetch_rename_failure_rolls_back(remote, tmp_path, monkeypatch):
     assert (target / "data.txt").read_text() == "synthetic"
 
 
-def test_push_private_defaults_staging_and_stale_files(remote):
+@pytest.mark.parametrize("repo", [None, "legacy/egolearn-sample"])
+def test_push_private_defaults_staging_and_stale_files(remote, repo):
     root, state = remote
     (root / ".env").write_text("synthetic hidden input")
     before = (root / hub.CHECKSUMS).read_bytes()
     state.exists = False
-    assert hub.push(root, name="sample", license_id="MIT") == "b" * 40
+    assert hub.push(root, name="sample", license_id="MIT", repo=repo) == "b" * 40
     assert state.creates[0]["private"] is True
+    assert state.creates[0]["repo_id"] == (repo or "egolearn/sample")
+    assert state.uploads[0]["repo_id"] == (repo or "egolearn/sample")
     assert ".env" not in state.files
     deleted = [
         op.path_in_repo

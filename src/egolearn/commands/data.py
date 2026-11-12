@@ -22,6 +22,7 @@ class Dataset:
     collection: str | None = None
     prepare_module: str | None = None
     prepare_defaults: tuple[tuple[str, str], ...] = ()
+    repo: str | None = None
 
 
 _BENCHMARKS = "egolearn.evaluation.benchmarks."
@@ -34,6 +35,7 @@ DATASETS = (
         "shape-bias",
         _BENCHMARKS + "shape_bias.prepare",
         (("--asset-dir", ".sources/shape-bias"), ("--output-dir", "shape-bias")),
+        repo="agentic-learning-ai-lab/egolearn-shape-bias",
     ),
     Dataset(
         "spatial-relation-categorization",
@@ -41,6 +43,7 @@ DATASETS = (
         "Hosted spatial relation monitoring subsets (monitoring/)",
         "https://doi.org/10.1016/j.cognition.2023.105690",
         "spatial-relation-categorization",
+        repo="agentic-learning-ai-lab/egolearn-spatial-relation-categorization",
     ),
     Dataset(
         "spatial-relations",
@@ -71,6 +74,7 @@ DATASETS = (
         "babyview-4afc",
         _BENCHMARKS + "babyview_4afc.prepare",
         (("--data_root", "babyview-public-crops"), ("--out_dir", "babyview-4afc")),
+        repo="agentic-learning-ai-lab/egolearn-babyview-4afc",
     ),
     Dataset(
         "labeled-s-4afc",
@@ -87,6 +91,7 @@ DATASETS = (
         "Split identifiers only; images require separate access",
         "https://github.com/wkvong/multimodal-baby",
         "labeled-s-splits",
+        repo="agentic-learning-ai-lab/egolearn-labeled-s-splits",
     ),
     Dataset(
         "saycam",
@@ -230,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
                         item.collection,
                         root,
                         revision=args.revision,
-                        repo=args.repo,
+                        repo=args.repo or item.repo,
                         allow_unverified=args.allow_unverified,
                         replace=args.replace,
                     )
