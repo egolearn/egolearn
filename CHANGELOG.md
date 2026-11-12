@@ -9,6 +9,7 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- The website reads public Hugging Face benchmark results directly, without Cloudflare Functions or results credentials.
 - `egl publish` supports reference checkpoints with unknown training seeds and explains inapplicable benchmarks in the website table.
 - `egl publish` publishes results with optional model exports and updates the website's
   benchmark table from versioned, per-seed Hugging Face records.

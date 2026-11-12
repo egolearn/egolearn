@@ -157,12 +157,12 @@ The token needs write access to the destination organization.
 
 ```bash
 egl publish push exports/publication \
-  --results-repo your-org/egolearn-results \
-  --collection your-org/egolearn-COLLECTION_ID --results-only
+  --results-repo egolearn/egolearn-results \
+  --public-results --results-only
 ```
 
-Copy the collection slug from its Hugging Face URL, or omit the optional collection
-argument. With `--results-only`, the command uploads evaluation records and their generated
+To add results to a collection, pass `--collection` with the slug from its Hugging Face
+URL. With `--results-only`, the command uploads evaluation records and their generated
 table while keeping weights local. Records retain the verified checkpoint and export hashes,
 with null repository, revision and visibility fields. The website labels these checkpoints
 as not uploaded and links to their evaluation evidence.
@@ -171,9 +171,11 @@ Omit `--results-only` to upload private model repositories before publishing the
 Both modes commit per-run records, the index, and `benchmarks.json` together. The returned
 receipt names the results revision and any uploaded models, and is saved as `publication.json`.
 
-Both models and results default to private. `--public-results` selects a public results
-destination without making weights public. Existing visibility is preserved, and a mismatch
-fails. Follow the [checkpoint publication rules](evaluation/hub.md) before
+Both models and results default to private. The website requires the `--public-results`
+flag shown above, which makes its results and evidence publicly readable without making
+weights public. Existing visibility is preserved, and a mismatch fails. If you need
+private results, use a separate repository and omit the flag.
+Follow the [checkpoint publication rules](evaluation/hub.md) before
 redistributing SAYCam-trained weights. Private model cards grant no redistribution license.
 
 Keep the prepared bundle, including `model.json` and `model.safetensors`, after a
@@ -189,34 +191,29 @@ condition; repeated evaluations of one checkpoint do not count as independent se
 
 ## Website deployment
 
-The Cloudflare Pages function at `/api/benchmarks` reads the results feed. Configure these
-settings for the Pages environment that serves the website:
+The website reads the [public benchmark feed](https://huggingface.co/datasets/egolearn/egolearn-results/resolve/main/benchmarks.json)
+directly from Hugging Face. Its browser requests omit credentials. Cloudflare needs no
+results environment variables, secrets or Functions. Keep the existing Cloudflare Access
+policy on the staging site; the results repository itself is public.
 
-| Setting | Value |
-| --- | --- |
-| `EGOLEARN_RESULTS_REPO` | The results dataset's `org/repository` identifier |
-| `EGOLEARN_RESULTS_TOKEN` | A secret with read access to that results repository |
-
-Use a token scoped to the results repository. Add the settings to both Preview and
-Production when both environments need results, then redeploy. Keep the existing
-Cloudflare Access policy on the staging site, including its `/api/benchmarks` route.
-The function serves sanitized metrics to anyone allowed to visit that site; it does
-not add a second login or enforce Hugging Face membership for each visitor.
+To change the source, edit `data-results-repo` on the benchmark table container in
+`landing/index.html` and redeploy. Use a public, ungated dataset repository containing
+the publisher's `benchmarks.json`, index and per-run evidence.
 
 The build remains `bash scripts/docs/build.sh`, with `dist` as the output directory.
-Pages discovers `functions/` at the repository root. Only `/api/benchmarks` invokes a
-function, while the documentation and other assets remain static. Tokens are read at runtime
-and never included in JavaScript, Git, build artifacts or browser responses.
+The landing page and documentation are static assets. Deploy this reader once to switch
+to the public source; subsequent result uploads need no website deployment.
 
 An open, visible page checks for new results every minute. Each successful publication
 updates the feed without rebuilding the website. Failed refreshes retain the last
 successful table and show its timestamp. A first visit without a working source shows
-an unavailable message instead of placeholder scores. Responses disable shared caching.
+an unavailable message instead of placeholder scores. Requests bypass the browser cache.
 
 Aggregate values require all declared seeds and identical protocols. Missing results
 and protocol mismatches display a dash. The table uses sample standard deviation,
 and a single-checkpoint result has no standard deviation. Method details link to the model
-revision and per-run evidence. Those Hub links still require the visitor's Hub access.
+revision and per-run evidence. Evidence links use the feed's commit revision when Hugging
+Face supplies it. Public evidence needs no login; private weights still require Hub access.
 
 Reference checkpoints and N/A declarations produce schema-2 run records and feeds.
 The publisher and website also read schema-1 records without rewriting their evidence.

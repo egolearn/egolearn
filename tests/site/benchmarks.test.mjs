@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {test} from "node:test";
 import {parseHTML} from "linkedom";
-import {benchmarkResponse} from "../../functions/api/benchmarks.js";
-import {formatMetric, renderTable, startBenchmarks, validateTable} from "../../landing/benchmarks.mjs";
+import {fetchBenchmarks, formatMetric, renderTable, startBenchmarks, validateTable} from "../../landing/benchmarks.mjs";
 
 function fixture() {
   return {
@@ -96,62 +95,61 @@ test("the feed rejects malformed, incomplete and nonfinite aggregates", () => {
   }
 });
 
-test("the server forwards credentials only to the configured Hub source and disables shared caching", async () => {
-  const token = "synthetic-secret";
-  const response = await benchmarkResponse({EGOLEARN_RESULTS_REPO: "test/results", EGOLEARN_RESULTS_TOKEN: token}, async (url, options) => {
+test("the browser reads the public Hub feed without credentials and pins evidence to its revision", async () => {
+  const data = await fetchBenchmarks("test/results", async (url, options) => {
     assert.equal(url, "https://huggingface.co/datasets/test/results/resolve/main/benchmarks.json");
-    assert.equal(options.headers.Authorization, `Bearer ${token}`);
-    assert.ok(!Object.hasOwn(options, "cache"));
-    assert.equal(options.headers["Cache-Control"], "no-cache");
-    assert.deepEqual(options.cf.cacheTtlByStatus, {"100-599": -1});
+    assert.equal(options.credentials, "omit");
+    assert.equal(options.cache, "no-store");
+    assert.equal(options.headers, undefined);
+    assert.ok(options.signal instanceof AbortSignal);
     return new Response(JSON.stringify(fixture()), {headers: {"x-repo-commit": "d".repeat(40)}});
   });
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get("Cache-Control"), "private, no-store");
-  const body = await response.text();
-  assert.ok(!body.includes(token));
-  assert.equal(JSON.parse(body).revision, "d".repeat(40));
+  assert.equal(data.revision, "d".repeat(40));
+  const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
+  globalThis.document = document;
+  try {
+    const container = document.getElementById("table");
+    renderTable(data, container);
+    const record = [...container.querySelectorAll("a")].find(a => a.textContent === "evaluation record");
+    assert.equal(record.href, `https://huggingface.co/datasets/test/results/blob/${data.revision}/runs/${"a".repeat(64)}.json`);
+  } finally {
+    delete globalThis.document;
+  }
 });
 
-test("the server fails closed for missing configuration, upstream failures and mismatched feeds", async (t) => {
-  const logs = [];
-  t.mock.method(console, "error", message => logs.push(message));
-  assert.equal((await benchmarkResponse({}, () => assert.fail("must not fetch"))).status, 503);
-  const env = {EGOLEARN_RESULTS_REPO: "test/results", EGOLEARN_RESULTS_TOKEN: "synthetic-secret"};
+test("the browser rejects invalid sources, upstream failures and mismatched feeds", async () => {
+  await assert.rejects(fetchBenchmarks(undefined, () => assert.fail("must not fetch")));
+  await assert.rejects(fetchBenchmarks("../private", () => assert.fail("must not fetch")));
   for (const upstream of [
     new Response("denied", {status: 401}),
+    new Response("throttled", {status: 429}),
     new Response("<html>login</html>"),
     new Response(JSON.stringify({...fixture(), results_repo: "other/results"})),
+    new Response(JSON.stringify(fixture()), {headers: {"x-repo-commit": "invalid"}}),
+    new Response(JSON.stringify({...fixture(), revision: "invalid"})),
     new Response("x".repeat(4 * 1024 * 1024 + 1)),
   ]) {
-    const response = await benchmarkResponse(env, async () => upstream);
-    assert.equal(response.status, 502);
-    assert.ok(!(await response.text()).includes(env.EGOLEARN_RESULTS_TOKEN));
+    await assert.rejects(fetchBenchmarks("test/results", async () => upstream));
   }
-  const response = await benchmarkResponse(env, async () => { throw new Error(env.EGOLEARN_RESULTS_TOKEN); });
-  assert.equal(response.status, 502);
-  assert.ok(logs.includes("Benchmark source unavailable: upstream request"));
-  assert.ok(logs.includes("Benchmark source unavailable: upstream HTTP 401"));
-  assert.ok(logs.every(message => !message.includes(env.EGOLEARN_RESULTS_TOKEN)));
+  await assert.rejects(fetchBenchmarks("test/results", async () => { throw new Error("Network error"); }));
 });
 
 test("a newly published row is available on the next fetch without rebuilding", async () => {
   const data = fixture();
-  const env = {EGOLEARN_RESULTS_REPO: "test/results", EGOLEARN_RESULTS_TOKEN: "synthetic-secret"};
   const fetcher = async () => new Response(JSON.stringify(data));
-  assert.equal((await (await benchmarkResponse(env, fetcher)).json()).rows.length, 1);
+  assert.equal((await fetchBenchmarks("test/results", fetcher)).rows.length, 1);
   const second = structuredClone(data.rows[0]);
   second.id = "second";
   second.condition.label = "Second model";
   second.runs[0].id = "e".repeat(64);
   second.runs[0].checkpoint.sha256 = "f".repeat(64);
   data.rows.push(second);
-  assert.equal((await (await benchmarkResponse(env, fetcher)).json()).rows.length, 2);
+  assert.equal((await fetchBenchmarks("test/results", fetcher)).rows.length, 2);
 });
 
 test("the landing page contains the dynamic table and no hand-entered result row", () => {
   const html = readFileSync(new URL("../../landing/index.html", import.meta.url), "utf8");
-  assert.match(html, /id="benchmark-table"/);
+  assert.match(html, /id="benchmark-table"[^>]*data-results-repo="egolearn\/egolearn-results"/);
   assert.match(html, /src="benchmarks.mjs"/);
   assert.doesNotMatch(html, /43\.3<span/);
 });
@@ -164,6 +162,7 @@ test("rendering keeps the last successful table during failures and safely adds 
   let data = fixture();
   let available = true;
   const fetcher = async () => available ? new Response(JSON.stringify(data)) : new Response("{}", {status: 502});
+  container.dataset.resultsRepo = "test/results";
   const controller = startBenchmarks({container, status, fetcher, interval: 1000000});
   try {
     await new Promise(resolve => setImmediate(resolve));

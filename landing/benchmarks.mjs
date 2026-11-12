@@ -191,7 +191,41 @@ export function renderTable(data, container) {
   container.replaceChildren(fragment);
 }
 
-export function startBenchmarks({container, status, fetcher = fetch, interval = 60000}) {
+export async function fetchBenchmarks(repository, fetcher = fetch) {
+  if (!repoPattern.test(repository)) throw new Error("Invalid results repository");
+  const response = await fetcher(`https://huggingface.co/datasets/${repository}/resolve/main/benchmarks.json`, {
+    cache: "no-store", credentials: "omit", signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok || !response.body) throw new Error("Results unavailable");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let size = 0;
+  let text = "";
+  try {
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > 4 * 1024 * 1024) throw new Error("Feed too large");
+      text += decoder.decode(value, {stream: true});
+    }
+    text += decoder.decode();
+  } finally {
+    await reader.cancel();
+  }
+  const data = validateTable(JSON.parse(text));
+  if (data.results_repo !== repository) throw new Error("Unexpected results repository");
+  const revision = response.headers.get("x-repo-commit");
+  if (revision !== null) {
+    if (!commitPattern.test(revision)) throw new Error("Invalid source revision");
+    data.revision = revision;
+  }
+  if (data.revision !== undefined && !commitPattern.test(data.revision)) throw new Error("Invalid feed revision");
+  return data;
+}
+
+export function startBenchmarks({container, status, repository = container.dataset.resultsRepo,
+  fetcher = fetch, interval = 60000}) {
   let busy = false;
   let lastUpdated = null;
   let lastData = null;
@@ -199,10 +233,7 @@ export function startBenchmarks({container, status, fetcher = fetch, interval = 
     if (busy || document.hidden) return;
     busy = true;
     try {
-      const response = await fetcher("./api/benchmarks", {cache: "no-store", signal: AbortSignal.timeout(15000)});
-      if (!response.ok) throw new Error("Results unavailable");
-      const data = validateTable(await response.json());
-      if (data.revision !== undefined && !commitPattern.test(data.revision)) throw new Error("Invalid feed revision");
+      const data = await fetchBenchmarks(repository, fetcher);
       const serialized = JSON.stringify(data);
       if (serialized !== lastData) {
         renderTable(data, container);
