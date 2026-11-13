@@ -1,0 +1,41 @@
+defaults:
+  - evaluate
+  - _self_
+
+data_root: ???
+device: cuda
+_imports_:
+  - egolearn.evaluation.benchmarks.imagenet_full_finetune
+benchmarks:
+  - _target_: "benchmark:imagenet_full_finetune"
+    name: imagenet_full_finetune
+    data_root: ${data_root}
+    expected_classes: 1000
+    encoder: image
+    pooling: default
+    drop_path: 0.0
+    size: 224
+    batch_size: 64
+    accumulation: 4
+    workers: 16
+    epochs: 100
+    warmup_epochs: 5
+    lr: 0.001
+    weight_decay: 0.05
+    layer_decay: 1.0
+    crop_min: 0.08
+    randaugment: true
+    erase_probability: 0.25
+    mixup: 0.8
+    cutmix: 1.0
+    smoothing: 0.1
+    clip_grad: 1.0
+    eval_view: imagenet_center_crop
+    eval_every: 1
+    seed: ${seed}
+    amp: false
+    defer_metrics: false
+    channels_last: false
+    cudnn_benchmark: false
+    compile_mode: null
+    output_dir: null
