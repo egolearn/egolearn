@@ -5,6 +5,7 @@ import pickle
 import signal
 from copy import deepcopy
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 import torch
@@ -95,6 +96,60 @@ def test_resume_refuses_changed_recipe(config):
     config["seed"] += 1
     with pytest.raises(ValueError, match="manifest differs"):
         run(config)
+
+
+def test_full_pass_rejects_explicit_resume(config, tmp_path, monkeypatch):
+    import egolearn
+
+    build = Mock(side_effect=AssertionError("must reject resume before building"))
+    monkeypatch.setattr(egolearn, "build", build)
+    config["resume"] = str(tmp_path / "previous" / "snapshot_050pct.pth")
+    with pytest.raises(ValueError, match=r"resume.*snapshot_latest\.pth"):
+        run(config)
+    build.assert_not_called()
+    assert not (Path(config["run_dir"]) / "manifest.json").exists()
+
+
+@pytest.mark.parametrize("filename", ["snapshot_latest.pth", "snapshot_050pct.pth"])
+def test_resume_refuses_checkpoints_without_manifest(config, filename, monkeypatch):
+    import egolearn.methods.mae.train as train_module
+
+    root = Path(config["run_dir"])
+    root.mkdir()
+    checkpoint = root / filename
+    checkpoint.write_bytes(b"foreign checkpoint")
+    load = Mock(side_effect=AssertionError("must not load an untracked checkpoint"))
+    monkeypatch.setattr(train_module, "load_snapshot", load)
+    with pytest.raises(ValueError, match="checkpoint directory has no scientific manifest"):
+        run(config)
+    load.assert_not_called()
+    assert checkpoint.read_bytes() == b"foreign checkpoint"
+    assert sorted(p.name for p in root.glob("*.pth")) == [filename]
+    assert not (root / "manifest.json").exists()
+    assert not (root / "status.json").exists()
+
+
+def test_resume_allows_relocation_and_logging_changes(config, tmp_path, monkeypatch):
+    config["run_control"]["stop_after_steps"] = 2
+    assert run(config) == PREFLIGHT_STOP
+    original = Path(config["run_dir"])
+    manifest = (original / "manifest.json").read_bytes()
+    relocated = tmp_path / "relocated"
+    original.rename(relocated)
+    config["run_dir"] = str(relocated)
+    config["run_control"]["stop_after_steps"] = 0
+    config["wandb"] = {"mode": "online", "project": "synthetic"}
+    config["hooks"] = {"log_every": 2, "snapshot_every": 1, "snapshot_milestones": [1.0]}
+    config["record_json"] = str(tmp_path / "resumed_record.json")
+    tracker = Mock()
+    monkeypatch.setattr(WandbHook, "_ensure_run", lambda self: tracker)
+    assert run(config) == 0
+    record = json.loads(Path(config["record_json"]).read_text())
+    assert record["start_step"] == 2 and record["status"] == "completed"
+    assert (relocated / "manifest.json").read_bytes() == manifest
+    assert (relocated / "final.pth").exists()
+    assert (relocated / "snapshot_100pct.pth").exists()
+    assert [call.kwargs["step"] for call in tracker.log.call_args_list] == [4, 6]
 
 
 def test_runner_rejects_incompatible_budgets(config):

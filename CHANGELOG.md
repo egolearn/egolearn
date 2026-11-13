@@ -151,6 +151,8 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- Full-pass MAE rejects explicit resume paths and checkpoint directories without a manifest before loading training state.
+- Full-pass MAE permits moving run directories and changing logging or checkpoint frequency between resume attempts.
 - MAE resume archives milestones ahead of the restored checkpoint and recreates them at their scheduled updates.
 - MAE records intentional stops as paused and counts preparation and checkpoint replay toward its wall-clock budget.
 

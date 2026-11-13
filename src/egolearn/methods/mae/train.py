@@ -40,6 +40,11 @@ class PauseTraining(RunPaused):
 
 def prepare(cfg: dict):
     """Build a full streaming pass and match IID to its exact update count."""
+    if cfg.get("resume") is not None:
+        raise ValueError(
+            "full-pass MAE does not accept resume; it automatically resumes "
+            "run_dir/snapshot_latest.pth"
+        )
     cfg = deepcopy(cfg)
     driver = cfg["driver"]
     control = cfg["run_control"]
@@ -351,9 +356,17 @@ def _run_locked(cfg: dict, control: RunControl) -> int:
             print(f"[budget] {budget}", flush=True)
             if cfg.get("dry_run"):
                 return 0
-            # Timing/stop controls can differ between attempts; scientific settings cannot.
+            # Location, logging, and stop controls can differ; scientific settings cannot.
             recipe = deepcopy(resolved)
-            for key in ("resume", "dry_run", "run_control"):
+            for key in (
+                "run_dir",
+                "resume",
+                "dry_run",
+                "run_control",
+                "record_json",
+                "wandb",
+                "hooks",
+            ):
                 recipe.pop(key, None)
             # These affect throughput only; seeded batch selection and transforms
             # remain identical. Record them per attempt without blocking resume.
@@ -367,6 +380,8 @@ def _run_locked(cfg: dict, control: RunControl) -> int:
                         "run manifest differs; use a new run_dir for a different recipe"
                     )
             else:
+                if any(run_dir.glob("*.pth")):
+                    raise ValueError("checkpoint directory has no scientific manifest")
                 _write_json(manifest_path, manifest)
             manifest_valid = True
             attempts = run_dir / "attempts"

@@ -135,9 +135,16 @@ Full-pass `final.pth` and `snapshot_*.pth` files contain resumable training stat
 When evaluating snapshots you created or otherwise trust, pass
 `trusted_snapshot=true`, or [export safetensors](../../docs/cli.md#exporting-weights) first.
 
-The full-pass runner automatically resumes `snapshot_latest.pth` and refuses
-to reuse a directory with changed scientific settings. Milestones ahead of the
-restored update move into `abandoned_snapshots/<attempt>/` before training resumes.
+The full-pass runner automatically resumes `run_dir/snapshot_latest.pth`.
+Explicit `resume=<path>` overrides are rejected. A directory containing `.pth`
+files must already have a matching `manifest.json`; the runner refuses to adopt
+checkpoints without one or reuse a directory with changed scientific settings.
+You can move the complete run directory and update `run_dir`, or change `wandb`,
+`hooks`, and `record_json` between attempts. The source/runtime fingerprint and
+scientific recipe must still match.
+
+Milestones ahead of the restored update move into `abandoned_snapshots/<attempt>/`
+before training resumes.
 They are recreated as the resumed run reaches each threshold. Existing milestones
 at or before the restored update remain unchanged, and missing past milestones
 are not reconstructed. CPU tests check exact
