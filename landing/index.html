@@ -270,9 +270,8 @@ section.block:last-of-type { padding-bottom: 72px; }
 }
 
 /* Datasets */
-.sets { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; }
-@media (max-width: 1100px) { .sets { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 760px) { .sets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.sets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 1100px) { .sets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 480px) { .sets { grid-template-columns: minmax(0, 1fr); } }
 a.set { background: var(--card); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; text-decoration: none; border: 2px solid transparent; }
 a.set:hover { border-color: var(--border); color: var(--fg); }
@@ -392,11 +391,6 @@ footer.lab .links .lab-link { font-size: 0.8125rem; color: var(--muted); }
       <h3>BabyView <small>children</small></h3>
       <p>High-resolution video from many children at home and in preschool.</p>
     </a>
-    <a class="set" href="https://ego4d-data.org/">
-      <img class="ph" src="media/ego4d.jpg" alt="A collage of first-person clips from Ego4D." loading="lazy">
-      <h3>Ego4D <small>video QA</small></h3>
-      <p>Thousands of hours of adults going about daily life around the world.</p>
-    </a>
     <a class="set" href="https://krsingh.cs.ucdavis.edu/krishna_files/papers/krishnacam/krishnacam.html">
       <img class="ph" src="media/krishnacam.jpg" alt="The same sidewalk from KrishnaCam in summer, autumn, late fall and snow." loading="lazy">
       <h3>KrishnaCam <small>adults</small></h3>
@@ -404,7 +398,7 @@ footer.lab .links .lab-link { font-size: 0.8125rem; color: var(--muted); }
     </a>
     <a class="set" href="https://huggingface.co/datasets/shawshankvkt/Walking_Tours">
       <img class="ph" src="media/walkingtours.jpg" alt="First-person city walks in Valletta, Granada, Istanbul and snowy Kaunas." loading="lazy">
-      <h3>Walking Tours</h3>
+      <h3>Walking Tours <small>adults</small></h3>
       <p>Long, uncut city walks in high resolution.</p>
     </a>
   </div>
