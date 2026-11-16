@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from fractions import Fraction
+from importlib.resources import files
 from pathlib import Path
 
 from PIL import Image
@@ -140,13 +141,20 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", required=True, type=Path)
     parser.add_argument("--output-root", required=True, type=Path)
-    parser.add_argument("--source-manifest", required=True, type=Path)
+    parser.add_argument(
+        "--source-manifest",
+        type=Path,
+        help="source JSON manifest (default: packaged original WalkingTours release)",
+    )
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--threads", type=int, default=4)
     args = parser.parse_args()
     if args.workers < 1 or args.threads < 1:
         parser.error("workers and threads must be positive")
-    manifest = json.loads(args.source_manifest.read_text())
+    manifest_source = args.source_manifest or files("egolearn.data").joinpath(
+        "manifests/walkingtours.json"
+    )
+    manifest = json.loads(manifest_source.read_text(encoding="utf-8"))
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         records = list(
             pool.map(

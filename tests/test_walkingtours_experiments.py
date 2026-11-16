@@ -4,6 +4,8 @@ import hashlib
 import json
 import shutil
 import subprocess
+import sys
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,7 @@ from omegaconf import OmegaConf
 from PIL import Image
 
 import egolearn
+from egolearn.data import prepare_walkingtours
 from egolearn.data.prepare_walkingtours import prepare_video
 from egolearn.methods.babycl.data import FrozenResNeXt50Embedder
 
@@ -28,9 +31,7 @@ def test_wt_recipes_share_all_ten_videos_and_sampling(tmp_path):
     mae = recipe("streammae", "full_wt_original_streammae", tmp_path)
     baby = recipe("babycl", "walkingtours", tmp_path)
     source = json.loads(
-        (
-            Path(__file__).resolve().parents[1] / "projects/walkingtours/source_manifest.json"
-        ).read_text()
+        files("egolearn.data").joinpath("manifests/walkingtours.json").read_text(encoding="utf-8")
     )
     assert mae["stream"] == baby["stream"]
     assert baby["stream"]["sessions"] == [v["session"] for v in source["videos"]]
@@ -41,6 +42,44 @@ def test_wt_recipes_share_all_ten_videos_and_sampling(tmp_path):
     assert [loss["_target_"] for loss in baby["losses"]] == ["loss:ntxent", "loss:tcl"]
     assert baby["driver"]["max_steps"] is None
     assert mae["run_control"]["stride"] == 1
+
+
+@pytest.mark.parametrize("custom_manifest", [False, True])
+def test_preparer_loads_manifest_outside_checkout(tmp_path, monkeypatch, custom_manifest):
+    monkeypatch.chdir(tmp_path)
+    expected = json.loads(
+        files("egolearn.data").joinpath("manifests/walkingtours.json").read_text(encoding="utf-8")
+    )
+    arguments = [
+        "prepare_walkingtours",
+        "--source-root",
+        "raw",
+        "--output-root",
+        "frames",
+        "--workers",
+        "1",
+    ]
+    if custom_manifest:
+        expected = {"doi": "test-release", "videos": [{"session": "custom"}]}
+        Path("custom.json").write_text(json.dumps(expected))
+        arguments.extend(["--source-manifest", "custom.json"])
+    monkeypatch.setattr(sys, "argv", arguments)
+    prepared = []
+
+    def prepare(source_root, output_root, video, threads):
+        assert source_root == Path("raw")
+        output_root.mkdir(exist_ok=True)
+        prepared.append(video)
+        return {"frames": 8, "duration_seconds": 2.0}
+
+    monkeypatch.setattr(prepare_walkingtours, "prepare_video", prepare)
+    prepare_walkingtours.main()
+    inventory = json.loads(Path("frames/inventory.json").read_text())
+    assert prepared == expected["videos"]
+    assert inventory["source_doi"] == expected["doi"]
+    assert inventory["sessions"] == [video["session"] for video in expected["videos"]]
+    assert inventory["total_frames"] == 8 * len(expected["videos"])
+    assert inventory["duration_seconds"] == 2.0 * len(expected["videos"])
 
 
 def test_babycl_wt_trains_without_transcripts(tmp_path, monkeypatch):

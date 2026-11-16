@@ -17,7 +17,7 @@ The other full-pass recipes derive their budgets from their own window sizes.
 | `full_*_streaming`, `full_*_iid` | Compare chronological and shuffled MAE on SAYCam or BabyView at stride 32 | [Full-pass training](#full-pass-training) |
 | `full_saycam_streammae`, `full_babyview_streammae` | Train StreamMAE at stride 32 with a 2,048-frame window | [Full-pass training](#full-pass-training) |
 | `matched_saycam`, `matched_babyview` | Compare MAE, IID, DataDrop, and augmentation variants with equal budgets | [Matched ablations](ablations.md) |
-| `full_wt_original_streammae` | Train on the ten original WalkingTours videos | [Original WalkingTours](../walkingtours/README.md) |
+| `full_wt_original_streammae` | Train on the ten original WalkingTours videos | [Original WalkingTours](walkingtours.md) |
 | `full_wtpp_london_streammae`, `full_walkingtours_streammae` | Train on a supplied WT++ source or another ordered collection | [WT++ preparation and training](wtpp.md) |
 
 ## Prerequisites
@@ -62,7 +62,7 @@ Apply the intended orientation and dataset crop during preparation. The SAYCam
 and BabyView recipes default to 5 fps and do not apply an additional vertical
 flip. `stream.fps` describes the prepared frame rate and does not resample images.
 
-For original WalkingTours, follow the [download and frame preparation guide](../walkingtours/README.md).
+For original WalkingTours, follow the [download and frame preparation guide](../../docs/datasets/walkingtours.md).
 WT++ uses a separate source supplied by you, described under [WT++ preparation](wtpp.md).
 
 ## CPU example

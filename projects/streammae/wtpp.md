@@ -2,7 +2,8 @@
 
 Use these recipes with a WT++ source supplied by you or another explicitly
 ordered video collection. For the ten released original WalkingTours videos,
-follow the [original WalkingTours guide](../walkingtours/README.md) instead.
+follow the [original WalkingTours experiment guide](walkingtours.md) and its
+[dataset preparation instructions](../../docs/datasets/walkingtours.md) instead.
 The original release does not contain the WT++ London stream.
 
 `full_wtpp_london_streammae` uses the StreamMAE paper's 12-hour London source.
