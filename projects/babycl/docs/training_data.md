@@ -38,6 +38,8 @@ For paper reproduction, obtain the prepared `expand_correct_seg.json` and matchi
 frames from the BabyCL authors under your approved data access. The placeholder
 in `saycam_shared.yaml` is not a downloadable asset. EgoLearn does not bundle the
 transcripts or a converter from raw SAYCam transcripts into this alignment format.
+Contact [the BabyCL team](mailto:mengye@nyu.edu) about the prepared inputs after
+you have obtained SAYCam access.
 
 `stream.transcript_json` accepts a JSON list. This synthetic example aligns one
 utterance with the three frames above:

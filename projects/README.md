@@ -17,11 +17,3 @@ reusable; a project directory holds only what is specific to that paper.
     searchpath:
       - pkg://egolearn.configs
   ```
-
-## Unpublished work
-
-Unpublished projects live on `proj/<name>` branches pushed only to the private
-`agentic-learning-ai-lab/egolearn` repository. Start these branches from public
-`egolearn/egolearn` main after the first release. Audit their newly reachable
-history before transferring them to the public repository; see
-[RELEASING.md](../RELEASING.md). Public `main` contains released projects only.

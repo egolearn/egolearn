@@ -4,10 +4,19 @@ Fetch prepared benchmark collections from Hugging Face, or reference them
 directly in a configuration. Check the [access tiers](#access-tiers) before you
 publish data or model weights.
 
+For details on obtaining released model weights and requesting access to gated
+checkpoints, see the [checkpoint access instructions](../../README.md#model-checkpoints).
+
 ## Verified downloads
 
-Use `egl data fetch` when you need a local collection checked against its
-published checksums:
+The catalog's hosted collections require repository access and `HF_TOKEN`.
+The checkpoint access form grants model access only; it does not grant access to
+these datasets. If you do not already have dataset access, use the
+[local shape-bias preparation](../evaluation.md#prepare-local-stimuli) or
+[spatial-relations preparation](spatial_relations.md#preparing-and-checking-data) instructions.
+
+With repository access, use `egl data fetch` to check a local collection against
+its published checksums:
 
 ```bash
 uv run egl data fetch shape-bias --revision v1
@@ -34,9 +43,9 @@ so these commands retain their configured repository locations.
 ## Packaged collections
 
 The packaged evaluation configs reference the repositories below at their
-`v1` revisions. Access depends on repository permissions, and private collections
-require authentication through `HF_TOKEN`. Keep authentication tokens in the
-environment rather than configurations or command arguments.
+`v1` revisions. These lab-hosted collections require repository access and
+authentication through `HF_TOKEN`; they are not anonymous public downloads. Keep
+authentication tokens in the environment rather than configurations or command arguments.
 
 | Repository | Contents | Configuration |
 | --- | --- | --- |
@@ -44,8 +53,9 @@ environment rather than configurations or command arguments.
 | [egolearn-spatial-relation-categorization](https://huggingface.co/datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization/tree/v1) | Spatial monitoring subsets from Davidson, Orhan, and Lake (2024) | `spatial_relations_eval` |
 
 Use `egl data fetch spatial-relation-categorization --revision v1` for the
-second collection. The prepared shape-bias and spatial collections use
-CC BY 4.0; cite their respective papers when using them and consult their cards.
+second collection. Consult the dataset cards and upstream asset terms before
+redistributing prepared stimuli, and cite the respective papers. A local rendering
+step does not grant permission to redistribute its source assets.
 The dataset catalog also lists possible collections, but a catalog entry alone
 does not establish that its repository is available.
 
@@ -58,6 +68,51 @@ uv run egl eval shape_bias_eval checkpoint=run/final.pth \
 ```
 
 Use your chosen storage root in the override if you fetched with `--root`.
+
+## Released models
+
+The following model repositories contain `model.safetensors` and `model.json`.
+SAYCam and BabyView weights require the [access-request steps](../../README.md#model-checkpoints)
+using evidence for the corresponding training dataset.
+
+| Model | Training data | Access |
+| --- | --- | --- |
+| [BabyCL full-stream, seed 1337](https://huggingface.co/egolearn/babycl-resnext50-saycam-fullstream-seed1337), [1338](https://huggingface.co/egolearn/babycl-resnext50-saycam-fullstream-seed1338), [1339](https://huggingface.co/egolearn/babycl-resnext50-saycam-fullstream-seed1339) | SAYCam | Manual approval |
+| [Visual BabyCL, seed 1337](https://huggingface.co/egolearn/babycl-resnext50-babyview-visual-seed1337) | BabyView | Manual approval |
+| [Visual BabyCL, seed 0](https://huggingface.co/egolearn/babycl-resnext50-krishnacam-seed0), [1](https://huggingface.co/egolearn/babycl-resnext50-krishnacam-seed1), [2](https://huggingface.co/egolearn/babycl-resnext50-krishnacam-seed2) | KrishnaCam | Public |
+| [Visual BabyCL, seed 1337](https://huggingface.co/egolearn/babycl-resnext50-walkingtours-seed1337) | WalkingTours | Public |
+| [V-JEPA 2 IID](https://huggingface.co/egolearn/vjepa2-vits16-saycam-iid-seed0), [streaming](https://huggingface.co/egolearn/vjepa2-vits16-saycam-streaming-seed0) | SAYCam | Manual approval |
+| [V-JEPA 2 IID](https://huggingface.co/egolearn/vjepa2-vits16-babyview-iid-seed0), [streaming](https://huggingface.co/egolearn/vjepa2-vits16-babyview-streaming-seed0) | BabyView | Manual approval |
+
+All V-JEPA 2 entries use seed 0. Read the model card for the training protocol
+before choosing weights. Match the training budget and input protocol before
+comparing a release with the two runs in the
+[BabyCL results table](../../projects/babycl/README.md#saycam-results).
+
+### Authentication and evaluation
+
+For gated weights, set `HF_TOKEN` in your environment to a read token belonging
+to the approved Hugging Face account. Create tokens in your
+[Hugging Face settings](https://huggingface.co/docs/hub/security-tokens). Keep the
+token out of configs, command arguments, and Git. If access is denied, check that
+the approval and token belong to the same account and that the token permits the
+model repository.
+
+Benchmark data needs its own access. For example, prepare shape-bias stimuli using
+[these instructions](../evaluation.md#prepare-local-stimuli) or obtain the hosted collection
+above, then set `SHAPE_BIAS_MANIFEST` to your local `stimulus_manifest.json`.
+This example evaluates an ungated KrishnaCam export at an immutable revision:
+
+```bash
+uv run egl eval shape_bias_eval \
+  checkpoint=hf://models/egolearn/babycl-resnext50-krishnacam-seed0@311ec535c5a6bcefded0e01f449ad56eaa1b9dc1/model.safetensors \
+  "benchmarks.0.manifest=$SHAPE_BIAS_MANIFEST" output_json=shape_bias_results.json
+```
+
+The result file contains the shape-bias score and model/input provenance. Replace
+the checkpoint reference to use another compatible model; gated models require
+approval before this command can download their weights. Model metadata is fetched
+from the same revision as the weights.
 
 ## Configuration paths
 
@@ -115,7 +170,7 @@ contents and do not establish which Hub repositories are available.
 
 | Dataset or artifact | Access tier | Permitted Hub contents |
 | --- | --- | --- |
-| Prepared shape-bias stimuli | Public | Licensed rendered stimuli, manifests, and checksums |
+| Prepared shape-bias stimuli | Upstream terms | Source-derived stimuli only with redistribution permission; otherwise prepare locally |
 | Spatial-relations trials and monitoring subsets | Public | Licensed stimuli, fixed trials, and manifests |
 | BabyView 4AFC and linear evaluation manifests | Public | Split and trial metadata without pixels or restricted captions |
 | Labeled-S split metadata | Public | Split identifiers without source frames |
@@ -146,32 +201,34 @@ To upload a prepared dataset directory:
 
 ```bash
 uv run python -m egolearn.hub push prepared/ \
-  --name shape-bias --repo agentic-learning-ai-lab/egolearn-shape-bias \
-  --license cc-by-4.0
+  --name shape-bias --repo YOUR_NAMESPACE/shape-bias --license cc-by-4.0
 ```
 
-To export and upload model weights:
+To export and upload model weights to a new repository:
 
 ```bash
 uv run egl export runs/example/final.pth exports/babycl-saycam-seed0
 uv run python -m egolearn.hub push exports/babycl-saycam-seed0 \
-  --name babycl-saycam-seed0 --repo-type model --license mit
+  --name babycl-saycam-seed0 --repo YOUR_NAMESPACE/babycl-saycam-seed0 \
+  --repo-type model --license mit
 ```
 
-Replace the paths, names, and license with the approved values for your artifact.
+Replace `YOUR_NAMESPACE` with your account or organization, where you have write
+permission. Choose the paths, names, and license for your artifact.
 Model uploads require a validated `model.safetensors` and `model.json` pair,
 and reject other payloads, including `.pth` files. Model repository
-names can include the method, training data, and seed. The example targets
-`egolearn/babycl-saycam-seed0`. An explicit `--repo org/name` overrides that
-repository ID. Revisioned `hf://` references always use their explicit
+names can include the method, training data, and seed.
+
+Omitting `--repo` targets the project namespace `egolearn`, which requires permission
+from that organization. Revisioned `hf://` references always use their explicit
 organization and repository, including existing lab-hosted artifacts.
 
-Released SAYCam and BabyView checkpoints use public repositories with manual
-approval. Applicants must email evidence of access to the corresponding dataset
-on Databrary. See [model checkpoint access](../../README.md#model-checkpoints).
-
 `push` creates a staging copy, adds checksums and a minimal card, and leaves
-the local source unchanged. New repositories are private by default.
+the local source unchanged. It ignores the source `README.md` and overwrites
+the remote card, including custom access fields and instructions. Do not use
+`push` on a repository whose model card or access form you need to preserve.
+Update individual files with the Hugging Face client or web interface instead.
+New repositories are private by default.
 `--public` is required to create or upload to a public repository; it does not
 change an existing repository's visibility.
 

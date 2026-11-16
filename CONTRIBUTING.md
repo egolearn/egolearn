@@ -12,8 +12,6 @@ uv run pre-commit install
 - `main` is protected: all changes land via PR with green CI.
 - Branch off `main`: `feat/<topic>`, `fix/<topic>`, or `proj/<name>` for paper projects.
 - **Merge commits only — squash and rebase merges are disabled at the repo level.**
-  Public and private repositories share the history of released work. Preserve
-  those commit hashes when synchronizing them (see [RELEASING.md](RELEASING.md)).
 - Keep long-lived branches fresh with `git merge main`, never rebase.
 - Never force-push a shared branch.
 
@@ -94,17 +92,7 @@ outside the site at GitHub. Preview locally:
 uv run --group docs mkdocs serve
 ```
 
-Cloudflare Pages builds both with `scripts/docs/build.sh`:
-
-- Build command: `bash scripts/docs/build.sh`
-- Output directory: `dist`
-- Environment: `PYTHON_VERSION=3.12`, `SKIP_DEPENDENCY_INSTALL=1`;
-  `EGOLEARN_SITE_STAGING=false` only for the public
-  production build (staging adds `noindex` and lets crawlers read the tags)
-
-The build uses pinned uv and a separate environment under `build/docs-venv/`.
-See the [site build README](scripts/docs/README.md) for deployment settings,
-preview behavior, and cold-build timing.
+For the complete local build, see [site development](scripts/docs/README.md).
 
 Images in `landing/media/` are either drawn or generated for the page, or come
 from published, openly licensed sources and the datasets' own project pages; the
@@ -136,12 +124,27 @@ trigger a rebuild during `mkdocs serve`.
 
 ## Porting policy
 
-Code from the source repos (memory-storyboard, lifelong-memory, poodle,
-midway-network, and unreleased lab codebases) is ported **only after triage**: a
-concrete need, agreed scope, and a code-owner-reviewed PR. Ports must arrive
-de-duplicated, seeded, tested, and free of hardcoded paths — see the porting rules
-in `docs/design/streaming.md`, including the licensing rules for third-party-derived
-files.
+Propose a concrete use and scope before porting another implementation, and obtain
+code-owner review. Adapt the port to configured paths, seeded randomness, and the
+shared interfaces, with tests for its supported behavior.
+
+### Licensing and attribution
+
+EgoLearn is MIT-licensed. Contribute code only when you have the rights needed to
+include it under the project's licensing policy. Keep third-party license notices
+and attribution headers with adapted code, and update [third-party notices](THIRD_PARTY_NOTICES.md)
+when a port requires them.
+
+Do not vendor GPL or CC-BY-NC code into the library. Existing permissive ports keep
+their original notices, including Apache-2.0 for mmcv/DINO-derived components and
+BSD notices for RAFT and pytorch-examples-derived utilities. Use permissively
+licensed alternatives for MAE-lineage utilities licensed CC-BY-NC.
+
+## Versions and releases
+
+Versions follow SemVer. During 0.x development, minor releases add features and
+patch releases fix bugs. Record user-visible changes under `[Unreleased]` in
+[CHANGELOG.md](CHANGELOG.md); released versions have dated headings.
 
 ## Style
 
@@ -184,14 +187,9 @@ safety, and data-integrity checks when trimming redundant smoke tests.
   until dependent jobs finish; see [snapshots and records](docs/cluster.md#snapshots-and-records).
 - For local or interactive runs from an editable checkout, keep its source unchanged
   until the run finishes, since spawned workers import that source.
-- W&B: entity `nyu-mengye-group`, always config-driven (`wandb.*` keys in the hydra
-  config) — never hardcode project names in code.
+- Configure W&B through `wandb.*` settings and environment variables, using your
+  own entity and project when logging runs.
 - LLM API keys are environment variables only — never CLI flags, configs, or code.
 
-## Confidentiality
-
-Research is confidential until published. See SECURITY.md for the never-commit list —
-all history reachable from a published branch or tag becomes public with it.
-The existing `agentic-learning-ai-lab/egolearn` repository stays private;
-`egolearn/egolearn` receives only audited release refs. After publication, start
-unpublished work from public `main` and push it only to the private repository.
+Keep restricted data, credentials, and unpublished material outside Git. See
+[repository hygiene](SECURITY.md#never-commit) for the contribution requirements.

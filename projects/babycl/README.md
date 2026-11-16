@@ -26,7 +26,7 @@ then validate the training pipeline without constructing the evaluation probes:
 ```bash
 uv run egl train projects/babycl/configs/saycam_default.yaml \
   stream.root_dir="$SAYCAM_ROOT" stream.transcript_json="$SAYCAM_TRANSCRIPTS" \
-  tokenizer.vocab_json="$BABYCL_VOCAB" probes=[] dry_run=true
+  tokenizer.vocab_json="$BABYCL_VOCAB" 'probes=[]' dry_run=true
 ```
 
 Remove `dry_run=true` to train on a GPU. The default frozen segmenter needs
@@ -58,10 +58,11 @@ utterance that ends on a frame is visible at that frame
 
 ## SAYCam results
 
-The table reports `saycam_default` with seeds 1337 and 2002, final checkpoints.
-All scores are percentages. The paper column quotes the updated version of the
-[paper](https://arxiv.org/abs/2606.05115), which reaches arXiv later; the
-version there now reports an earlier Labeled-S 4AFC figure.
+The table records two completed `saycam_default` runs with seeds 1337 and 2002,
+using their final checkpoints. All scores are percentages. The paper column gives
+the authors' reference values for these protocols.
+Check the version of the linked [paper](https://arxiv.org/abs/2606.05115) when
+comparing figures, since its reported Labeled-S 4AFC value can differ.
 
 | Benchmark | Seed 1337 | Seed 2002 | Paper | Differs from the paper |
 | --- | ---: | ---: | ---: | --- |
@@ -76,13 +77,6 @@ version there now reports an earlier Labeled-S 4AFC figure.
 Baby Winoground reports the group score, which counts an item only when both
 the original and the edited scene prefer their own caption. Every row uses the
 paper's protocol, so the remaining differences come from training.
-
-The two checkpoints were trained and evaluated with this configuration before
-it was merged with the current main branch. Nothing since then changes what
-these runs computed: the options main has added are off in `saycam_default`
-and `paper_evals`, its other changes are in methods BabyCL does not use, and
-the later driver and stream fixes affect only resuming from a snapshot and
-packed frame stores, which neither run used.
 
 ### Differences from the paper
 
@@ -107,7 +101,7 @@ evaluation data.
 egl train projects/babycl/configs/saycam_default.yaml seed=1337 \
   run_dir=$RUN_DIR stream.root_dir=$SAYCAM_ROOT \
   stream.transcript_json=$SAYCAM_TRANSCRIPTS tokenizer.vocab_json=$BABYCL_VOCAB \
-  probes=[]
+  'probes=[]'
 egl eval projects/babycl/configs/paper_evals.yaml checkpoint=$RUN_DIR/final.pth
 ```
 

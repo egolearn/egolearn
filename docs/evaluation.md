@@ -86,8 +86,10 @@ image-phrase choices to be correct, so its group baseline assumes independent
 random choices for the two images.
 
 The shape-bias and spatial-relations configs supply their own Hub input paths.
-If you have repository access, only `checkpoint=` is required. Private
-collections require authentication through `HF_TOKEN`.
+Their hosted collections require repository access and `HF_TOKEN`, independently
+of access to model weights. With those permissions, only `checkpoint=` is required.
+Otherwise prepare local stimuli and override the manifest as shown in the
+[Hub guide](evaluation/hub.md#authentication-and-evaluation).
 
 Small evaluations use `probe:*` targets both during training and in standalone
 evaluation, where you put these configs in the `benchmarks` list. Full ImageNet
@@ -246,8 +248,32 @@ preference; this is not an object-classification accuracy.
 | `shape_bias_ties` | Number of equal-similarity triplets |
 | `shape_bias_n` | Number of triplets |
 
-See [Hub collections](evaluation/hub.md#packaged-collections) for the stimuli,
-license, citation, and use of a verified local copy.
+### Prepare local stimuli
+
+Install the `train` extra, then run the preparer in a new output directory:
+
+```bash
+uv run egl data prepare shape-bias
+export SHAPE_BIAS_MANIFEST="${EGOLEARN_DATA:-data}/shape-bias/stimulus_manifest.json"
+```
+
+The command downloads masks and textures from
+[Tartaglini et al.'s source repository](https://github.com/alexatartaglini/developmental-shape-bias)
+at pinned commit `09277d997e5d2924b83c5b6d1d792475a200a0b4`, verifies their checksums,
+and renders the 256 stimuli locally. Source assets are cached under
+`${EGOLEARN_DATA:-data}/.sources/shape-bias`; the prepared collection goes under
+`${EGOLEARN_DATA:-data}/shape-bias`. To choose another data root, put `--root DIR`
+before `prepare` and set the manifest variable to that root.
+
+Preparation needs internet access on the first run and refuses an existing output
+collection. It does not require access to the lab-hosted Hub repository. Keep the
+source assets and rendered images outside Git, follow the upstream terms, and cite
+[Tartaglini, Vong, and Lake (2022)](https://github.com/alexatartaglini/developmental-shape-bias).
+Preparing a local copy does not grant redistribution rights.
+
+Use the manifest in the [checkpoint evaluation example](evaluation/hub.md#authentication-and-evaluation).
+If you already have access to the [hosted collection](evaluation/hub.md#packaged-collections),
+you can fetch a verified copy instead of preparing it locally.
 
 ## Checkpoint compatibility
 
