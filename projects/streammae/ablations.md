@@ -122,7 +122,10 @@ metrics tail before recording replacement updates.
 
 Use the same seeds, evaluation data, and checkpoint milestones for each variant.
 Record frozen probes and full-network fine-tuning separately in any results table.
-The existing [evaluation commands](../../docs/evaluation.md) provide frozen probes,
-whose scores do not reproduce the paper's primary full-fine-tuning protocol.
-These matched recipes control pretraining budgets without claiming numerical
-equivalence to the paper's experiments.
+Follow [checkpoint export and evaluation](README.md#checkpoint-export-and-evaluation)
+to export your snapshot and run either protocol. The library provides both
+[frozen linear evaluation](../../docs/evaluation.md#command-line) and
+[full-network fine-tuning](../../docs/evaluation.md#full-network-fine-tuning).
+Frozen-probe scores do not reproduce the paper's primary full-fine-tuning protocol,
+and the packaged fine-tuning defaults do not establish numerical equivalence to
+the paper's experiments.

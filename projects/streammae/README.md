@@ -64,6 +64,19 @@ uv run python -m egolearn.train --config-name toy_mae dry_run=true
 uv run python -m egolearn.train --config-name toy_mae
 ```
 
+The second command performs five optimizer updates and writes run records under
+`runs/toy_mae/records/`. It does not save weights by default. To create and export
+a toy checkpoint, enable checkpoint saving and choose new output directories:
+
+```bash
+uv run python -m egolearn.train --config-name toy_mae \
+    run_dir=runs/toy_mae_export +hooks.checkpoint_every=5
+uv run egl export runs/toy_mae_export/final.pth exports/toy_mae
+```
+
+The export contains `model.safetensors` and `model.json`. This toy encoder expects
+32×32 images and is for checking the workflow, not measuring representation quality.
+
 The project configs train ViT-S/16 or ViT-B/16 from scratch on pre-extracted
 SAYCam frames. Supply the dataset root through `SAYCAM_ROOT` or an override:
 
@@ -94,6 +107,56 @@ rescale them by the new effective batch size divided by 512. `floor: 1.0`
 preserves linear warmup followed by a constant learning rate; the solver's
 `constant: true` switch would also disable warmup.
 
+## Checkpoint export and evaluation
+
+The `full_*` and `matched_*` runners write `final.pth` only after training completes.
+For a paused run, use `snapshot_latest.pth` or an archived milestone instead.
+These files contain resumable training state. Keep the run directory for resume
+and export a separate copy of the weights for evaluation.
+
+Set `RUN_DIR` to your training output directory and `EXPORT_DIR` to a new export
+directory. For a snapshot you created or otherwise trust, run:
+
+```bash
+uv run egl export "$RUN_DIR/final.pth" "$EXPORT_DIR" --trusted-snapshot
+```
+
+The export writes `model.safetensors` and `model.json`, including the model
+configuration and source checkpoint identity. Existing export directories are
+refused. If you evaluate the original snapshot directly, pass
+`trusted_snapshot=true` to `egl eval` instead. See [checkpoint trust](../../SECURITY.md#model-export-and-checkpoint-trust).
+
+### ImageNet evaluation
+
+Obtain the ImageNet data and set `IMAGENET_ROOT` to an ImageFolder directory
+containing matching `train/<class>/` and `val/<class>/` folders. The commands
+below use the 224×224 inputs expected by the project recipes and default to CUDA.
+For the 32×32 toy export, you must also set `benchmarks.0.size=32`.
+
+Fit a linear classifier while keeping the pretrained encoder frozen:
+
+```bash
+uv run egl eval imagenet_linear_eval \
+    checkpoint="$EXPORT_DIR" data_root="$IMAGENET_ROOT" \
+    benchmarks.0.encoder=vision output_json=imagenet_linear.json
+```
+
+To update the encoder and train a new classification head, use full-network
+fine-tuning:
+
+```bash
+uv run egl eval imagenet_full_finetune_eval \
+    checkpoint="$EXPORT_DIR" data_root="$IMAGENET_ROOT" \
+    benchmarks.0.encoder=vision output_json=imagenet_finetune.json
+```
+
+Both commands write metrics and protocol details to the named JSON file.
+The [evaluation guide](../../docs/evaluation.md) describes frozen probes, and
+[full-network fine-tuning](../../docs/evaluation.md#full-network-fine-tuning)
+documents adaptation settings, saved checkpoints, and resume. Record these two
+protocols separately. The packaged fine-tuning defaults are configurable and do
+not establish equivalence to the StreamMAE paper's fine-tuning or attentive-probing results.
+
 ## Components
 
 Set `_imports_: [egolearn.methods.mae]` in any streaming or offline config.
@@ -113,9 +176,9 @@ checkpoint resume regenerates masks without consuming global RNG state.
 
 `model.encode("vision", images)` encodes the full image for evaluation, returning
 CLS in `pooled`, patch-only `tokens`, and a `spatial` feature grid. Optional
-`pooling: mean` averages the normalized patch tokens for frozen probes. These
-features and the existing frozen probes do not implement the paper's full
-fine-tuning or attentive-probing protocols. Checkpoints record the method import
+`pooling: mean` averages the normalized patch tokens for frozen probes.
+[Full-network fine-tuning](#imagenet-evaluation) is available as a separate evaluation
+protocol, without a claim of paper reproduction. Checkpoints record the method import
 and model configuration and load through `egolearn.evaluation.load_model`.
 
 The implementation uses PyTorch transformer layers and adds no dependencies.
