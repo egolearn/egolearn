@@ -3,6 +3,13 @@
 These recipes train StreamMAE and visual BabyCL on all ten original WalkingTours
 videos, using the same prepared frames and video order.
 
+## Prerequisites
+
+Run the commands from the repository root after installing the training dependencies
+with `uv sync --extra train`. Frame preparation runs on CPU. Both training recipes
+default to CUDA, and StreamMAE uses BF16, requiring a GPU with native BF16 support
+(compute capability 8.0 or later).
+
 Download the MP4 files from the [official Figshare release](https://doi.org/10.21942/uva.25189275.v1)
 into `WALKINGTOURS_RAW`. The release contains about 81 GiB of video under CC BY 4.0.
 [source_manifest.json](source_manifest.json) records the filenames, download URLs,
@@ -10,8 +17,8 @@ sizes, and published MD5 checksums used by the preparer.
 
 ## Frame preparation
 
-With FFmpeg and the training dependencies installed, prepare the videos once for
-both methods. Set `WALKINGTOURS_ROOT` to a new directory for the extracted frames.
+Prepare the videos once for both methods. Set `WALKINGTOURS_ROOT` to a new
+directory for the extracted frames and install FFmpeg before running the command.
 The release includes H.264, AV1, and VP9 video, so FFmpeg needs software decoders
 for all three. For AV1, use a build with `libdav1d`. If you install a separate
 FFmpeg build, put its `ffmpeg` and `ffprobe` binaries first on `PATH` during preparation.

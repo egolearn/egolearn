@@ -9,6 +9,7 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- MAE, ablation, and WalkingTours guides appear in site navigation and search, with dataset and hardware prerequisites.
 - MAE ablations match streaming and shuffled update budgets, with separate consumption, retention, window, and throughput metrics.
 - MAE provides ViT-S/16 and ViT-B/16 reconstruction recipes, a synthetic CPU example, and resumable full-pass training.
 - StreamMAE adds stochastic depth, color jitter, DataDrop, and motion-biased crops with cached admission scores.

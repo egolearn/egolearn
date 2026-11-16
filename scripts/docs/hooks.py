@@ -28,7 +28,10 @@ EXTRA_PAGES = {
     "SECURITY.md": "security.md",
     "projects/babycl/README.md": "projects/babycl.md",
     "projects/storyboard/README.md": "projects/storyboard.md",
+    "projects/streammae/README.md": "projects/streammae.md",
+    "projects/streammae/ablations.md": "projects/streammae/ablations.md",
     "projects/vjepa2/README.md": "projects/vjepa2.md",
+    "projects/walkingtours/README.md": "projects/walkingtours.md",
 }
 REPO_OF_PAGE = {site: repo for repo, site in EXTRA_PAGES.items()}
 

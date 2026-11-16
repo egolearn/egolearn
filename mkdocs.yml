@@ -20,7 +20,10 @@ watch:
   - SECURITY.md
   - projects/babycl/README.md
   - projects/storyboard/README.md
+  - projects/streammae/README.md
+  - projects/streammae/ablations.md
   - projects/vjepa2/README.md
+  - projects/walkingtours/README.md
   - scripts/docs/hooks.py
   - scripts/docs/reference.py
   - src/egolearn
@@ -149,7 +152,10 @@ nav:
   - Methods:
     - BabyCL: projects/babycl.md
     - Memory Storyboard: projects/storyboard.md
+    - MAE and StreamMAE: projects/streammae.md
+    - Matched MAE ablations: projects/streammae/ablations.md
     - V-JEPA 2: projects/vjepa2.md
+    - Original WalkingTours experiments: projects/walkingtours.md
   - Design:
     - Architecture: design/architecture.md
     - Data-loading performance: design/data_loading_performance.md

@@ -12,10 +12,52 @@ training method. No downstream performance or paper reproduction is claimed.
 Use the [matched ablation suite](ablations.md) to compare vanilla MAE, shuffled
 MAE, DataDrop, regularization, and motion crops with equal optimizer budgets.
 
+## Prerequisites
+
+Run the commands from the repository root after installing the training dependencies
+with `uv sync --extra train`. The synthetic `toy_mae` example runs on CPU without
+data or pretrained weights. The project recipes default to CUDA. With their
+default CUDA/BF16 settings, the `full_*` and `matched_*` recipes require a GPU
+with native BF16 support (CUDA compute capability 8.0 or later).
+
+### Dataset access and layout
+
+Obtain the source data through [SAYCam access](../../docs/evaluation/data.md#saycam-access)
+or [BabyView access](https://babyview-project.github.io/access/), then prepare the
+frames locally. Set `SAYCAM_ROOT` or `BABYVIEW_ROOT` to your frame directory, or
+pass its path as `stream.root_dir` in the training command.
+
+SAYCam recipes select child S from session directories named `S_*`. Filenames
+end in a timestamp in seconds, for example:
+
+```text
+$SAYCAM_ROOT/
+  S_20131130_1313_01/
+    S_20131130_1313_01_259.20.jpg
+    S_20131130_1313_01_259.40.jpg
+```
+
+BabyView recipes read all children from nested recording directories. Number
+frames from 1 within each recording:
+
+```text
+$BABYVIEW_ROOT/
+  <child>/
+    <recording>/
+      frame_00000001.jpg
+      frame_00000002.jpg
+```
+
+Apply the intended orientation and dataset crop during preparation. The SAYCam
+and BabyView recipes default to 5 fps and do not apply an additional vertical
+flip. `stream.fps` describes the prepared frame rate and does not resample images.
+
+For original WalkingTours, follow the [download and frame preparation guide](../walkingtours/README.md).
+WT++ uses a separate source supplied by you, described under [WalkingTours and WT++](#walkingtours-and-wt).
+
 ## Run
 
-Install with `uv sync --extra train`. The synthetic CPU example validates the
-whole training path without downloading weights or accessing data:
+The synthetic CPU example validates the whole training path:
 
 ```bash
 uv run python -m egolearn.train --config-name toy_mae dry_run=true
@@ -35,9 +77,9 @@ uv run python -m egolearn.train --config-dir projects/streammae/configs \
 `dry_run=true` builds the model and validates its wiring; the SAYCam adapter
 still enumerates the frame directory, so it needs an existing directory.
 The synthetic config needs no data path. Dataset orientation and frame rate
-are preprocessing choices: `stream.fps` describes the prepared frames and
-does not resample them. Use `views.reconstruction.vertical_flip=true` only
-when the prepared images require it (add the key with `+` on the Hydra CLI).
+follow the [preparation settings above](#dataset-access-and-layout).
+For `mae_small` and `mae_base`, you can add
+`+views.reconstruction.vertical_flip=true` if your prepared images need flipping.
 
 Both project configs consume every prepared frame once into a 512-frame FIFO
 window and train on the entire window after each new frame. Overlapping windows
@@ -87,10 +129,9 @@ The `full_saycam_streaming`, `full_saycam_iid`, `full_babyview_streaming`, and
 float32 residual streams/loss/parameters/Adam state, and eight decode workers. They deliberately
 share the same update-indexed LR (1.6e-4, 5% warmup then constant) to isolate data ordering;
 they do not reproduce the paper's separate IID LR sweep/cosine recipe.
-SAYCam selects child S. BabyView uses all children under
-`root/child/recording/frame_00000001.jpg`, ordered by child, date and numeric
-part (recording ID breaks ties). These prepared archives already have their
-orientation/crop applied; there is no additional vertical flip.
+SAYCam selects child S. BabyView uses all children under the
+[prepared frame root](#dataset-access-and-layout), ordered by child, date and numeric
+part (recording ID breaks ties).
 
 Use the full-pass runner, which derives the update budget from frame counts:
 

@@ -5,6 +5,14 @@ prepared SAYCam or BabyView inventory. Runs match retained examples and optimize
 updates, with the same learning rate at each update, and no downstream results are
 reported for this suite.
 
+## Prerequisites
+
+Install the training dependencies and prepare your dataset using the
+[MAE setup guide](README.md#prerequisites). These recipes use CUDA and BF16 by
+default, so you need a GPU with native BF16 support (compute capability 8.0 or
+later). The selected frame inventory must contain at least 2,048 frames with
+the default reference window. Set `SAYCAM_ROOT` or `BABYVIEW_ROOT` to its root.
+
 ## Recipes
 
 Select an ablation and supply your prepared frame root:
