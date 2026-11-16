@@ -22,6 +22,9 @@ watch:
   - projects/storyboard/README.md
   - projects/streammae/README.md
   - projects/streammae/ablations.md
+  - projects/streammae/training.md
+  - projects/streammae/method.md
+  - projects/streammae/wtpp.md
   - projects/vjepa2/README.md
   - projects/walkingtours/README.md
   - scripts/docs/hooks.py
@@ -152,8 +155,12 @@ nav:
   - Methods:
     - BabyCL: projects/babycl.md
     - Memory Storyboard: projects/storyboard.md
-    - MAE and StreamMAE: projects/streammae.md
-    - Matched MAE ablations: projects/streammae/ablations.md
+    - MAE and StreamMAE:
+      - Overview: projects/streammae.md
+      - Training and resume: projects/streammae/training.md
+      - Matched ablations: projects/streammae/ablations.md
+      - Method: projects/streammae/method.md
+      - WT++ preparation: projects/streammae/wtpp.md
     - V-JEPA 2: projects/vjepa2.md
     - Original WalkingTours experiments: projects/walkingtours.md
   - Design:

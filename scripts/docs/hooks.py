@@ -30,6 +30,9 @@ EXTRA_PAGES = {
     "projects/storyboard/README.md": "projects/storyboard.md",
     "projects/streammae/README.md": "projects/streammae.md",
     "projects/streammae/ablations.md": "projects/streammae/ablations.md",
+    "projects/streammae/training.md": "projects/streammae/training.md",
+    "projects/streammae/method.md": "projects/streammae/method.md",
+    "projects/streammae/wtpp.md": "projects/streammae/wtpp.md",
     "projects/vjepa2/README.md": "projects/vjepa2.md",
     "projects/walkingtours/README.md": "projects/walkingtours.md",
 }

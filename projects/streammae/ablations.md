@@ -45,7 +45,7 @@ main comparison, with `vanilla` retained as a separate ablation.
 ## Cluster runs
 
 Set the `MAE_*` environment variables described in the
-[MAE launcher setup](README.md#full-streaming-pass-and-matched-iid), then submit:
+[MAE launcher setup](training.md#slurm-launcher), then submit:
 
 ```bash
 sbatch scripts/slurm/mae.sbatch matched_saycam \

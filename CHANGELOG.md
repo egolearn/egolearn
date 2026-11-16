@@ -116,6 +116,7 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- MAE documentation separates recipe selection, training, method details, and WT++ preparation, with inventory-derived update budgets.
 - Full-pass MAE schedules use optimizer updates so streaming and IID runs receive identical learning rates.
 - Serial augmentation preserves CUDA randomness by seeding only the CPU generator.
 
