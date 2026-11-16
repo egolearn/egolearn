@@ -17,6 +17,10 @@ patch releases for fixes during 0.x development.
 - WalkingTours preparation and training recipes support checksum-verified original videos and user-supplied WT++ frames.
 - The Slurm launcher can requeue runners that save state and return pause exit code 75.
 
+- The website reads public Hugging Face benchmark results directly, without Cloudflare Functions or results credentials.
+- `egl publish` supports reference checkpoints with unknown training seeds and explains inapplicable benchmarks in the website table.
+- `egl publish` publishes results with optional model exports and updates the website's
+  benchmark table from versioned, per-seed Hugging Face records.
 - `benchmark:imagenet_full_finetune` supports full-network ImageNet evaluation through `egl eval`, resumable adaptation, and optional execution optimizations.
 - EgoSchema and Ego4D NLQ score generative models zero-shot through generic multiple-choice and temporal-grounding scorers with configurable prompts and reply parsers.
 - `generative:openai_chat` queries OpenAI-compatible servers such as vLLM, caching replies on disk by full request.
@@ -163,6 +167,7 @@ patch releases for fixes during 0.x development.
 - MAE resume archives milestones ahead of the restored checkpoint and recreates them at their scheduled updates.
 - MAE records intentional stops as paused and counts preparation and checkpoint replay toward its wall-clock budget.
 
+- `egl publish prepare` rejects incomplete VTWT and Baby Winoground evaluations, including those with custom benchmark names.
 - Staging sites allow crawlers to read `noindex` tags without `robots.txt` blocking access to the pages.
 - VoE probes reject videos shorter than `num_frames`, preventing repeated frames
   from affecting IntPhys 2 and GRASP scores.
