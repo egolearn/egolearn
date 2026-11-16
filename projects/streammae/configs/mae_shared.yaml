@@ -1,0 +1,70 @@
+# Standard MAE ViT-S/16 on a FIFO SAYCam frame window. No StreamMAE additions.
+# Dataset frames must already have the desired orientation and sampling rate.
+defaults:
+  - /config
+  - _self_
+
+_imports_: [egolearn.methods.mae]
+run_dir: runs/mae_small_saycam
+seed: 1337
+device: cuda
+loader: {workers: 8}
+
+stream:
+  _target_: "stream:saycam"
+  root_dir: ${oc.env:SAYCAM_ROOT,???}
+  include: "S_*"
+  fps: 5.0
+
+views:
+  reconstruction: {name: mae, size: 224, scale_min: 0.2}
+
+admission:
+  - {_target_: "admission:frame_emitter", subsample: 1}
+memories:
+  frames:
+    tiers:
+      window: {capacity: 512, update: fifo}
+    admit_to: [window]
+    overflow: {}
+routes:
+  RawFrame: frames
+recipe:
+  slots:
+    - name: frames
+      source: {kind: tier, memory: frames, tier: window}
+      n: 512
+      unit: frame
+      views: [reconstruction]
+      strict: true
+
+model:
+  encoders:
+    vision: {_target_: "encoder:mae_vit", dim: 384, depth: 12, heads: 6}
+  predictors:
+    reconstruction: {_target_: "predictor:mae", inputs: [vision], encoder_dim: 384,
+                     dim: 512, depth: 8, heads: 16}
+losses:
+  - {_target_: "loss:mae", slot: frames, encoder: vision,
+     predictor: reconstruction, mask_ratio: 0.75, norm_pix_loss: true}
+
+solver:
+  opt: adamw
+  betas: [0.9, 0.95]
+  groups:
+    # Explicit LR: base 8e-5 * effective batch 512 / 256. Rescale if n changes.
+    - {match: ".*", lr: 1.6e-4, weight_decay: 0.05, split_no_decay: true,
+       no_decay_pattern: '(bias$|norm)'}
+  # Warm up over 5% of post-buffer stream progress, then stay constant.
+  schedule: {warmup_frac: 0.05, warmup_min_steps: 0, floor: 1.0}
+
+driver:
+  advance: {kind: events, schema: RawFrame, n: 1}
+  rate: {steps_per_admit: 1, resample: true}
+  # First update follows admission of frame 512 (the driver advances after warmup).
+  warmup: {admitted: 511}
+hooks:
+  log_every: 50
+  checkpoint_every: 0
+  snapshot_every: 5000
+  snapshot_milestones: [0.05, 0.25, 0.5, 1.0]

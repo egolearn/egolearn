@@ -1,0 +1,7 @@
+defaults:
+  - walkingtours_shared
+  - /stream: walkingtours
+  - _self_
+hydra:
+  searchpath: [pkg://egolearn.configs]
+run_dir: ${oc.env:EGOLEARN_ARTIFACTS,runs}/streammae_wt_original/seed_${seed}

@@ -13,6 +13,7 @@ step-indexed original can opt back in with `total_steps` (see ProgressCosine).
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import Any
 
 import torch
@@ -28,6 +29,7 @@ def build_optimizer(
     opt: str = "adamw",
     momentum: float = 0.9,
     warnings: list[str] | None = None,
+    betas: Sequence[float] = (0.9, 0.999),
 ):
     """groups: [{match, lr, weight_decay, split_no_decay?, no_decay_pattern?}]
 
@@ -35,6 +37,7 @@ def build_optimizer(
     with the given weight_decay and one with 0.0 for params whose name matches
     `no_decay_pattern` (default: bias / BN / norm, matching BabyCL's
     _split_decay_named_params_cnn).
+    `betas` configures Adam/AdamW moments; defaults retain PyTorch's values.
     """
     compiled: list[dict[str, Any]] = []
     for g in groups:
@@ -89,10 +92,13 @@ def build_optimizer(
                 {"params": g["no_decay_params"], "lr": g["lr"], "weight_decay": 0.0}
             )
 
-    if opt == "adamw":
-        return torch.optim.AdamW(torch_groups)
-    if opt == "adam":
-        return torch.optim.Adam(torch_groups)
+    if opt in ("adam", "adamw"):
+        if len(betas) != 2:
+            raise ValueError("Adam betas must contain exactly two values")
+        moments = (float(betas[0]), float(betas[1]))
+        if opt == "adamw":
+            return torch.optim.AdamW(torch_groups, betas=moments)
+        return torch.optim.Adam(torch_groups, betas=moments)
     if opt == "sgd":
         for tg in torch_groups:
             tg["momentum"] = momentum

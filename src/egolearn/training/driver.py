@@ -272,6 +272,8 @@ class LockstepDriver:
         self.ctx.clock.admitted = 0
         self._replaying = True
         try:
+            for builder in self.admission:
+                builder.set_replaying(True)
             while self.ctx.clock.admitted < target:
                 if self._step_stream() is None:
                     print(
@@ -287,6 +289,8 @@ class LockstepDriver:
                     pass
         finally:
             self._replaying = False
+            for builder in self.admission:
+                builder.set_replaying(False)
             self.ctx.clock.events_emitted = events_before
         print(
             f"[driver] resume: replayed {self.ctx.clock.admitted} "

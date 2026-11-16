@@ -23,6 +23,7 @@ class FrameEmitter(EventBuilder):
 
     def __init__(self, subsample: int = 1):
         self.subsample = max(1, int(subsample))
+        self.emits_each_frame = self.subsample == 1
         self._count = 0
         self._out: list[dict] = []
 

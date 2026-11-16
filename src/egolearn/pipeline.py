@@ -271,6 +271,7 @@ def build(cfg: dict) -> Pipeline:
         opt=scfg.get("opt", "adamw"),
         momentum=scfg.get("momentum", 0.9),
         warnings=build_warnings,
+        betas=scfg.get("betas", (0.9, 0.999)),
     )
     schedule = ProgressCosine(**schedule_cfg) if schedule_cfg else None
 
@@ -489,12 +490,60 @@ def validate(pipe: Pipeline) -> None:
                             errs.append(f"{tag} slot {slot.name!r}: mix names unknown tier {t!r}")
             elif src["kind"] == "stream_head":
                 E.schema(src["schema"])
+                if any(
+                    getattr(builder, "replay_requires_memory", False)
+                    and src["schema"] in builder.emits
+                    for builder in pipe.admission
+                ):
+                    errs.append(
+                        f"{tag} slot {slot.name!r}: admission metadata requires "
+                        "snapshot-restored memory; stream_head cannot restore its context"
+                    )
             for v in slot.views:
                 if v not in pipe.views.names():
                     errs.append(
                         f"{tag} slot {slot.name!r}: unknown view "
                         f"{v!r} (declared: {pipe.views.names()})"
                     )
+            for name in slot.views:
+                if name not in pipe.views.names():
+                    continue
+                view = pipe.views.get(name)
+                if not getattr(view, "requires_context", False):
+                    continue
+                context_kind = getattr(view, "context_kind", None)
+                producers = [
+                    builder
+                    for builder in pipe.admission
+                    if any(
+                        (
+                            schema == src.get("schema")
+                            if src["kind"] == "stream_head"
+                            else pipe.routes.get(schema) == src.get("memory")
+                        )
+                        for schema in builder.emits
+                    )
+                ]
+                if (
+                    slot.unit != "frame"
+                    or context_kind is None
+                    or not producers
+                    or any(
+                        getattr(builder, "view_context_kind", None) != context_kind
+                        for builder in producers
+                    )
+                ):
+                    errs.append(
+                        f"{tag} view {name!r} requires compatible frame context from admission"
+                    )
+                    continue
+                validator = getattr(view, "validate_context_producer", None)
+                if validator is not None:
+                    for builder in producers:
+                        try:
+                            validator(builder, pipe.model)
+                        except ValueError as error:
+                            errs.append(f"{tag} view {name!r}: {error}")
             if slot.text and pipe.tokenizer is None:
                 errs.append(f"{tag} slot {slot.name!r}: text=true but no tokenizer configured")
             if slot.modality not in pipe.model.modalities().values():
@@ -624,6 +673,9 @@ def _validate_offline(pipe: Pipeline, driver: OfflineDriver, errs: list[str]) ->
     for v in driver.views:
         if v not in pipe.views.names():
             errs.append(f"driver.batch: unknown view {v!r} (declared: {pipe.views.names()})")
+    for name in driver.views:
+        if name in pipe.views.names() and getattr(pipe.views.get(name), "requires_context", False):
+            errs.append(f"offline view {name!r} requires frame context from streaming admission")
     for loss_fn in pipe.losses:
         if loss_fn.requires_text and not set(loss_fn.requires_slots) <= driver.text_slots:
             errs.append(

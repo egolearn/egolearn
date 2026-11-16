@@ -1,0 +1,16 @@
+_target_: "stream:walkingtours"
+root_dir: ${oc.env:WALKINGTOURS_ROOT,???}
+fps: 3.75
+include: null
+# Original WT city order from StreamMAE appendix C, followed by Wildlife.
+sessions:
+  - venice
+  - amsterdam
+  - singapore
+  - istanbul
+  - bangkok
+  - stockholm
+  - kuala_lumpur
+  - zurich
+  - chiang_mai
+  - wildlife

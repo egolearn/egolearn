@@ -3,6 +3,7 @@ from .packed import PackedFrameStream
 from .saycam import BabyViewStream, SaycamStream
 from .toy import ToyStream
 from .video import VideoStream
+from .walkingtours import WalkingToursStream
 
 __all__ = [
     "BabyViewStream",
@@ -16,4 +17,5 @@ __all__ = [
     "Stream",
     "ToyStream",
     "VideoStream",
+    "WalkingToursStream",
 ]

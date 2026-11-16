@@ -25,44 +25,19 @@ accuracy on deterministic training views.
 from __future__ import annotations
 
 import math
-import random
-from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import Iterator
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as T
-from PIL import Image
-from torch.utils.data import DataLoader, Dataset, RandomSampler, Sampler, SequentialSampler
+from torch.utils.data import DataLoader, RandomSampler, Sampler, SequentialSampler
 
 from egolearn.config.registry import VIEWS
 from egolearn.core.context import _stable_seed
 from egolearn.data.views import IMAGENET_MEAN, IMAGENET_STD
-from egolearn.evaluation.linear_probe import ClassificationSplit, LabeledImage
-
-
-class _ImageDataset(Dataset):
-    def __init__(self, items: Sequence[LabeledImage], transform):
-        self.items = items
-        self.transform = transform
-
-    def __len__(self) -> int:
-        return len(self.items)
-
-    def __getitem__(self, index: int | tuple[int, int]) -> tuple[torch.Tensor, int]:
-        seed = None
-        if isinstance(index, tuple):
-            index, seed = index
-        item = self.items[index]
-        with Image.open(item.image) as image:
-            converted = image.convert("RGB")
-            if seed is None:
-                tensor = self.transform(converted)
-            else:
-                with _isolated_rng(seed):
-                    tensor = self.transform(converted)
-        return tensor, item.label
+from egolearn.evaluation.image_data import ImageDataset, isolated_image_rng
+from egolearn.evaluation.linear_probe import ClassificationSplit
 
 
 class _SeededSampler(Sampler[tuple[int, int]]):
@@ -191,20 +166,6 @@ def _cosine_lr(base_lr: float, epoch: int, epochs: int) -> float:
     return base_lr * 0.5 * (1.0 + math.cos(math.pi * epoch / epochs))
 
 
-@contextmanager
-def _isolated_rng(seed: int):
-    """Make stochastic decoding repeatable without advancing the training RNG."""
-    python_state = random.getstate()
-    cpu_state = torch.Generator().manual_seed(int(seed)).get_state()
-    try:
-        with torch.random.fork_rng(devices=[]):
-            torch.set_rng_state(cpu_state)
-            random.seed(int(seed))
-            yield
-    finally:
-        random.setstate(python_state)
-
-
 class LinearSGDEvaluator:
     """Train a linear classifier by SGD while keeping the encoder frozen."""
 
@@ -292,7 +253,7 @@ class LinearSGDEvaluator:
         split_name: str,
         device: torch.device,
     ) -> DataLoader:
-        dataset = _ImageDataset(items, transform)
+        dataset = ImageDataset(items, transform)
         base_sampler: Sampler[int]
         if shuffle:
             base_sampler = RandomSampler(dataset, generator=generator)
@@ -369,7 +330,7 @@ class LinearSGDEvaluator:
         loader_generator = torch.Generator().manual_seed(self.seed)
 
         try:
-            with _isolated_rng(self.seed):
+            with isolated_image_rng(self.seed):
                 train_loader = self._loader(
                     split.train,
                     _train_transform(self.size),

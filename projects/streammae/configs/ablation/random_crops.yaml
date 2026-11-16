@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - color_jitter
+  - _self_
+ablation_name: random_crops
+admission:
+  - {_target_: "admission:streammae_frames", patch_size: 16, frame_size: null}
+views:
+  reconstruction:
+    name: streammae
+    patch_size: 16
+    frame_size: null
+    crop_probability: 0.5
+    motion_candidates: 1

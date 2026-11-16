@@ -6,7 +6,7 @@ an explicit destination and refuses to overwrite an existing run. See
 [run records](benchmark_suites.md#run-records-and-scope) for paths and Python usage.
 
 Use `uv run egl` after `uv sync`, or `egl` in an activated environment.
-`egolearn` is an equivalent installed alias. Commands are `train`, `eval`, `export`, `data`,
+`egolearn` is an equivalent installed alias. Commands are `train`, `eval`, `export`, `publish`, `data`,
 `submit`, `doctor`, and `bench`; each accepts `--help`.
 
 These Python commands are for workstations and compute allocations. On cluster
@@ -48,6 +48,10 @@ permission. The [Hub guide](evaluation/hub.md#publication) explains overwrite be
 Model uploads validate the pair and reject additional payloads, including `.pth`
 files. Dataset uploads retain their existing collection format. Snapshots stay
 in the local run directory.
+
+`egl publish prepare` and `egl publish push` publish evaluated checkpoints with
+per-seed provenance and update the website's benchmark feed. See
+[publishing results](publishing_results.md) for the manifest and deployment settings.
 
 ## Toy model export
 

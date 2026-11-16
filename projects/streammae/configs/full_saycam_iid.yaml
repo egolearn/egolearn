@@ -1,0 +1,18 @@
+defaults:
+  - mae_shared
+  - full_run_shared
+  - _self_
+hydra:
+  searchpath: [pkg://egolearn.configs]
+run_dir: runs/mae_saycam_iid
+admission: []
+memories: null
+routes: null
+recipe: null
+driver:
+  mode: offline
+  prefetch: true
+  batch: {slot: frames, n: 512, views: [reconstruction]}
+  subsample: 1
+loader:
+  cache_frames: 0  # shuffled frames have negligible local reuse

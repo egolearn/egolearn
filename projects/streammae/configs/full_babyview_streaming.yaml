@@ -1,0 +1,13 @@
+defaults:
+  - mae_shared
+  - full_run_shared
+  - _self_
+hydra:
+  searchpath: [pkg://egolearn.configs]
+run_dir: runs/mae_babyview_streaming
+stream:
+  _target_: "stream:babyview"
+  root_dir: ${oc.env:BABYVIEW_ROOT,???}
+  include: null
+  natural_order: true
+  session_glob: "*/*"  # root / child / recording / frame_00000001.jpg

@@ -43,6 +43,9 @@ uv run egl data list
 The [CLI guide](docs/cli.md) covers configuration files, data preparation,
 evaluation, model export, cluster submission, and benchmark suites.
 
+For image masked autoencoding, see the [MAE and StreamMAE project](projects/streammae/README.md).
+`uv run python -m egolearn.train --config-name toy_mae` runs a synthetic CPU example.
+
 <a id="whats-here"></a>
 
 ## Training

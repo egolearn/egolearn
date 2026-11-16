@@ -1,0 +1,9 @@
+# @package _global_
+defaults:
+  - datadrop
+  - _self_
+ablation_name: drop_path
+model:
+  encoders:
+    vision:
+      drop_path_rate: 0.25
