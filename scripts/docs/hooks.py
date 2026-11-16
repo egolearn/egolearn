@@ -27,7 +27,14 @@ EXTRA_PAGES = {
     "CONTRIBUTING.md": "contributing.md",
     "SECURITY.md": "security.md",
     "projects/babycl/README.md": "projects/babycl.md",
+    "projects/babycl/docs/walkingtours.md": "projects/babycl/walkingtours.md",
     "projects/storyboard/README.md": "projects/storyboard.md",
+    "projects/streammae/README.md": "projects/streammae.md",
+    "projects/streammae/ablations.md": "projects/streammae/ablations.md",
+    "projects/streammae/training.md": "projects/streammae/training.md",
+    "projects/streammae/method.md": "projects/streammae/method.md",
+    "projects/streammae/wtpp.md": "projects/streammae/wtpp.md",
+    "projects/streammae/walkingtours.md": "projects/streammae/walkingtours.md",
     "projects/vjepa2/README.md": "projects/vjepa2.md",
 }
 REPO_OF_PAGE = {site: repo for repo, site in EXTRA_PAGES.items()}

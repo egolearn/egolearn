@@ -1,0 +1,12 @@
+defaults:
+  - matched_shared
+  - _self_
+hydra:
+  searchpath: [pkg://egolearn.configs]
+run_dir: runs/streammae_matched_babyview/${ablation_name}/seed_${seed}
+stream:
+  _target_: "stream:babyview"
+  root_dir: ${oc.env:BABYVIEW_ROOT,???}
+  include: null
+  natural_order: true
+  session_glob: "*/*"

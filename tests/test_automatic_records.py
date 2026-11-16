@@ -16,7 +16,7 @@ from egolearn.config.registry import BENCHMARKS
 from egolearn.evaluation import Benchmark, EvaluationError, evaluate, evaluate_checkpoint
 from egolearn.evaluation.linear_probe import ClassificationSplit, LabeledImage, LinearProbe
 from egolearn.hub import sha256_file, write_checksums
-from egolearn.run_record import record_run
+from egolearn.run_record import RunPaused, record_run
 from egolearn.training.hooks import CheckpointHook
 from egolearn.utils.input_provenance import input_identity, prepare_inputs
 from egolearn.utils.snapshot import load_snapshot, save_snapshot
@@ -84,6 +84,18 @@ def test_default_records_preserve_each_attempt_and_explicit_path(tmp_path, monke
     with record_run({"record_json": None, "run_dir": tmp_path}, "train") as disabled:
         assert disabled is None
     assert len(records(tmp_path)) == 2
+
+
+def test_pause_records_preserve_nonfinite_status(tmp_path):
+    with pytest.raises(RunPaused), record_run({"run_dir": tmp_path}, "train") as record:
+        assert record is not None
+        record.value["metrics"] = {"loss": float("nan"), "step": 2}
+        raise RunPaused(75)
+    [record] = records(tmp_path)
+    assert record["status"] == "nonfinite"
+    assert record["nonfinite_metrics"] == ["loss"]
+    assert record["metrics"] == {"step": 2}
+    assert record["pause_exit_code"] == 75
 
 
 def test_inputs_distinguish_files_unversioned_and_verified_collections(tmp_path):

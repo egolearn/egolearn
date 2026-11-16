@@ -1,0 +1,8 @@
+# @package _global_
+defaults:
+  - drop_path
+  - _self_
+ablation_name: color_jitter
+views:
+  reconstruction:
+    jitter_probability: 0.5

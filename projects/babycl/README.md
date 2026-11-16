@@ -6,6 +6,7 @@ variant, and configuration controls for memory and objective ablations.
 
 For silent KrishnaCam videos, use the
 [visual BabyCL training and benchmark guide](docs/krishnacam.md).
+For the original WalkingTours videos, use the [WalkingTours experiment guide](docs/walkingtours.md).
 
 ## Training
 

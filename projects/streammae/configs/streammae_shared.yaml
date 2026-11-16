@@ -1,0 +1,41 @@
+# StreamMAE on prepared native-resolution frames; preserves the MAE stride-32 budget scale.
+defaults:
+  - mae_shared
+  - full_run_shared
+  - _self_
+_imports_: [egolearn.methods.streammae]
+run_control:
+  batch_size: 512  # fixed-cardinality DataDrop: uniformly retain 25% without replacement
+  window_size: 2048
+  stride: 32
+model:
+  encoders:
+    vision:
+      drop_path_rate: 0.25
+views:
+  reconstruction:
+    name: streammae
+    patch_size: 16
+    frame_size: null  # preserve prepared SAYCam/BabyView geometry
+    crop_size: null
+    crop_fraction: [0.4666666666666667, 0.4625]  # H/W fractions of the paper's first-stage region
+    crop_probability: 0.5
+    motion_candidates: 4
+    jitter_probability: 0.5
+admission:
+  - {_target_: "admission:streammae_frames", patch_size: 16, frame_size: null}
+memories:
+  frames:
+    tiers:
+      window: {capacity: '${run_control.window_size}', update: fifo}
+recipe:
+  slots:
+    - name: frames
+      source: {kind: tier, memory: frames, tier: window}
+      n: ${run_control.batch_size}
+      unit: frame
+      views: [reconstruction]
+      strict: true
+driver:
+  advance: {kind: events, schema: RawFrame, n: '${run_control.stride}'}
+  warmup: {admitted: 2016}  # window_size - stride; runner validates this

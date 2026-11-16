@@ -29,6 +29,14 @@ class NonfiniteLoss(ValueError):
     """A run explicitly requested immediate failure on a nonfinite training loss."""
 
 
+class RunPaused(Exception):
+    """A run saved resumable state and intentionally stopped before completion."""
+
+    def __init__(self, exit_code: int):
+        self.exit_code = exit_code
+        super().__init__(exit_code)
+
+
 def _plain(value):
     if is_dataclass(value) and not isinstance(value, type):
         return _plain(asdict(value))
@@ -274,10 +282,20 @@ def record_run(
                 finite.update(finite_metrics({name: value}))
             except ValueError:
                 invalid.append(name)
+        paused = isinstance(error, RunPaused)
         record.value["status"] = (
-            "nonfinite" if invalid or isinstance(error, NonfiniteLoss) else "failed"
+            "nonfinite"
+            if invalid
+            or isinstance(error, NonfiniteLoss)
+            or (paused and record.value.get("nonfinite_steps", 0))
+            else "paused"
+            if paused
+            else "failed"
         )
-        record.value["error_type"] = type(error).__name__
+        if isinstance(error, RunPaused):
+            record.value["pause_exit_code"] = error.exit_code
+        else:
+            record.value["error_type"] = type(error).__name__
         record.value["nonfinite_metrics"] = invalid
         record.value["metrics"] = finite
         raise

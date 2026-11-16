@@ -191,7 +191,12 @@ class Composer:
                 frame_idx = self.loader.pick_frame_indices(ref, k, rng)
                 for fi in frame_idx:
                     seed = ctx.derive_seed(f"aug:{seq}:{slot.name}:{len(work)}")
-                    work.append(("frame", ref, fi, slot.views, seed))
+                    task: WorkItem = ("frame", ref, fi, slot.views, seed)
+                    if K.VIEW_CONTEXT in item:
+                        if slot.unit != "frame":
+                            raise ValueError("contextual views currently require point frame slots")
+                        task = (*task, item[K.VIEW_CONTEXT])
+                    work.append(task)
                     if label is not None:
                         labels.append(label)
                     metas.append(item)

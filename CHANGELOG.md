@@ -9,6 +9,14 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- The MAE guide covers checkpoint saving, snapshot export, frozen ImageNet evaluation, and full-network fine-tuning.
+- MAE, ablation, and WalkingTours guides appear in site navigation and search, with dataset and hardware prerequisites.
+- MAE ablations match streaming and shuffled update budgets, with separate consumption, retention, window, and throughput metrics.
+- MAE provides ViT-S/16 and ViT-B/16 reconstruction recipes, a synthetic CPU example, and resumable full-pass training.
+- StreamMAE adds stochastic depth, color jitter, DataDrop, and motion-biased crops with cached admission scores.
+- WalkingTours preparation and training recipes support checksum-verified original videos and user-supplied WT++ frames.
+- The Slurm launcher can requeue runners that save state and return pause exit code 75.
+
 - The website reads public Hugging Face benchmark results directly, without Cloudflare Functions or results credentials.
 - `egl publish` supports reference checkpoints with unknown training seeds and explains inapplicable benchmarks in the website table.
 - `egl publish` publishes results with optional model exports and updates the website's
@@ -112,6 +120,12 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- WalkingTours documentation separates shared dataset preparation from BabyCL and StreamMAE experiment guides.
+- WalkingTours preparation uses a bundled source manifest by default and retains custom manifest overrides.
+- MAE documentation separates recipe selection, training, method details, and WT++ preparation, with inventory-derived update budgets.
+- Full-pass MAE schedules use optimizer updates so streaming and IID runs receive identical learning rates.
+- Serial augmentation preserves CUDA randomness by seeding only the CPU generator.
+
 - The `generation` capability becomes `text_generation`, and generative components must produce text.
 - Site builds use pinned uv in a separate Python 3.12 environment and keep Cloudflare previews unindexed.
 - The test suite trims repetitive validation matrices and consolidates training, CLI, recording, and import checks.
@@ -146,6 +160,12 @@ patch releases for fixes during 0.x development.
   [installed module commands](docs/cli.md#data).
 
 ### Fixed
+
+- The MAE Slurm launcher accepts matched SAYCam and BabyView recipes, separating outputs by ablation and seed.
+- Full-pass MAE rejects explicit resume paths and checkpoint directories without a manifest before loading training state.
+- Full-pass MAE permits moving run directories and changing logging or checkpoint frequency between resume attempts.
+- MAE resume archives milestones ahead of the restored checkpoint and recreates them at their scheduled updates.
+- MAE records intentional stops as paused and counts preparation and checkpoint replay toward its wall-clock budget.
 
 - `egl publish prepare` rejects incomplete VTWT and Baby Winoground evaluations, including those with custom benchmark names.
 - Staging sites allow crawlers to read `noindex` tags without `robots.txt` blocking access to the pages.

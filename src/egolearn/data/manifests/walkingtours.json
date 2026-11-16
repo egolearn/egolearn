@@ -1,0 +1,78 @@
+{
+  "doi": "10.21942/uva.25189275.v1",
+  "license": "CC BY 4.0",
+  "videos": [
+    {
+      "session": "venice",
+      "filename": "Walking Tour Venice.mp4",
+      "url": "https://ndownloader.figshare.com/files/44469489",
+      "bytes": 4911350756,
+      "md5": "861625e1af3236e97dfe10f4bd4f849c"
+    },
+    {
+      "session": "amsterdam",
+      "filename": "Walking Tour Amsterdam.mp4",
+      "url": "https://ndownloader.figshare.com/files/44474683",
+      "bytes": 8819883708,
+      "md5": "2471f0ad9d98fd116aaa1bbfa8fd141e"
+    },
+    {
+      "session": "singapore",
+      "filename": "Walking Tour Singapore.mp4",
+      "url": "https://ndownloader.figshare.com/files/44473088",
+      "bytes": 10342515485,
+      "md5": "cade1101299948e65f27b083d6f46ef5"
+    },
+    {
+      "session": "istanbul",
+      "filename": "Walking Tour Istanbul.mp4",
+      "url": "https://ndownloader.figshare.com/files/44510591",
+      "bytes": 14823226208,
+      "md5": "0b8494a9d7a7491aba8e56004b5a4219"
+    },
+    {
+      "session": "bangkok",
+      "filename": "Walking Tour Bangkok.mp4",
+      "url": "https://ndownloader.figshare.com/files/44511511",
+      "bytes": 15536960888,
+      "md5": "6d14e780207b35e2d3304586dafb6319"
+    },
+    {
+      "session": "stockholm",
+      "filename": "Walking Tour Stockholm.mp4",
+      "url": "https://ndownloader.figshare.com/files/44510069",
+      "bytes": 11562175442,
+      "md5": "89803bca6d591f50958cb877cc2ccd3d"
+    },
+    {
+      "session": "kuala_lumpur",
+      "filename": "Walking Tour Kuala Lumpur.mp4",
+      "url": "https://ndownloader.figshare.com/files/44473407",
+      "bytes": 8050088616,
+      "md5": "25aace658e2fec307f78daf2a94ea27e"
+    },
+    {
+      "session": "zurich",
+      "filename": "Walking Tour Zurich.mp4",
+      "url": "https://ndownloader.figshare.com/files/44509200",
+      "bytes": 5244977152,
+      "md5": "7517bf85ecaaf89d58efeda62e25fe86",
+      "usable_duration_seconds": 1589.283,
+      "duration_note": "Published file ends at 1589.283 s; its header claims 3899.650 s."
+    },
+    {
+      "session": "chiang_mai",
+      "filename": "Walking Tour Chiang Mai.mp4",
+      "url": "https://ndownloader.figshare.com/files/44473453",
+      "bytes": 7285849218,
+      "md5": "78b04c1b8a4e917513c11a7cefcc058c"
+    },
+    {
+      "session": "wildlife",
+      "filename": "Walking Tour Wildlife.mp4",
+      "url": "https://ndownloader.figshare.com/files/44469417",
+      "bytes": 645793132,
+      "md5": "f3990b59bb53e1a0eb7e3fcbd6611853"
+    }
+  ]
+}

@@ -92,6 +92,9 @@ TIME_T1 = register_key("time.t1", "meta", "Interval end (>= t0). Point items hav
 VIDEO_REF = register_key("video.ref", "ref", "ItemRef into the video channel (no pixels yet).")
 VIDEO_FRAMES = register_key("video.frames", "tensor", "[K,C,H,W] decoded frames (actual pixels).")
 VIDEO_VIEWS = register_key("video.views", "tensor", "[V,C,H,W] augmented views of one frame.")
+VIEW_CONTEXT = register_key(
+    "video.view_context", "meta", "Read-only spatial/temporal metadata for contextual frame views."
+)
 VIDEO_CLIP = register_key(
     "video.clip",
     "tensor",

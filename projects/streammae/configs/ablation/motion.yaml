@@ -1,0 +1,8 @@
+# @package _global_
+defaults:
+  - random_crops
+  - _self_
+ablation_name: motion
+views:
+  reconstruction:
+    motion_candidates: 4

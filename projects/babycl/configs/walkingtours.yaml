@@ -1,0 +1,72 @@
+# Visual BabyCL on the same prepared frames and video order as StreamMAE.
+defaults:
+  - /config
+  - /stream: walkingtours
+  - _self_
+hydra:
+  searchpath: [pkg://egolearn.configs]
+run_dir: ${oc.env:EGOLEARN_ARTIFACTS,runs}/babycl_wt_original/seed_${seed}
+seed: 1337
+device: cuda
+_imports_: [egolearn.methods.babycl]
+record_fail_on_nonfinite: true
+loader: {workers: 8, packed: true, pin_memory: true}
+
+views:
+  ms_v1: {name: babycl_ms_aug, size: 224, view_idx: 0, scale_min: 0.2}
+  ms_v2: {name: babycl_ms_aug, size: 224, view_idx: 1, scale_min: 0.2}
+  eval: {name: center_crop, size: 224}
+label_stores: [events]
+embedders:
+  cluster: {_target_: "embedder:frozen_resnext50", pretrained: true, view: eval}
+admission:
+  - {_target_: "admission:babycl_online_segmenter",
+     fps: '${stream.fps}', avg_minutes: 3.0, window_scale: 28,
+     embed_stride: 45, compute_stride_frames: 8,
+     seg_extend_min_sec: 2.0, seg_extend_max_sec: 12.0,
+     global_merge_cos: 0.85, label_store: events, embedder: cluster}
+# Approximately 10% / 50% of a 14-hour stream in three-minute segments.
+memories:
+  segments:
+    tiers:
+      short: {capacity: 28, update: fifo}
+      long: {capacity: 140, update: reservoir}
+    admit_to: [short]
+    overflow: {short: long}
+routes:
+  VisualSegment: segments
+recipe:
+  slots:
+    - {name: segments,
+       source: {kind: mix, memory: segments, fractions: {short: 0.25, long: 0.75}},
+       n: 4, unit: segment, frames_per_item: 32,
+       views: [ms_v1, ms_v2], batch_label: true, strict: true}
+model:
+  encoders:
+    vision: {_target_: "encoder:resnext50", pretrained: false}
+  heads:
+    proj128: {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 128]}
+    cls: {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 2000]}
+losses:
+  - {_target_: "loss:ntxent", name: instance,
+     slots: [segments], head: proj128, temperature: 0.2, weight: 0.5}
+  - {_target_: "loss:tcl", name: temporal,
+     slots: [segments], head: cls, num_classes: 2000, filter_unseen: true, weight: 0.5}
+solver:
+  opt: adamw
+  groups:
+    - {match: '^encoders\.vision\.', lr: 1.0e-3,
+       weight_decay: 1.0e-4, split_no_decay: true}
+    - {match: '.*', lr: 1.0e-4, weight_decay: 1.0e-4}
+  schedule: {warmup_frac: 0.02, warmup_min_steps: 100, floor: 0.0}
+driver:
+  advance: {kind: events, schema: VisualSegment, n: 1}
+  rate: {steps_per_admit: 8, resample: true}
+  warmup: {tier_full: segments.short}
+  prefetch: true
+  max_steps: null
+hooks:
+  log_every: 10
+  checkpoint_every: 500
+  snapshot_every: 500
+  snapshot_milestones: [0.05, 0.25, 0.5, 1.0]
