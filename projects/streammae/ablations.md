@@ -42,6 +42,21 @@ The additions are cumulative from `datadrop` onward, with `random_crops` and
 The `datadrop` recipe provides the MAE baseline with DataDrop used in the paper's
 main comparison, with `vanilla` retained as a separate ablation.
 
+## Cluster runs
+
+Set the `MAE_*` environment variables described in the
+[MAE launcher setup](README.md#full-streaming-pass-and-matched-iid), then submit:
+
+```bash
+sbatch scripts/slurm/mae.sbatch matched_saycam \
+    ablation=vanilla stream.root_dir="$SAYCAM_ROOT" seed=1337
+```
+
+Use `matched_babyview` and `stream.root_dir="$BABYVIEW_ROOT"` for BabyView.
+The launcher writes to `$MAE_RUN_ROOT/<config>/<ablation>/seed_<seed>`, keeping
+each experiment's snapshots separate. Pass `run_dir=/path/to/run` to choose
+another persistent directory. Hydra logs follow that directory under `hydra/`.
+
 ## Budget
 
 For N source frames, reference window R, and stride S, each run performs

@@ -259,18 +259,14 @@ def test_full_project_configs_compose_and_resolve_budget(config, tmp_path, datas
         pipe.loader.close()
 
 
-@pytest.mark.parametrize(
-    "child_exit,requeue,expected",
-    [(75, "1", 0), (75, "0", 75), (76, "1", 76), (1, "1", 1), (0, "1", 0)],
-)
-def test_slurm_launcher_requeues_only_requested_pauses(tmp_path, child_exit, requeue, expected):
-    import subprocess
-
+@pytest.fixture
+def mae_launcher(tmp_path):
     binary = tmp_path / "bin"
     binary.mkdir()
     apptainer = binary / "apptainer"
     apptainer.write_text(
-        '#!/bin/bash\nprintf "%s\\n" "$@" > "$MAE_RUN_ROOT/args.txt"\n' + f"exit {child_exit}\n"
+        '#!/bin/bash\nprintf "%s\\n" "$@" > "$MAE_RUN_ROOT/args.txt"\n'
+        'exit "${TEST_CHILD_EXIT:-0}"\n'
     )
     apptainer.chmod(0o755)
     scheduler = binary / "scontrol"
@@ -286,12 +282,26 @@ def test_slurm_launcher_requeues_only_requested_pauses(tmp_path, child_exit, req
         "MAE_BINDPATH": str(tmp_path),
         "MAE_OVERLAY_LIST": str(overlays),
         "MAE_RUN_ROOT": str(tmp_path / "run"),
-        "MAE_REQUEUE": requeue,
         "SLURM_JOB_ID": "123",
         "CUDA_VISIBLE_DEVICES": "0",
     }
     script = Path(__file__).resolve().parents[1] / "scripts" / "slurm" / "mae.sbatch"
-    result = subprocess.run(["bash", str(script), "full_saycam_streaming"], env=env, timeout=10)
+    return script, env
+
+
+@pytest.mark.parametrize("recipe", ["full_saycam_streaming", "matched_saycam", "matched_babyview"])
+@pytest.mark.parametrize(
+    "child_exit,requeue,expected",
+    [(75, "1", 0), (75, "0", 75), (76, "1", 76), (1, "1", 1), (0, "1", 0)],
+)
+def test_slurm_launcher_requeues_only_requested_pauses(
+    tmp_path, mae_launcher, recipe, child_exit, requeue, expected
+):
+    import subprocess
+
+    script, env = mae_launcher
+    env.update(TEST_CHILD_EXIT=str(child_exit), MAE_REQUEUE=requeue)
+    result = subprocess.run(["bash", str(script), recipe], env=env, timeout=10)
     assert result.returncode == expected
     arguments = (tmp_path / "run" / "args.txt").read_text().splitlines()
     assert "/first.sqf:ro" in arguments and "/last.sqf:ro" in arguments
@@ -301,6 +311,73 @@ def test_slurm_launcher_requeues_only_requested_pauses(tmp_path, child_exit, req
     assert marker.exists() == (child_exit == 75 and requeue == "1")
     if marker.exists():
         assert marker.read_text() == "requeue 123\n"
+
+
+@pytest.mark.parametrize("recipe", ["matched_saycam", "matched_babyview"])
+def test_slurm_matched_recipes_separate_ablations_and_seeds(tmp_path, mae_launcher, recipe):
+    import subprocess
+
+    script, env = mae_launcher
+    directory = script.parents[2] / "projects" / "streammae" / "configs"
+    runs = set()
+    for overrides, ablation, seed in [
+        ([], "motion", 1337),
+        (["ablation=vanilla"], "vanilla", 1337),
+        (["ablation=vanilla", "seed=42"], "vanilla", 42),
+    ]:
+        result = subprocess.run(["bash", str(script), recipe, *overrides], env=env, timeout=10)
+        assert result.returncode == 0
+        arguments = (tmp_path / "run" / "args.txt").read_text().splitlines()
+        position = arguments.index("--config-name")
+        assert arguments[position + 1] == recipe
+        with initialize_config_dir(config_dir=str(directory), version_base="1.3"):
+            cfg = compose(
+                config_name=recipe,
+                overrides=arguments[position + 2 :],
+                return_hydra_config=True,
+            )
+        assert cfg.run_dir == str(tmp_path / "run" / recipe / ablation / f"seed_{seed}")
+        assert cfg.hydra.run.dir == f"{cfg.run_dir}/hydra/123_0"
+        runs.add(cfg.run_dir)
+    assert len(runs) == 3
+
+
+@pytest.mark.parametrize("recipe", ["full_saycam_streaming", "matched_saycam", "matched_babyview"])
+def test_slurm_launcher_respects_output_override(tmp_path, mae_launcher, recipe):
+    import subprocess
+
+    script, env = mae_launcher
+    env["SLURM_RESTART_COUNT"] = "2"
+    output = tmp_path / "custom output"
+    result = subprocess.run(["bash", str(script), recipe, f"run_dir={output}"], env=env, timeout=10)
+    assert result.returncode == 0
+    arguments = (tmp_path / "run" / "args.txt").read_text().splitlines()
+    position = arguments.index("--config-name")
+    directory = script.parents[2] / "projects" / "streammae" / "configs"
+    with initialize_config_dir(config_dir=str(directory), version_base="1.3"):
+        cfg = compose(
+            config_name=recipe,
+            overrides=arguments[position + 2 :],
+            return_hydra_config=True,
+        )
+    assert cfg.run_dir == str(output)
+    assert cfg.hydra.run.dir == f"{output}/hydra/123_2"
+
+
+def test_slurm_launcher_rejects_unknown_recipe(tmp_path, mae_launcher):
+    import subprocess
+
+    script, env = mae_launcher
+    result = subprocess.run(
+        ["bash", str(script), "matched_unknown"],
+        env=env,
+        timeout=10,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "unsupported MAE config: matched_unknown" in result.stderr
+    assert not (tmp_path / "run" / "args.txt").exists()
 
 
 def test_sources_reject_missing_and_non_directory_roots(tmp_path):

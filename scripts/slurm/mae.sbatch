@@ -21,8 +21,12 @@ set -euo pipefail
 : "${CUDA_VISIBLE_DEVICES:?GPU allocation required}"
 config=${1:?full-pass MAE or StreamMAE config name}
 shift
+run_dir="$MAE_RUN_ROOT/$config"
 case "$config" in
   full_saycam_streaming|full_saycam_iid|full_babyview_streaming|full_babyview_iid|full_saycam_streammae|full_babyview_streammae|full_walkingtours_streammae|full_wtpp_london_streammae|full_wt_original_streammae) ;;
+  matched_saycam|matched_babyview)
+    # Hydra resolves the selected ablation and seed after applying overrides.
+    run_dir+='/${ablation_name}/seed_${seed}' ;;
   *) echo "unsupported MAE config: $config" >&2; exit 2 ;;
 esac
 mkdir -p "$MAE_RUN_ROOT/$config"
@@ -40,8 +44,8 @@ apptainer exec --nv --cleanenv --no-home \
   --env "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES,SLURM_JOB_ID=${SLURM_JOB_ID:-local},SLURM_RESTART_COUNT=${SLURM_RESTART_COUNT:-0}" \
   "$MAE_IMAGE" "$MAE_PYTHON" -u -m egolearn.methods.mae.train \
   --config-dir "$MAE_SOURCE/projects/streammae/configs" --config-name "$config" \
-  "run_dir=$MAE_RUN_ROOT/$config" \
-  "hydra.run.dir=$MAE_RUN_ROOT/$config/hydra/${SLURM_JOB_ID:-local}_${SLURM_RESTART_COUNT:-0}" \
+  "run_dir=$run_dir" \
+  'hydra.run.dir=${run_dir}/hydra/'"${SLURM_JOB_ID:-local}_${SLURM_RESTART_COUNT:-0}" \
   "$@" &
 train_pid=$!
 while true; do
