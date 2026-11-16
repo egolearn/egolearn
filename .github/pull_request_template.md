@@ -19,7 +19,7 @@
 ## Checklist
 
 - [ ] No secrets or API keys (LLM keys are env vars only), no cluster-specific personal paths
-- [ ] No binaries or files >500 KB (checkpoints/datasets belong on the Hub, see docs/roadmap.md)
+- [ ] No binaries or files >500 KB (follow the access tiers in docs/evaluation/hub.md before publishing artifacts)
 - [ ] `uv.lock` regenerated if dependencies changed
 - [ ] CHANGELOG.md updated under [Unreleased] for user-visible changes
-- [ ] Ported third-party-derived code keeps its attribution header (see docs/design/streaming.md)
+- [ ] Ported third-party-derived code keeps its attribution header (see CONTRIBUTING.md#licensing-and-attribution)

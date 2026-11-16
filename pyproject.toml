@@ -27,7 +27,7 @@ Documentation = "https://github.com/agentic-learning-ai-lab/egolearn/tree/main/d
 Repository = "https://github.com/agentic-learning-ai-lab/egolearn"
 Issues = "https://github.com/agentic-learning-ai-lab/egolearn/issues"
 
-# Optional extras are added together with the code that needs them (see docs/roadmap.md).
+# Optional extras are added together with the code that needs them (see docs/status.md).
 # Still planned:
 #   eval  : scikit-learn                        (kNN/SVM readout)
 [project.optional-dependencies]

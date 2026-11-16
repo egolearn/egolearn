@@ -1,33 +1,13 @@
-# Security and repo hygiene
+# Security and checkpoint trust
 
-Every commit reachable from a published branch or tag becomes public, including
-files removed in later commits. The existing development repository stays private;
-the separate `egolearn/egolearn` repository receives only audited release refs.
-See [RELEASING.md](RELEASING.md) for the audit and publication procedure.
+Check the source of a checkpoint before loading it, and keep credentials and
+restricted data outside the repository. Report vulnerabilities privately so the
+maintainers can investigate without exposing users or sensitive information.
 
-Public and private repositories share released history. Do not rewrite that
-history to remove an exposure: copies may already exist elsewhere. Gitleaks in
-pre-commit and CI, together with the 500 KB file blocker, help prevent exposures.
+## Reporting a vulnerability
 
-## Never commit
-
-- Credentials of any kind: API keys (OpenAI, Anthropic, W&B, HF), SSH keys, tokens,
-  `.netrc`, `.env` files. **LLM keys are environment variables only — never CLI
-  flags** (they leak into shell history and `ps` output), never config values.
-- Personal cluster paths or usernames (`/scratch/<netid>`, `/home/<netid>`,
-  `/vast/<netid>`) — use config values or environment variables.
-- Egocentric video data or frames — SAYCam and BabyView are **access-controlled
-  human-subject datasets** (IRB / data-use agreements); no frames, captions, or
-  identifiable stills ever enter the repo, including in tests and docs. Tests use
-  synthetic clips only. The one exception is `landing/media/`: images that are
-  already public under an open license (a CC BY paper figure, BabyView's CC0
-  public crops) or shown on a dataset's own project page, each credited on the
-  landing page. Never frames taken from the access-controlled data itself.
-- Reviewer identities, review text, or rebuttal drafts.
-- Unpublished paper text or figures (that belongs in Overleaf).
-- Binaries or files >500 KB — checkpoints, datasets, videos go to the Hub
-  (docs/roadmap.md). The pre-commit hook blocks these.
-- Broad-permission share links (e.g. anyone-with-link Drive folders).
+Email [mengye@nyu.edu](mailto:mengye@nyu.edu) with a description and reproduction
+steps. Exclude credentials and restricted dataset contents from the report.
 
 ## Model export and checkpoint trust
 
@@ -53,15 +33,24 @@ revision performing the export; it does not claim to recover the training revisi
 Inspect model metadata for restricted information before publishing. Full training
 snapshots remain local run artifacts and are never published to model repos.
 
+## Never commit
+
+- Credentials, including API tokens, SSH keys, `.netrc`, and `.env` files.
+  Supply keys through environment variables rather than command arguments or configs.
+- Personal cluster paths or usernames. Use configuration values and environment variables.
+- Access-controlled SAYCam or BabyView frames, audio, transcripts, or identifiable
+  stills, including in tests and docs. Tests use synthetic inputs. The exception
+  in `landing/media/` is credited material already public under an open license
+  or on a dataset's project page, never content extracted from restricted recordings.
+- Confidential research material or broad-permission links to restricted files.
+- Binaries or files over 500 KB. Store artifacts outside Git, following the
+  [Hub access tiers](docs/evaluation/hub.md#access-tiers) before publishing anything.
+
+Gitleaks and the file-size hook check contributions, but removed files remain
+in Git history. Review the staged diff before committing new material.
+
 ## If a secret lands in a commit
 
-1. **Rotate it immediately** — assume it is compromised the moment it is pushed.
-2. Tell the PI.
-3. For unpublished history, coordinate any cleanup with the release owners before
-   copying refs to the public repository. Rewriting history does not revoke a
-   credential or remove copies already fetched by others. Do not rewrite shared
-   released history as a substitute for rotation.
-
-## Reporting a vulnerability
-
-Email the PI: mengye@nyu.edu.
+Rotate the credential immediately and notify [mengye@nyu.edu](mailto:mengye@nyu.edu)
+privately. Coordinate cleanup with the maintainers. Deleting a file or rewriting
+history does not revoke the credential or remove copies already fetched by others.

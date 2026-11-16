@@ -7,7 +7,6 @@ versioned with the code they launch.
 | Script | Purpose |
 | --- | --- |
 | `check_pr_message.py` | Check a draft PR's title and body against CONTRIBUTING.md; stdlib-only local helper, not a CI gate. `--files` enables the experiment Results warning; `--pr N` reads an existing PR with `gh`. |
-| `setup_branch_protection.sh` | Apply branch protection to an explicit `owner/repo`. Requires one code-owner approval and five green checks. Do not apply this template over a private-main synchronization exception; see the script header and [release guide](../RELEASING.md#private-main-synchronization). |
 | `slurm/submit` | Snapshot, prepare and submit container jobs and sweep arrays ([setup](../docs/cluster.md)) |
 | `slurm/train.sbatch` | Compatibility wrapper for the submit command |
 | `slurm/bench.sbatch` | Data-plane benchmark wrapper using the same snapshot/prep path |

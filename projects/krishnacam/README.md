@@ -70,8 +70,8 @@ downstream evaluation probes or a claim of reproducing BabyCL results.
 Offline training schedules its learning rate over the planned optimizer
 steps, while streaming schedules it over the full source timeline. Preserve
 the step limit and session selection when comparing loading settings.
-Streaming checks the step limit between four-step advances, so choose a
-multiple of four when you need an exact stopping point.
+Streaming checks the step limit before each training step, including within an
+advance. A step limit does not need to be a multiple of four.
 
 Streaming subsampling continues across recording boundaries, while offline
 subsampling restarts at the beginning of each recording. They therefore select

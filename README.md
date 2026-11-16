@@ -30,6 +30,7 @@ The toy configuration trains a small convolutional model on synthetic colored
 blocks using the CPU. It needs no dataset access, pretrained weights, or API keys.
 The dry run validates the pipeline. The training run prints losses and writes its
 run record under `runs/toy/records/`; the toy configuration does not save weights.
+To save and reload a model, follow the [CPU export example](docs/cli.md#toy-model-export).
 
 After installation, use `uv run egl` or activate `.venv` and run `egl` directly.
 `egolearn` is an alias for the same command.
@@ -58,11 +59,15 @@ Start with a method's configuration and data instructions:
 | BabyCL | [Streaming and offline image–text learning on SAYCam](projects/babycl/README.md) |
 | Memory Storyboard | [Streaming visual learning with temporal segmentation](projects/storyboard/README.md) |
 | V-JEPA 2 | [Video representation learning on SAYCam and BabyView](projects/vjepa2/README.md) |
+| KrishnaCam visual baselines | [Streaming and offline training directly from MP4 videos](projects/krishnacam/README.md) |
 
 The SAYCam videos used by BabyCL and Memory Storyboard require
 [Databrary access](docs/evaluation/data.md#saycam-access). Configure dataset roots
 and prepared inputs according to the method's guide before running real-data training.
-Datasets and checkpoints are not included in this repository.
+V-JEPA 2 also supports BabyView recordings with
+[separate data access](docs/evaluation/data.md#babyview-training-data).
+BabyCL requires prepared aligned transcripts as well as frames; its input guide
+describes how to obtain them. Datasets and checkpoints are not included in this repository.
 
 See the [architecture guide](docs/design/architecture.md) for stream and memory
 contracts, the [data-loading guide](docs/data_loading.md) for storage and worker
@@ -88,6 +93,8 @@ To request access:
 
 The EgoLearn team reviews the evidence before granting access to the weights.
 KrishnaCam and WalkingTours checkpoints are available without an access request.
+The [Hub guide](docs/evaluation/hub.md#released-models) lists the model repositories
+and shows how to authenticate and evaluate an export after access is granted.
 
 ## Evaluation
 
@@ -116,11 +123,11 @@ retain run records, and generate tables with baseline comparisons.
 | `projects/` | Method guides and experiment configurations ([conventions](projects/README.md)) |
 | `tests/` | Unit tests and constrained video, slow, GPU, and LLM tiers |
 | `scripts/` | Data preparation, benchmarks, and cluster launchers |
-| `docs/` | User guides, API reference, design notes, and [roadmap](docs/roadmap.md) |
+| `docs/` | User guides, API reference, and [supported workflows](docs/status.md) |
 
 ## Citation and contributing
 
 Use [CITATION.cff](CITATION.cff) to cite the software, and cite the relevant method
 papers when using their implementations. See [CONTRIBUTING.md](CONTRIBUTING.md)
-for development and review requirements, [SECURITY.md](SECURITY.md) for repository
-hygiene, and [RELEASING.md](RELEASING.md) for the publication procedure.
+for development and review requirements and [SECURITY.md](SECURITY.md) for
+checkpoint trust and vulnerability reporting.

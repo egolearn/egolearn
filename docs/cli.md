@@ -38,12 +38,41 @@ For a full snapshot you created and trust, add `--trusted-snapshot`; see
 Publish the exported directory with:
 
 ```bash
-python -m egolearn.hub push exports/example --name example --repo-type model --license MIT
+uv run python -m egolearn.hub push exports/example --name example \
+  --repo YOUR_NAMESPACE/example --repo-type model --license mit
 ```
+
+Replace `YOUR_NAMESPACE` with an account or organization where you have write
+permission. The [Hub guide](evaluation/hub.md#publication) explains overwrite behavior.
 
 Model uploads validate the pair and reject additional payloads, including `.pth`
 files. Dataset uploads retain their existing collection format. Snapshots stay
 in the local run directory.
+
+## Toy model export
+
+You can train, export, and reload a model on CPU without downloading any data.
+Use a new run and export directory so existing artifacts remain identifiable:
+
+```bash
+uv run egl train toy_streaming run_dir=runs/toy-export \
+  +driver.max_steps=3 +hooks.checkpoint_every=100
+uv run egl export runs/toy-export/final.pth exports/toy
+uv run python - <<'PYTHON'
+import torch
+from egolearn.evaluation import load_model
+
+model = load_model("exports/toy", device="cpu")
+with torch.no_grad():
+    features = model.encode("vision", torch.zeros(1, 3, 64, 64)).pooled
+print(features.shape)
+PYTHON
+```
+
+The checkpoint hook writes `final.pth` when training ends, even before its periodic
+100-step interval. The export contains `model.safetensors` and `model.json`, and
+the final command prints `torch.Size([1, 64])`. This checks model loading and
+encoding; benchmark scores require the data described in the [evaluation guide](evaluation.md).
 
 ## Configuration and overrides
 
@@ -69,6 +98,14 @@ supplying them later replaces the corresponding shorthand-generated setting.
 
 The existing `python -m egolearn.train` and `python -m egolearn.evaluate` entry
 points remain supported.
+
+Shared training configs disable W&B by default. To log online, authenticate with
+W&B and set your own destination, for example
+`wandb.mode=online wandb.entity=YOUR_ENTITY wandb.project=YOUR_PROJECT` after the
+training command. Override both destination fields because the shared entity
+default belongs to the lab. Use `wandb.mode=offline` for local logs or
+`wandb.mode=disabled` for no W&B logging. V-JEPA 2 uses environment variables as
+shown in its [method guide](../projects/vjepa2/README.md#run).
 
 ## Data
 

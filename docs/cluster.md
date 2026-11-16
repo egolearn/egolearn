@@ -64,11 +64,9 @@ are whitespace-separated arguments without shell evaluation.
 ## Image
 
 `containers/IMAGE` pins the lab's public `jepa-agent-base` CUDA 13.0 image by digest.
-It supplies FFmpeg 7.1.3, jemalloc and uv 0.12.21. This pin comes from
-[jepa-agent PR #94](https://github.com/agentic-learning-ai-lab/jepa-agent/pull/94),
-which reports an Apptainer pull and uv check on a compute node. The image build
-also exercises FFmpeg under Docker and Apptainer. This change's launcher tests
-use fake Slurm and Apptainer; a live site smoke run is still required.
+It supplies FFmpeg 7.1.3, jemalloc and uv 0.12.21. Before submitting a long run,
+use the [diagnostic job](#diagnostics) to check the image and CUDA on your cluster.
+Your site supplies its own account, partition, and storage settings.
 
 The first prep pulls a SIF into `$SIF_DIR`; image unpacking uses node-local `/tmp`,
 where Apptainer extraction works independently of shared-filesystem semantics.
