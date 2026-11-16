@@ -13,9 +13,14 @@ and flips them during loading; BabyCL instead expects upright input frames.
 See [dataset access](../../docs/evaluation/data.md#saycam-access)
 for the source data requirements.
 
+Set `SAYCAM_ROOT` to that prepared frame directory and choose a new run directory:
+
 ```bash
-egl train projects/storyboard/configs/saycam.yaml dry_run=true
-egl train projects/storyboard/configs/saycam.yaml
+export SAYCAM_ROOT=/path/to/saycam_5fps
+uv run egl train projects/storyboard/configs/saycam.yaml \
+  "stream.root_dir=$SAYCAM_ROOT" run_dir=runs/storyboard-example dry_run=true
+uv run egl train projects/storyboard/configs/saycam.yaml \
+  "stream.root_dir=$SAYCAM_ROOT" run_dir=runs/storyboard-example
 ```
 
 Each batch draws 64 frames from the short memory and 448 from the long memory.

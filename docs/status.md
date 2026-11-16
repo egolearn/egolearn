@@ -11,6 +11,8 @@ check its limits before preparing data or allocating compute.
 | Synthetic CPU training | Runs without data access or pretrained weights | [Quickstart](../README.md#quickstart) |
 | BabyCL | Streaming and offline image–text learning on prepared SAYCam inputs | [BabyCL](../projects/babycl/README.md) |
 | Memory Storyboard | Streaming visual learning with temporal segmentation | [Memory Storyboard](../projects/storyboard/README.md) |
+| MAE and StreamMAE | Masked image reconstruction, full-pass runs, and matched streaming/offline ablations | [MAE and StreamMAE](../projects/streammae/README.md) |
+| WalkingTours | Original-video preparation and BabyCL or StreamMAE training on extracted frames | [WalkingTours](datasets/walkingtours.md) |
 | V-JEPA 2 | Initial offline runs and matched full IID/streaming recipes on SAYCam and BabyView | [V-JEPA 2](../projects/vjepa2/README.md) |
 | KrishnaCam | Direct-video visual training with streaming and offline recipes | [KrishnaCam](../projects/krishnacam/README.md) |
 | Frame directories and packed stores | Ordered images, aligned transcripts, replay, and worker loading | [Data loading](data_loading.md) |
@@ -36,7 +38,8 @@ and [offline inputs](../projects/babycl/docs/offline.md).
 
 The [evaluation guide](evaluation.md#benchmark-selection) lists runnable configs,
 required data, model capabilities, and score definitions. Generic fixed-feature
-linear and SGD probes are available; kNN and SVM readouts are not implemented.
+linear and SGD probes are available, along with standalone ImageNet full-network
+fine-tuning. kNN and SVM readouts are not implemented.
 
 EgoSchema and Ego4D NLQ query a served generative model through an OpenAI-compatible
 client. The `qa` extra installs the client, not the model server. Read the
@@ -47,8 +50,12 @@ Model exports use safetensors weights and JSON construction metadata. They can b
 loaded for evaluation or [initialization](initialization.md); full snapshots also
 retain training state for resuming a run. See [checkpoint trust](../SECURITY.md#model-export-and-checkpoint-trust).
 
+[Results publication](publishing_results.md) uploads per-run evidence and updates
+the website from a public Hugging Face feed. Published scores must retain their
+training and evaluation protocols for meaningful comparisons.
+
 Dataset catalog entries describe access requirements and preparation commands.
-They do not guarantee an available download. [Checkpoint access](../README.md#model-checkpoints)
+They do not guarantee an available download. [Checkpoint access](evaluation/hub.md#checkpoint-access)
 and [benchmark data access](evaluation/data.md) are separate requirements.
 
 ## Reproduction limits

@@ -1,4 +1,4 @@
-# Dataset access and SAYCam evaluation inputs
+# Dataset access and preparation
 
 Obtain access to SAYCam or BabyView recordings before preparing training inputs.
 The evaluation sections below cover Labeled-S, VTWT, and Baby Winoground, which
@@ -31,7 +31,7 @@ to the relevant release. Read the project's data-use guidelines before downloadi
 recordings, and use storage approved by your institution.
 
 Access to model weights is requested separately through the
-[EgoLearn checkpoint form](../../README.md#model-checkpoints). BabyView training
+[EgoLearn checkpoint form](hub.md#checkpoint-access). BabyView training
 recordings are distinct from the public object-crop release used for
 [BabyView evaluation](../evaluation.md#babyview-protocols); downloading those crops
 does not grant access to training videos.

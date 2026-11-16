@@ -40,11 +40,13 @@ uv run egl --help
 uv run egl data list
 ```
 
-The [CLI guide](docs/cli.md) covers configuration files, data preparation,
-evaluation, model export, cluster submission, and benchmark suites.
+To evaluate a pretrained model next, follow the
+[first checkpoint evaluation](docs/evaluation/first_evaluation.md). It uses public
+weights and locally prepared stimuli, with no access request. To train on real
+data, choose a method below and prepare its required inputs.
 
-For image masked autoencoding, see the [MAE and StreamMAE project](projects/streammae/README.md).
-`uv run python -m egolearn.train --config-name toy_mae` runs a synthetic CPU example.
+The [CLI guide](docs/cli.md) covers configuration files, data preparation,
+model export, cluster submission, and benchmark suites.
 
 <a id="whats-here"></a>
 
@@ -61,6 +63,7 @@ Start with a method's configuration and data instructions:
 | --- | --- |
 | BabyCL | [Streaming and offline image–text learning on SAYCam](projects/babycl/README.md) |
 | Memory Storyboard | [Streaming visual learning with temporal segmentation](projects/storyboard/README.md) |
+| MAE and StreamMAE | [Masked image reconstruction with streaming and offline recipes](projects/streammae/README.md) |
 | V-JEPA 2 | [Video representation learning on SAYCam and BabyView](projects/vjepa2/README.md) |
 | KrishnaCam visual baselines | [Streaming and offline training directly from MP4 videos](projects/krishnacam/README.md) |
 
@@ -79,25 +82,12 @@ selected checkpoint weights.
 
 ## Model checkpoints
 
-Published checkpoints are available from [EgoLearn on Hugging Face](https://huggingface.co/egolearn).
-SAYCam and BabyView models require manual approval. You must already have access to
-the corresponding training dataset on Databrary.
-
-To request access:
-
-1. Open the access-request form on the model's Hugging Face page.
-2. Describe your **Intended use**, then enter a proof URL in
-   **Link to Databrary access proof**.
-   A screenshot of your Databrary permissions should identify you and the
-   corresponding dataset, SAYCam or BabyView. Make sure EgoLearn reviewers can
-   open the link. Redact unrelated personal information and exclude dataset
-   images or videos.
-3. Submit the form. No separate email is needed.
-
-The EgoLearn team reviews the evidence before granting access to the weights.
-KrishnaCam and WalkingTours checkpoints are available without an access request.
-The [Hub guide](docs/evaluation/hub.md#released-models) lists the model repositories
-and shows how to authenticate and evaluate an export after access is granted.
+Choose pretrained weights and their evaluation recipes from the
+[model catalog](docs/evaluation/hub.md#released-models). KrishnaCam and WalkingTours
+weights are public. SAYCam and BabyView weights require manual approval based
+on access to the corresponding training dataset on Databrary.
+Follow the [access-request instructions](docs/evaluation/hub.md#checkpoint-access)
+and use a read token from the approved Hugging Face account.
 
 ## Evaluation
 
@@ -116,6 +106,8 @@ Generative models can run [EgoSchema](docs/evaluation/egoschema.md) and
 The [BabyCL results](projects/babycl/README.md#saycam-results) compare two seeds
 with the paper. [Benchmark suites](docs/benchmark_suites.md) pin inputs and seeds,
 retain run records, and generate tables with baseline comparisons.
+The [results-publication guide](docs/publishing_results.md) explains how to publish
+evaluated checkpoints and update the website's benchmark table.
 
 ## Repository layout
 

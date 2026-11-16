@@ -95,15 +95,16 @@ paper's protocol, so the remaining differences come from training.
 
 Train each seed, then evaluate its final checkpoint. The training command
 skips the in-training probes, which do not change training.
-`paper_evals.yaml` lists the environment variables that point at the
-evaluation data.
+Set `RUN_DIR` to a new output directory. Set the training paths described above
+and the evaluation-data variables listed in
+[`paper_evals.yaml`](configs/paper_evals.yaml) before running these commands.
 
 ```bash
-egl train projects/babycl/configs/saycam_default.yaml seed=1337 \
-  run_dir=$RUN_DIR stream.root_dir=$SAYCAM_ROOT \
-  stream.transcript_json=$SAYCAM_TRANSCRIPTS tokenizer.vocab_json=$BABYCL_VOCAB \
+uv run egl train projects/babycl/configs/saycam_default.yaml seed=1337 \
+  "run_dir=$RUN_DIR" "stream.root_dir=$SAYCAM_ROOT" \
+  "stream.transcript_json=$SAYCAM_TRANSCRIPTS" "tokenizer.vocab_json=$BABYCL_VOCAB" \
   'probes=[]'
-egl eval projects/babycl/configs/paper_evals.yaml checkpoint=$RUN_DIR/final.pth
+uv run egl eval projects/babycl/configs/paper_evals.yaml "checkpoint=$RUN_DIR/final.pth"
 ```
 
 One run takes about 6 hours on an NVIDIA L40S.

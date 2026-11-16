@@ -139,8 +139,8 @@ Obtain the Experiment 3 renders from the study's authors using the contact in th
 [published paper](https://www.cs.princeton.edu/~bl8144/papers/DavidsonEtAlCognition2024.pdf).
 Set `SPATIAL_RENDER_ROOT` to the directory containing `quinn_above_below/` and
 `quinn_between/`. Both contain the original `*_habituation.png`, `*_same.png`, and
-`*_different.png` files. If you only have the 2D generator, use `--experiment exp1`
-and omit `--exp3-image-root` in the preparation command below.
+`*_different.png` files. Obtain both the 2D generator and 3D renders before
+preparing inputs for the packaged spatial-relations benchmark.
 
 A generator revision alone does not establish pixel equivalence with a prepared
 release. Match its manifest's generator hashes and rendering environment for comparisons.
@@ -160,9 +160,8 @@ uv run egl data prepare spatial-relations \
   --output-dir data/spatial_relations/v1 --validate-only
 ```
 
-Use `--experiment exp1` or `--experiment exp3` to prepare independently. Use a
-separate output directory and `--n-per-condition 2` for an Exp. 1 smoke export.
-The default full export has 1,024 trials per Exp. 1 condition. Preparation-only
+The default full export prepares both experiments, with 1,024 trials per
+Exp. 1 condition. Preparation-only
 renderer dependencies are supplied through `uv --with`; loading the prepared
 PNGs does not require the historical generator or those dependencies. Recreating
 identical pixels also requires matching the recorded source hashes, package

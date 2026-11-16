@@ -9,6 +9,7 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- The first-evaluation tutorial runs a public checkpoint on locally prepared stimuli and explains its output.
 - The CLI guide includes a dataset-free CPU example that saves, exports, and reloads a toy model.
 
 - EgoLearn includes software citation metadata and package links for documentation, source code, and issue reports.
@@ -123,6 +124,7 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- Model and CLI guides connect checkpoint access, compatible evaluations, and complete training commands.
 - User guides describe current capabilities, dataset access, released checkpoints,
   and publication to personal Hub repositories.
 - SAYCam and BabyView checkpoint requests collect Databrary proof links directly
@@ -171,6 +173,7 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- The spatial-relations guide states that both scene domains are required for the packaged evaluation.
 - Training guides describe exact step limits, working PyAV decoding, and opt-in mixed precision.
 
 - The MAE Slurm launcher accepts matched SAYCam and BabyView recipes, separating outputs by ablation and seed.

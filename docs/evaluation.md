@@ -13,6 +13,13 @@ The base `evaluate` config defaults to `device=cpu`. The `imagenet_linear_eval`
 config used below defaults to `device=cuda`. To run that example on CPU,
 replace `device=cuda` with `device=cpu`.
 
+## First evaluation
+
+Start with the [public-checkpoint tutorial](evaluation/first_evaluation.md) to run
+shape bias on CPU without restricted data or model access approval. It includes
+stimulus preparation, a pinned checkpoint, and commands to inspect the result.
+The ImageNet example below assumes that you already have its licensed images.
+
 ## Command line
 
 For ImageNet linear decoding, provide a checkpoint and an ImageFolder root with
@@ -169,8 +176,9 @@ random choices for the two images.
 The shape-bias and spatial-relations configs supply their own Hub input paths.
 Their hosted collections require repository access and `HF_TOKEN`, independently
 of access to model weights. With those permissions, only `checkpoint=` is required.
-Otherwise prepare local stimuli and override the manifest as shown in the
-[Hub guide](evaluation/hub.md#authentication-and-evaluation).
+Otherwise follow the [first checkpoint evaluation](evaluation/first_evaluation.md)
+for local shape-bias inputs, or prepare both domains using the
+[spatial-relations guide](evaluation/spatial_relations.md#preparing-and-checking-data).
 
 Small evaluations use `probe:*` targets both during training and in standalone
 evaluation, where you put these configs in the `benchmarks` list. Full ImageNet
@@ -352,7 +360,9 @@ source assets and rendered images outside Git, follow the upstream terms, and ci
 [Tartaglini, Vong, and Lake (2022)](https://github.com/alexatartaglini/developmental-shape-bias).
 Preparing a local copy does not grant redistribution rights.
 
-Use the manifest in the [checkpoint evaluation example](evaluation/hub.md#authentication-and-evaluation).
+Follow the [checkpoint evaluation example](evaluation/first_evaluation.md#evaluation)
+to score a public model. For a manifest outside the default collection, pass
+`"benchmarks.0.manifest=$SHAPE_BIAS_MANIFEST"` in its evaluation command.
 If you already have access to the [hosted collection](evaluation/hub.md#packaged-collections),
 you can fetch a verified copy instead of preparing it locally.
 
@@ -472,5 +482,5 @@ contract, registration, capability checks, and protocol versioning.
 
 ## Hub artifacts and access tiers
 
-See [Hub artifacts](evaluation/hub.md) for verified downloads, `hf://` input
+See [Models and Hub data](evaluation/hub.md) for verified downloads, `hf://` input
 paths, cache management, access tiers, and publication rules.

@@ -18,22 +18,44 @@ frame interval and cuts at discontinuities; clips never cross recordings or gaps
 from frame numbers and the declared fps. BabyView extraction rate must be verified
 from preparation metadata (filter settings and frame count versus source duration);
 frame numbers alone cannot prove it.
+
 Session, frame, gap, clip and discarded-frame counts are logged. Incomplete tails
 are dropped. The initial `saycam` and `babyview` recipes use offline clip training.
 For chronological training, use the [full streaming recipes](#full-iid-and-streaming-runs).
+
+### Synthetic check
 
 ```bash
 uv sync --extra train
 export WANDB_MODE=disabled
 uv run python -m egolearn.methods.vjepa2.train \
   --config-dir projects/vjepa2/configs --config-name smoke
+```
+
+The smoke config uses only synthetic data on CPU. Use `dry_run=true` to validate
+it without training.
+
+### Initial dataset runs
+
+For an initial real-data run, choose one of the following commands after setting
+the corresponding prepared frame directory. Set `WANDB_MODE=disabled` in this
+shell if you skipped the synthetic check.
+
+```bash
+export SAYCAM_ROOT=/path/to/saycam_5fps
 uv run python -m egolearn.methods.vjepa2.train \
   --config-dir projects/vjepa2/configs --config-name saycam
+```
+
+```bash
+export BABYVIEW_ROOT=/path/to/babyview_5fps
 uv run python -m egolearn.methods.vjepa2.train \
   --config-dir projects/vjepa2/configs --config-name babyview
 ```
 
-The smoke config uses only synthetic data. Use `dry_run=true` to validate it.
+These short recipes are for initial runs. The released checkpoints use the
+[full IID and streaming recipes](#full-iid-and-streaming-runs).
+
 For a real GPU preflight, use a new output directory, `preflight=true`,
 `driver.max_steps=8`, `hooks.log_every=1`, `hooks.checkpoint_every=8` and
 `hooks.snapshot_every=8`. This checks the next shuffled batch for entirely identical-frame clips, finite
@@ -41,6 +63,8 @@ nonzero context and predictor gradients, a gradient-free teacher, and nonzero
 feature spread. It records the fraction of identical adjacent frame pairs and
 peak allocated GPU memory; partial duplication is measured, not rejected.
 Then start the full config in another directory. GPU runs fail if CUDA is absent.
+
+### Outputs and logging
 
 Training writes `random.pth` before the first update, copying context into the
 teacher in the same process; `final.pth`, periodic checkpoints, resumable snapshots,
@@ -53,6 +77,7 @@ The real-data recipes default to online W&B logging. The commands above disable
 it so you can run without a W&B account. Use `WANDB_MODE=offline` to retain local
 W&B logs, or set `WANDB_MODE=online`, your `WANDB_ENTITY`, `WANDB_PROJECT`, and
 credentials to upload runs. Offline W&B runs can be synced later.
+
 Loss, per-mask diagnostics, representation spread, learning rate, synchronized
 clips/sec and frames/sec are logged every 25 updates. The first rate includes
 startup/indexing; subsequent intervals include I/O and checkpoint overhead.
@@ -66,7 +91,7 @@ Use the existing immutable cluster launcher, with site resources and read-only
 archive mounts supplied through your private environment:
 
 ```bash
-egl submit --gres=gpu:1 --cpus-per-task=8 --mem=32G --time=04:00:00 -- \
+uv run egl submit --gres=gpu:1 --cpus-per-task=8 --mem=32G --time=04:00:00 -- \
   python -m egolearn.methods.vjepa2.train \
   --config-dir projects/vjepa2/configs --config-name saycam \
   run_dir="$EGOLEARN_ARTIFACTS/vjepa2-saycam-seed0"
@@ -126,7 +151,7 @@ no uncertainty estimate or statistically significant improvement is claimed.
 ## Released checkpoints
 
 Seed-0 ViT-S/16 exports are available from the repositories below. Request access
-using the [checkpoint instructions](../../README.md#model-checkpoints), then set
+using the [checkpoint instructions](../../docs/evaluation/hub.md#checkpoint-access), then set
 `HF_TOKEN` to a read token for the approved account. These releases contain
 safetensors weights and JSON construction metadata.
 
