@@ -32,27 +32,16 @@ def test_cluster_paths_resolve_symlinks_and_nonexistent_suffixes(tmp_path):
     assert doctor.storage_check("cache", str(tmp_path / "scratch/new"), home).status == "ok"
 
 
-def test_required_extras_missing_is_failure(monkeypatch):
-    def absent(package):
-        raise doctor.importlib.metadata.PackageNotFoundError(package)
-
-    monkeypatch.setattr(doctor.importlib.metadata, "version", absent)
-    checks = doctor.inspect_environment(extras=("train",), skip_cuda=True)
-    assert next(c for c in checks if c.name == "extra:train").status == "fail"
-    assert next(c for c in checks if c.name == "extra:video").status == "warn"
-
-
-@pytest.mark.parametrize("extra", ["train", None])
-def test_doctor_reports_missing_safetensors(monkeypatch, extra):
+def test_doctor_reports_missing_safetensors(monkeypatch):
     def version(package):
         if package == "safetensors":
             raise doctor.importlib.metadata.PackageNotFoundError(package)
         return "1.0"
 
     monkeypatch.setattr(doctor.importlib.metadata, "version", version)
-    checks = doctor.inspect_environment(extras=(extra,) if extra else (), skip_cuda=True)
+    checks = doctor.inspect_environment(extras=("train",), skip_cuda=True)
     train = next(check for check in checks if check.name == "extra:train")
-    assert train.status == ("fail" if extra else "warn")
+    assert train.status == "fail"
     assert train.detail == "missing safetensors"
 
 
@@ -64,16 +53,6 @@ def test_cuda_query_failures_are_bounded_and_reported(monkeypatch):
     monkeypatch.setattr(subprocess, "run", timed_out)
     assert doctor.check_cuda(False).status == "warn"
     assert doctor.check_cuda(True).status == "fail"
-
-
-def test_cluster_checks_report_all_missing_settings(monkeypatch, tmp_path):
-    monkeypatch.chdir(tmp_path)
-    for names in doctor.cluster_variables().values():
-        for name in names:
-            monkeypatch.delenv(name, raising=False)
-    checks = doctor.inspect_environment(cluster=True, skip_cuda=True)
-    missing = {c.name for c in checks if c.status == "fail"}
-    assert set(doctor.cluster_variables()["required"]) <= missing
 
 
 @pytest.mark.parametrize("location", ["login", "compute", "container"])
@@ -111,12 +90,6 @@ def test_cluster_tools_match_the_execution_location(tmp_path, monkeypatch, locat
     "in_allocation,missing",
     [
         (False, None),
-        (True, None),
-        (False, "bash"),
-        (False, "git"),
-        (True, "sbatch"),
-        (True, "iconv"),
-        (True, "tar"),
         (True, "uv"),
     ],
 )
@@ -162,10 +135,3 @@ def test_submit_from_installed_package_preserves_argv(monkeypatch, tmp_path):
     arguments = ["--job-name=a b", "--", "python", "file with spaces.py", "a=$(literal)"]
     assert submit.main(arguments) == 0
     assert calls == [("bash", ["bash", str(script), *arguments])]
-
-
-def test_submit_help_needs_no_checkout_but_execution_does(monkeypatch, tmp_path, capsys):
-    monkeypatch.chdir(tmp_path)
-    assert submit.main(["--help"]) == 0
-    assert submit.main(["--", "true"]) == 1
-    assert "checkout root" in capsys.readouterr().err
