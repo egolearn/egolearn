@@ -74,19 +74,24 @@ test("mixed schema feeds separate modalities and render unknown-seed references"
   }
 });
 
-test("dataset tables preserve all model variants and distinguish missing from inapplicable metrics", () => {
+test("dataset tables select BabyView results and keep scores aligned with reordered columns", () => {
   const mixed = JSON.parse(readFileSync(new URL("../fixtures/publication-v2.json", import.meta.url), "utf8"));
   const data = mixed.table;
   const visual = data.rows.find(row => row.id === "reference");
   const multimodal = data.rows.find(row => row.id === "toy");
+  const selectedId = "babycl-babyview-legacy-offline-refined-seed1337";
   visual.condition.label = "BabyCL (visual-only)";
-  multimodal.condition.label = "BabyCL";
+  multimodal.id = selectedId;
+  multimodal.condition.label = "BabyCL (legacy offline-refined, 60,000 steps)";
+  data.columns.splice(1, 0, {...data.columns[1], id: "shape_preference",
+    benchmark: "shape_bias", label: "Shape preference"});
   // Column aliases must not change modality classification.
   data.columns[0].id = "word_matching";
   for (const row of data.rows) {
     row.condition.dataset = "BabyView";
     row.cells.word_matching = row.cells.labeled_s_4afc;
     delete row.cells.labeled_s_4afc;
+    row.cells.shape_preference = {...structuredClone(visual.cells.labeled_s_linear), mean: 0.75};
   }
   for (const original of [...data.rows]) {
     const row = structuredClone(original);
@@ -94,9 +99,17 @@ test("dataset tables preserve all model variants and distinguish missing from in
     row.condition.dataset = "SAYCam-S";
     data.rows.push(row);
   }
-  const incomplete = data.rows.find(row => row.id === "toy-second-dataset");
+  const incomplete = data.rows.find(row => row.id === `${selectedId}-second-dataset`);
   incomplete.cells.word_matching = {mean: null, sd: null, n: 0, expected_n: 1,
     status: "incomplete", protocols: []};
+  const excluded = structuredClone(multimodal);
+  excluded.id = "babycl-babyview-legacy-offline-raw-seed1337";
+  excluded.condition.label = "BabyCL (legacy offline-raw, 58,500 steps)";
+  const imagenet = structuredClone(visual);
+  imagenet.id = "imagenet-supervised-reference";
+  imagenet.condition.dataset = "ImageNet";
+  imagenet.condition.label = "ImageNet supervised";
+  data.rows.push(excluded, imagenet);
   const before = structuredClone(data);
   const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
   globalThis.document = document;
@@ -104,23 +117,30 @@ test("dataset tables preserve all model variants and distinguish missing from in
     const container = document.getElementById("table");
     renderTable(data, container);
     assert.deepEqual(data, before);
-    assert.equal(container.querySelectorAll(".result-dataset").length, 2);
+    assert.equal(container.querySelectorAll(".result-dataset").length, 3);
     assert.deepEqual([...container.querySelectorAll(".result-dataset h3")].map(node => node.textContent),
-      ["trained on SAYCam-S", "trained on BabyView"]);
+      ["trained on SAYCam-S", "trained on BabyView", "Others"]);
     const rendered = [...container.querySelectorAll("tbody tr")];
-    assert.deepEqual(rendered.map(row => row.dataset.resultId).sort(), data.rows.map(row => row.id).sort());
+    assert.deepEqual(rendered.map(row => row.dataset.resultId).sort(),
+      data.rows.filter(row => row.id !== excluded.id).map(row => row.id).sort());
     for (const section of container.querySelectorAll(".result-dataset")) {
-      assert.equal(section.querySelectorAll("table").length, 2);
+      const others = section.querySelector("h3").textContent === "Others";
+      assert.equal(section.querySelectorAll("table").length, others ? 1 : 2);
       for (const table of section.querySelectorAll("table")) {
+        assert.equal(table.querySelectorAll("tbody tr").length, 1);
         const isVisual = table.dataset.modality === "visual-only";
         const row = table.querySelector("tbody tr");
         const source = data.rows.find(source => source.id === row.dataset.resultId);
-        assert.equal(section.querySelector("h3").textContent, `trained on ${source.condition.dataset}`);
+        assert.equal(section.querySelector("h3").textContent,
+          source.condition.dataset === "ImageNet" ? "Others" : `trained on ${source.condition.dataset}`);
+        assert.equal(row.querySelector(".meth").textContent,
+          source.id === selectedId ? "BabyCL" : source.condition.label);
         assert.equal(table.querySelector("caption").textContent, isVisual ? "visual-only models" : "multimodal models");
         for (const id of table.getAttribute("aria-labelledby").split(" ")) {
           assert.ok(document.getElementById(id));
         }
-        const columns = isVisual ? data.columns.slice(1) : data.columns;
+        const columns = isVisual ? [data.columns[2], data.columns[1]]
+          : [data.columns[0], data.columns[2], data.columns[1]];
         assert.deepEqual([...table.querySelectorAll("thead th")].map(cell => cell.textContent),
           ["method", ...columns.map(column => `${column.label} (%)`)]);
         const actual = [...row.querySelectorAll("td")].slice(1).map(cell => cell.textContent);

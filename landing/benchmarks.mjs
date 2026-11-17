@@ -132,7 +132,8 @@ function modelTable(rows, columns, title) {
     const tr = element("tr");
     tr.dataset.resultId = row.id;
     const method = element("td");
-    method.append(element("span", row.condition.label, "meth"));
+    const label = row.id === babyviewMultimodalResult ? "BabyCL" : row.condition.label;
+    method.append(element("span", label, "meth"));
     method.append(element("span", `${row.condition.regime} · ${row.condition.architecture}`, "kind"));
     const reference = row.expected_seeds[0] === null;
     tr.append(method);
@@ -157,6 +158,7 @@ const imageTextBenchmarks = new Set([
   "labeled_s_4afc", "babyview_4afc", "vtwt", "baby_winoground",
 ]);
 const datasetOrder = new Map([["SAYCam-S", 0], ["BabyView", 1]]);
+const babyviewMultimodalResult = "babycl-babyview-legacy-offline-refined-seed1337";
 
 export function renderTable(data, container) {
   validateTable(data);
@@ -165,16 +167,18 @@ export function renderTable(data, container) {
   // inapplicability for every image-text benchmark, including for BabyCL variants.
   const visualOnly = row => imageTextColumns.length > 0 &&
     imageTextColumns.every(column => row.cells[column.id].status === "not_applicable");
+  const displayRows = data.rows.filter(row => row.condition.dataset !== "BabyView" ||
+    visualOnly(row) || row.id === babyviewMultimodalResult);
   const fragment = document.createDocumentFragment();
-  const datasets = [...new Set(data.rows.map(row => row.condition.dataset))]
+  const datasets = [...new Set(displayRows.map(row => row.condition.dataset))]
     .sort((a, b) => (datasetOrder.get(a) ?? 2) - (datasetOrder.get(b) ?? 2));
   for (const [index, dataset] of datasets.entries()) {
     const section = element("section", undefined, "result-dataset");
-    const heading = element("h3", `trained on ${dataset}`);
+    const heading = element("h3", dataset === "ImageNet" ? "Others" : `trained on ${dataset}`);
     heading.id = `benchmark-dataset-${index}`;
     section.setAttribute("aria-labelledby", heading.id);
     section.append(heading);
-    const datasetRows = data.rows.filter(row => row.condition.dataset === dataset);
+    const datasetRows = displayRows.filter(row => row.condition.dataset === dataset);
     for (const [modality, title, isVisual] of [
       ["multimodal", "multimodal models", false],
       ["visual-only", "visual-only models", true],
@@ -182,7 +186,8 @@ export function renderTable(data, container) {
       const rows = datasetRows.filter(row => visualOnly(row) === isVisual);
       if (!rows.length) continue;
       const columns = data.columns.filter(column =>
-        rows.some(row => row.cells[column.id].status !== "not_applicable"));
+        rows.some(row => row.cells[column.id].status !== "not_applicable"))
+        .sort((a, b) => Number(a.benchmark === "shape_bias") - Number(b.benchmark === "shape_bias"));
       const table = modelTable(rows, columns, title);
       table.dataset.modality = modality;
       const caption = table.querySelector("caption");
@@ -194,7 +199,7 @@ export function renderTable(data, container) {
     }
     fragment.append(section);
   }
-  if (!data.rows.length) fragment.append(element("p", "No evaluated runs have been published yet."));
+  if (!displayRows.length) fragment.append(element("p", "No benchmark results to display."));
   container.replaceChildren(fragment);
 }
 
