@@ -107,6 +107,7 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- The website benchmark separates multimodal and visual-only models for each training dataset, showing only applicable metrics.
 - The `generation` capability becomes `text_generation`, and generative components must produce text.
 - Site builds use pinned uv in a separate Python 3.12 environment and keep Cloudflare previews unindexed.
 - The test suite trims repetitive validation matrices and consolidates training, CLI, recording, and import checks.

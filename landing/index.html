@@ -248,8 +248,12 @@ section.block:last-of-type { padding-bottom: 72px; }
 .probe h3 small { color: var(--muted); font-size: 11px; }
 .probe p { margin: 0; font-size: 14.5px; line-height: 1.45; color: var(--muted); }
 
+.result-dataset { display: flex; flex-direction: column; gap: 24px; max-width: 980px; min-width: 0; }
+.result-dataset + .result-dataset { margin-top: 12px; }
+.result-dataset h3 { margin: 0; font-family: var(--mono); font-weight: 400; font-size: 18px; }
 .table-box { overflow-x: auto; max-width: 980px; }
 .bench { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 15px; font-variant-numeric: tabular-nums; }
+.bench caption { text-align: left; padding-bottom: 8px; font-size: 14px; }
 .bench th { font-weight: 400; color: var(--muted); font-size: 13px; text-align: right; padding: 10px 14px; border-bottom: 1px solid var(--rule); vertical-align: bottom; }
 .bench td { padding: 12px 14px; text-align: right; border-bottom: 1px solid var(--rule); }
 .bench th:first-child, .bench td:first-child { text-align: left; padding-left: 0; }
@@ -517,25 +521,53 @@ footer.lab .links .lab-link { font-size: 0.8125rem; color: var(--muted); }
 
 <section class="wrap block" id="benchmarks">
   <h2 class="sec">egolearn benchmark</h2>
-  <div class="table-box">
-    <table class="bench">
-      <thead><tr><th>method</th><th>Labeled-S</th><th>BabyView</th><th>VTWT</th><th><span class="long">Baby Winoground</span><span class="short">Winoground</span></th><th><span class="long">Shape bias</span><span class="short">Shape</span></th><th><span class="long">Labeled-S linear</span><span class="short">Linear</span></th></tr></thead>
-      <tbody>
-        <tr class="group"><th colspan="7" scope="rowgroup">reference</th></tr>
-        <tr class="mockrow"><td><span class="meth">ImageNet pretrained</span><span class="kind">supervised</span></td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
-      </tbody>
-      <tbody>
-        <tr class="group"><th colspan="7" scope="rowgroup">trained on SAYCam</th></tr>
-        <tr class="mockrow"><td><span class="meth">CVCL</span><span class="kind">offline</span></td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
-        <tr class="mockrow"><td><span class="meth">Memory Storyboard</span><span class="kind">continual</span></td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
-        <tr><td><span class="meth">BabyCL</span><span class="kind">continual</span></td><td>43.3<span class="sd">±1.4</span></td><td>32.6<span class="sd">±0.1</span></td><td>60.3<span class="sd">±2.3</span></td><td>13.2<span class="sd">±3.1</span></td><td>83.2<span class="sd">±0.4</span></td><td>46.6<span class="sd">±0.1</span></td></tr>
-      </tbody>
-      <tbody>
-        <tr class="group"><th colspan="7" scope="rowgroup">trained on BabyView</th></tr>
-        <tr class="mockrow"><td colspan="7" class="soonrow">results coming soon</td></tr>
-      </tbody>
-    </table>
-  </div>
+  <section class="result-dataset" aria-labelledby="saycam-results">
+    <h3 id="saycam-results">trained on SAYCam</h3>
+    <div class="table-box">
+      <table class="bench" aria-labelledby="saycam-results saycam-multimodal">
+        <caption id="saycam-multimodal">multimodal models</caption>
+        <thead><tr><th scope="col">method</th><th scope="col">Labeled-S</th><th scope="col">BabyView</th><th scope="col">VTWT</th><th scope="col"><span class="long">Baby Winoground</span><span class="short">Winoground</span></th><th scope="col"><span class="long">Shape bias</span><span class="short">Shape</span></th><th scope="col"><span class="long">Labeled-S linear</span><span class="short">Linear</span></th></tr></thead>
+        <tbody>
+          <tr class="mockrow"><td><span class="meth">CVCL</span><span class="kind">offline</span></td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
+          <tr><td><span class="meth">BabyCL</span><span class="kind">continual</span></td><td>43.3<span class="sd">±1.4</span></td><td>32.6<span class="sd">±0.1</span></td><td>60.3<span class="sd">±2.3</span></td><td>13.2<span class="sd">±3.1</span></td><td>83.2<span class="sd">±0.4</span></td><td>46.6<span class="sd">±0.1</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="table-box">
+      <table class="bench" aria-labelledby="saycam-results saycam-visual">
+        <caption id="saycam-visual">visual-only models</caption>
+        <thead><tr><th scope="col">method</th><th scope="col"><span class="long">Shape bias</span><span class="short">Shape</span></th><th scope="col"><span class="long">Labeled-S linear</span><span class="short">Linear</span></th></tr></thead>
+        <tbody>
+          <tr class="mockrow"><td><span class="meth">Memory Storyboard</span><span class="kind">continual</span></td><td>–</td><td>–</td></tr>
+        </tbody>
+        <tbody>
+          <tr class="group"><th colspan="3" scope="rowgroup">ImageNet reference</th></tr>
+          <tr class="mockrow"><td><span class="meth">ImageNet pretrained</span><span class="kind">supervised</span></td><td>–</td><td>–</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="result-dataset" aria-labelledby="babyview-results">
+    <h3 id="babyview-results">trained on BabyView</h3>
+    <div class="table-box">
+      <table class="bench" aria-labelledby="babyview-results babyview-multimodal">
+        <caption id="babyview-multimodal">multimodal models</caption>
+        <thead><tr><th scope="col">method</th><th scope="col">Labeled-S</th><th scope="col">BabyView</th><th scope="col">VTWT</th><th scope="col"><span class="long">Baby Winoground</span><span class="short">Winoground</span></th><th scope="col"><span class="long">Shape bias</span><span class="short">Shape</span></th><th scope="col"><span class="long">Labeled-S linear</span><span class="short">Linear</span></th></tr></thead>
+        <tbody>
+          <tr class="mockrow"><td colspan="7" class="soonrow">results coming soon</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="table-box">
+      <table class="bench" aria-labelledby="babyview-results babyview-visual">
+        <caption id="babyview-visual">visual-only models</caption>
+        <thead><tr><th scope="col">method</th><th scope="col"><span class="long">Shape bias</span><span class="short">Shape</span></th><th scope="col"><span class="long">Labeled-S linear</span><span class="short">Linear</span></th></tr></thead>
+        <tbody>
+          <tr class="mockrow"><td colspan="3" class="soonrow">results coming soon</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
   <p class="note">Accuracy (%), mean ± sd over 3 seeds.</p>
 </section>
 </main>
