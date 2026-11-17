@@ -155,19 +155,22 @@ def test_bench_array_plan_matches_archived_wheel_identity(cluster, monkeypatch, 
     assert run_record.source_identity() == json.loads(manifest.read_text())["provenance"]
 
 
-@pytest.mark.parametrize("change", ["lock", "image", "code"])
+@pytest.mark.parametrize("change", ["lock", "extras", "image", "code"])
 def test_environment_stamp_covers_dependencies_image_and_code(cluster, change):
-    checkout, _ = cluster
+    checkout, env = cluster
     _, calls = submit(cluster, "--", "true")
     ready(calls[-1])
     old = calls[-1]["env"]["EGOLEARN_EXPECTED_STAMP"]
     if change == "lock":
         (checkout / "uv.lock").write_text("new lock")
+    elif change == "extras":
+        env["EGOLEARN_SYNC_ARGS"] = "--extra video"
     elif change == "image":
         (checkout / "containers/IMAGE").write_text("ghcr.io/lab/base@sha256:" + "a" * 64)
     else:
         (checkout / "program.py").write_text("new code")
-    commit(checkout)
+    if change != "extras":
+        commit(checkout)
     _, changed = submit(cluster, "--", "true")
     assert len(changed) == 2
     assert changed[-1]["env"]["EGOLEARN_EXPECTED_STAMP"] != old
@@ -303,6 +306,8 @@ def test_required_cache_cannot_fall_back_to_home(cluster):
     ("gpu", "cpu_env", "threads"),
     [
         (False, {}, "1"),
+        (True, {"SLURM_CPUS_PER_TASK": "4", "SLURM_CPUS_ON_NODE": "8"}, "4"),
+        (True, {"SLURM_CPUS_ON_NODE": "8"}, "8"),
         (
             True,
             {"OMP_NUM_THREADS": "2", "SLURM_CPUS_PER_TASK": "4", "SLURM_CPUS_ON_NODE": "8"},

@@ -130,7 +130,7 @@ def test_baseline_rejects_different_seed_sets(tmp_path, capsys):
 # Pin comparison precedes rendering; output formats are covered above.
 @pytest.mark.parametrize(
     "change, allow_unverified",
-    [("hash", False), ("hash", True), ("key", False), ("removed", False)],
+    [("hash", False), ("hash", True), ("key", False), ("added", False), ("removed", False)],
 )
 def test_baseline_rejects_different_input_pins(tmp_path, capsys, change, allow_unverified):
     inputs = {"benchmarks.0.manifest": {"path": "/private/trials.json", "sha256": "d" * 64}}
@@ -139,6 +139,8 @@ def test_baseline_rejects_different_input_pins(tmp_path, capsys, change, allow_u
         inputs["benchmarks.0.manifest"]["sha256"] = "e" * 64
     elif change == "key":
         inputs["benchmarks.1.manifest"] = inputs.pop("benchmarks.0.manifest")
+    elif change == "added":
+        inputs["checkpoint"] = {"path": "/private/model.pth", "sha256": "f" * 64}
     else:
         inputs.clear()
     current = manifest_fixture(tmp_path / "current", inputs=inputs, dirty=allow_unverified)

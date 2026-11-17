@@ -68,6 +68,14 @@ def remote(tmp_path, monkeypatch):
     return root, state
 
 
+def test_torch_free_and_local_passthrough():
+    subprocess.run(
+        [sys.executable, "-c", "import egolearn.hub,sys; assert 'torch' not in sys.modules"],
+        check=True,
+    )
+    assert hub.resolve("relative/file") == Path("relative/file")
+
+
 def test_fetch_no_replace_preserves_local_collection(remote, tmp_path):
     _, state = remote
     target = tmp_path / "local" / "shape-bias"
