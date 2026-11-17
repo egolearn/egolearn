@@ -179,10 +179,11 @@ def test_fetch_replaces_and_pins_revision(remote, tmp_path):
     (old / "old").touch()
     result = hub.fetch("sample", dest, revision="v1")
     assert not (result / "old").exists()
-    assert state.downloads[0][2] == "a" * 40
+    assert state.downloads[0] == ("egolearn/sample", "dataset", "a" * 40)
     record = json.loads((result / hub.FETCH_RECORD).read_text())
     assert record["revision"] == "v1" and record["verified"] is True
     assert record["commit"] == "a" * 40
+    assert record["repo"] == "egolearn/sample"
 
 
 def test_fetch_failure_preserves_previous(remote, tmp_path):
@@ -229,6 +230,8 @@ def test_push_private_defaults_staging_and_stale_files(remote):
     state.exists = False
     assert hub.push(root, name="sample", license_id="MIT") == "b" * 40
     assert state.creates[0]["private"] is True
+    assert state.creates[0]["repo_id"] == "egolearn/sample"
+    assert state.uploads[0]["repo_id"] == "egolearn/sample"
     assert ".env" not in state.files
     deleted = [
         op.path_in_repo
@@ -369,10 +372,19 @@ def test_fetch_bad_name(remote, name):
 
 
 def test_cli(remote, tmp_path):
-    root, _ = remote
+    root, state = remote
+    repo = "legacy/egolearn-sample"
     assert hub.main(["verify", str(root)]) == 0
-    assert hub.main(["fetch", "sample", "--dest", str(tmp_path / "data")]) == 0
-    assert hub.main(["push", str(root), "--name", "sample", "--license", "MIT"]) == 0
+    assert hub.main(["fetch", "sample", "--dest", str(tmp_path / "data"), "--repo", repo]) == 0
+    assert state.downloads[0] == (repo, "dataset", "a" * 40)
+    record = json.loads((tmp_path / "data" / "sample" / hub.FETCH_RECORD).read_text())
+    assert record["repo"] == repo
+    state.exists = False
+    assert (
+        hub.main(["push", str(root), "--name", "sample", "--license", "MIT", "--repo", repo]) == 0
+    )
+    assert state.creates[0]["repo_id"] == repo
+    assert state.uploads[0]["repo_id"] == repo
 
 
 def test_large_push_is_one_commit_with_exact_deletions(remote):

@@ -1,56 +1,34 @@
 # Command line
 
-Training and evaluation write an atomic run record by default. `record_json=auto`
-keeps each attempt in a separate directory; `record_json=/new/record.json` chooses
-an explicit destination and refuses to overwrite an existing run. See
-[run records](benchmark_suites.md#run-records-and-scope) for paths and Python usage.
+Use `uv run egl` from your checkout after `uv sync --extra train`.
+In an activated environment, you can run `egl` directly; `egolearn` is an equivalent
+installed alias. Each command accepts `--help`, and `uv run egl --version` prints
+the installed version.
 
-Use `uv run egl` after `uv sync`, or `egl` in an activated environment.
-`egolearn` is an equivalent installed alias. Commands are `train`, `eval`, `export`, `data`,
-`submit`, `doctor`, and `bench`; each accepts `--help`.
+| Command | Task | Guide |
+| --- | --- | --- |
+| `train` | Train from a packaged config or YAML file | [Configuration and overrides](#configuration-and-overrides) |
+| `eval` | Evaluate a saved model | [First checkpoint evaluation](evaluation/first_evaluation.md) |
+| `export` | Save model weights and construction metadata | [Toy model export](#toy-model-export) |
+| `data` | Discover, prepare, fetch, and verify datasets | [Data](#data) |
+| `doctor` | Check dependencies and runtime settings | [Diagnostics](#diagnostics-and-cluster-submission) |
+| `submit` | Submit a clean checkout to Slurm | [Cluster submission](#diagnostics-and-cluster-submission) |
+| `bench` | Run comparisons across models and seeds | [Benchmark suites](#benchmark-suites) |
+| `publish` | Publish evaluated checkpoints to the website feed | [Results publication](publishing_results.md) |
 
-These Python commands are for workstations and compute allocations. On cluster
-login nodes, use `scripts/slurm/submit`; follow the [cluster guide](cluster.md).
-
-`egl train` and `egl eval` dispatch to the Hydra training and evaluation modules.
-The first argument can be a packaged config name or an existing `.yaml` file;
-relative file paths are resolved from the caller's working directory. `egl eval`
-without a config selects the packaged `evaluate` defaults. `egl --version`
-prints the installed version.
-
-## Exporting weights
-
-Install the `train` extra, then export a checkpoint into a new directory:
-
-```bash
-egl export runs/example/final.pth exports/example
-egl eval imagenet_linear_eval checkpoint=exports/example data_root=/path/to/imagenet
-```
-
-`egl export` takes ordinary arguments, not Hydra overrides. `egl export --help`
-lists its options. It writes `model.safetensors` and `model.json` with construction
-metadata, the export contract, source filename/SHA-256/step, and the export code
-revision. A source checkpoint must already contain construction metadata and an
-export contract. Existing output directories are refused, including empty ones.
-For a full snapshot you created and trust, add `--trusted-snapshot`; see
-[checkpoint trust](../SECURITY.md#model-export-and-checkpoint-trust).
-
-Publish the exported directory with:
-
-```bash
-python -m egolearn.hub push exports/example --name example --repo-type model --license MIT
-```
-
-Model uploads validate the pair and reject additional payloads, including `.pth`
-files. Dataset uploads retain their existing collection format. Snapshots stay
-in the local run directory.
+Run Python commands on a workstation or compute allocation. On cluster login
+nodes, use the shell launcher described in the [cluster guide](cluster.md).
 
 ## Configuration and overrides
 
+`egl train` and `egl eval` accept a packaged config name or an existing `.yaml`
+file as their first argument. File paths are relative to the current directory.
+`egl eval` without a config selects the packaged `evaluate` defaults.
+
 ```bash
-egl train toy_streaming seed=42 dry_run=true
-egl train projects/babycl/configs/saycam_default.yaml --cfg job
-egl eval path/to/suite.yaml checkpoint=runs/example/final.pth
+uv run egl train toy_streaming seed=42 dry_run=true
+uv run egl train projects/babycl/configs/saycam_default.yaml --cfg job
+uv run egl eval path/to/suite.yaml checkpoint=runs/example/final.pth
 ```
 
 Arguments after the command belong to Hydra: `--help`, `--cfg job`, `--multirun`,
@@ -70,37 +48,128 @@ supplying them later replaces the corresponding shorthand-generated setting.
 The existing `python -m egolearn.train` and `python -m egolearn.evaluate` entry
 points remain supported.
 
-## Data
+Shared training configs disable W&B by default. To log online, authenticate with
+W&B and set your own destination, for example
+`wandb.mode=online wandb.entity=YOUR_ENTITY wandb.project=YOUR_PROJECT` after the
+training command. Override both destination fields because the shared entity
+default belongs to the lab. Use `wandb.mode=offline` for local logs or
+`wandb.mode=disabled` for no W&B logging. V-JEPA 2 uses environment variables as
+shown in its [method guide](../projects/vjepa2/README.md#run).
+
+## Toy model export
+
+You can train, export, and reload a model on CPU without downloading any data.
+Use a new run and export directory so existing artifacts remain identifiable:
 
 ```bash
-egl data list
-egl data list --json
-egl data fetch shape-bias --revision <tag-or-commit>
-egl data verify "$EGOLEARN_DATA/shape-bias"
-egl data prepare shape-bias
-egl data --root /path/to/data prepare babyview-4afc --vocab_json /path/to/vocab.json
+uv run egl train toy_streaming run_dir=runs/toy-export \
+  +driver.max_steps=3 +hooks.checkpoint_every=100
+uv run egl export runs/toy-export/final.pth exports/toy
+uv run python - <<'PYTHON'
+import torch
+from egolearn.evaluation import load_model
+
+model = load_model("exports/toy", device="cpu")
+with torch.no_grad():
+    features = model.encode("vision", torch.zeros(1, 3, 64, 64)).pooled
+print(features.shape)
+PYTHON
 ```
 
-The catalog records access tiers and source links. Fetch uses the checksummed Hub
-mechanism; a listed collection is a publication candidate, not a promise that its
-owner has uploaded it. IRB images and upstream-licensed datasets have no automatic
-Hub fetch. Public split metadata is listed separately from restricted pixels.
-`--repo org/name` selects a published dataset collection for a fetchable entry;
-missing checksums require an explicit `--allow-unverified`. Corrupt checksums fail.
-Fetch preserves existing collection directories unless `--replace` is explicit.
-Preparation refuses an existing default output, preserving fetched collections;
-choose an explicit preparer output option to opt into its legacy write behavior.
-Help and spatial `--validate-only` remain available for existing outputs.
+The checkpoint hook writes `final.pth` when training ends, even before its periodic
+100-step interval. The export contains `model.safetensors` and `model.json`, and
+the final command prints `torch.Size([1, 64])`. This checks model loading and
+encoding; benchmark scores require the data described in the [evaluation guide](evaluation.md).
 
-Fetch and preparation defaults share `$EGOLEARN_DATA` (default `./data`). Put
-`--root DIR` before the data subcommand to override that root. Preparation forwards
-the benchmark's existing flags unchanged; explicit source/output options override
-the catalog defaults. Fetch and prepare use the same `ROOT/<name>` collection
-layout; shape-bias source assets live separately under `ROOT/.sources/shape-bias`. Use `egl data prepare NAME --help` for each preparer's
-options; this help works in a base installation without training extras.
-Preparation still needs the dependencies and source assets documented
-in the [benchmark selection guide](evaluation.md#benchmark-selection) and
-[SAYCam evaluation data guide](evaluation/data.md). It does not bypass data access requirements.
+## Exporting weights
+
+Install the `train` extra, then export a checkpoint into a new directory:
+
+```bash
+uv run egl export runs/example/final.pth exports/example
+uv run egl eval imagenet_linear_eval checkpoint=exports/example data_root=/path/to/imagenet
+```
+
+`egl export` takes ordinary arguments, not Hydra overrides. `egl export --help`
+lists its options. It writes `model.safetensors` and `model.json` with construction
+metadata, the export contract, source filename/SHA-256/step, and the export code
+revision. A source checkpoint must already contain construction metadata and an
+export contract. Existing output directories are refused, including empty ones.
+For a full snapshot you created and trust, add `--trusted-snapshot`; see
+[checkpoint trust](../SECURITY.md#model-export-and-checkpoint-trust).
+
+Publish the exported directory with:
+
+```bash
+uv run python -m egolearn.hub push exports/example --name example \
+  --repo YOUR_NAMESPACE/example --repo-type model --license mit
+```
+
+Replace `YOUR_NAMESPACE` with an account or organization where you have write
+permission. The [Hub guide](evaluation/hub.md#publication) explains overwrite behavior.
+
+Model uploads validate the pair and reject additional payloads, including `.pth`
+files. Dataset uploads retain their existing collection format. Snapshots stay
+in the local run directory.
+
+`egl publish prepare` and `egl publish push` publish evaluated checkpoints with
+per-seed provenance and update the website's benchmark feed. See
+[publishing results](publishing_results.md) for the manifest and deployment settings.
+
+## Data
+
+List dataset entries and inspect preparation options before downloading inputs:
+
+```bash
+uv run egl data list
+uv run egl data list --json
+uv run egl data prepare shape-bias --help
+```
+
+Catalog access labels describe dataset categories. `FETCH` indicates that the CLI
+supports downloading a collection, not that the repository is public or your
+account has permission. See [hosted collection access](evaluation/hub.md#packaged-collections)
+and [dataset access and preparation](evaluation/data.md) before choosing a source.
+
+### Local preparation
+
+Prepare shape-bias stimuli without hosted-dataset access, or supply the inputs
+required by another preparer. In the BabyView example, replace both input paths
+with your extracted crops directory and training vocabulary:
+
+```bash
+uv run egl data prepare shape-bias
+uv run egl data --root /path/to/data prepare babyview-4afc \
+  --data_root /path/to/babyview_crops --vocab_json /path/to/vocab.json
+```
+
+Fetch and preparation share `$EGOLEARN_DATA`, which defaults to `./data`.
+Put `--root DIR` before the data subcommand to override it. Both commands use
+`ROOT/<name>` for the collection, while shape-bias source assets live under
+`ROOT/.sources/shape-bias`. Explicit source and output options override catalog defaults.
+
+Preparation refuses an existing default output. Choose an explicit output option
+only when you intend to use that preparer's overwrite behavior. Help and spatial
+`--validate-only` work with existing outputs. `egl data prepare NAME --help` works
+without training extras, but preparation itself needs the dependencies and assets
+listed in the [benchmark guide](evaluation.md#benchmark-selection).
+
+### Hosted downloads
+
+With access to the hosted shape-bias repository, fetch and verify its `v1` collection:
+
+```bash
+uv run egl data fetch shape-bias --revision v1
+uv run egl data verify "${EGOLEARN_DATA:-data}/shape-bias"
+```
+
+Use a commit ID instead of a tag when you need an immutable revision.
+`--repo org/name` selects another published collection for a fetchable entry.
+Missing checksums require an explicit `--allow-unverified`, and corrupt checksums
+fail. Fetch preserves an existing collection unless you pass `--replace`.
+Restricted images and upstream-licensed datasets have no automatic Hub fetch.
+
+### Preparation modules
 
 Each preparer also runs directly as an installed Python module:
 
@@ -129,23 +198,28 @@ command can create collection checksums after preparation.
 Run these commands on a workstation or in a compute allocation:
 
 ```bash
-egl doctor
-egl doctor --extra train --require-cuda
-egl doctor --cluster --require-env WANDB_API_KEY
-egl doctor --submit --skip-cuda
-egl submit --gres=gpu:1 --time=01:00:00 -- egl train toy_streaming
+uv run egl doctor
+uv run egl doctor --extra train --require-cuda
+uv run egl doctor --cluster --require-env WANDB_API_KEY
+uv run egl doctor --submit --skip-cuda
+uv run egl submit --gres=gpu:1 --time=01:00:00 -- egl train toy_streaming
 ```
 
 Doctor prints one `ok`, `warn`, or `fail` line per check. Failures return status 1;
 warnings alone return 0. It checks the interpreter, virtual environment, installed
 extras, CUDA availability, data-root readability and requested environment variable
-names. CUDA is queried in a bounded child process without allocating a tensor;
+names.
+
+CUDA is queried in a bounded child process without allocating a tensor;
 `--skip-cuda` skips that query. Environment variable values are never printed.
+
 Cluster checks activate with `--cluster` or inside a Slurm job. They share required
 and optional storage-variable names with the launcher. Host checks resolve symlinks
 before rejecting paths under the host's `$HOME`. Inside an Apptainer container,
 `$HOME` is scratch by design: paths must still be absolute, but may be under that
-container home. Use `--submit` on a host that will submit jobs, including a CPU
+container home.
+
+Use `--submit` on a host that will submit jobs, including a CPU
 planning allocation. It implies `--cluster` and checks Bash, Git, `sbatch`,
 `iconv`, `tar`, and uv. Without `--submit`, cluster diagnostics check Apptainer
 on compute hosts, Bash/Git/`sbatch` outside allocations, and no host tools inside
@@ -167,9 +241,9 @@ required; the existing launcher is the sole submission implementation.
 ## Benchmark suites
 
 ```bash
-egl bench run benchmarks/toy.yaml --output runs/toy-suite
-egl bench table runs/toy-suite/manifest.json
-egl bench table runs/toy-suite/manifest.json --format json
+uv run egl bench run benchmarks/toy.yaml --output runs/toy-suite
+uv run egl bench table runs/toy-suite/manifest.json
+uv run egl bench table runs/toy-suite/manifest.json --format json
 ```
 
 The [suite guide](benchmark_suites.md) defines pinned inputs, per-seed records,
@@ -178,3 +252,13 @@ creates one Slurm array task per seed. The toy suite uses synthetic data and CPU
 Follow [cluster planning in a CPU job](benchmark_suites.md#cluster-planning-in-a-cpu-job)
 before running `egl bench run --submit`: it composes configs and hashes inputs
 in the submitting process, so it must run inside a compute allocation.
+
+## Run records
+
+Training and evaluation write a run record for each attempt by default.
+`record_json=auto` keeps attempts in separate directories, while
+`record_json=/new/record.json` chooses an explicit destination and refuses to
+overwrite an existing record. Use these records to inspect the configuration,
+status, metrics, and available provenance for a run.
+See [run records and scope](benchmark_suites.md#run-records-and-scope) for paths
+and Python usage.

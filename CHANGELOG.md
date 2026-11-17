@@ -9,6 +9,25 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- The first-evaluation tutorial runs a public checkpoint on locally prepared stimuli and explains its output.
+- The CLI guide includes a dataset-free CPU example that saves, exports, and reloads a toy model.
+
+- EgoLearn includes software citation metadata and package links for documentation, source code, and issue reports.
+- Source and wheel distributions include the NVIDIA Apex, V-JEPA 2, and Ego4D license notices.
+- BabyCL documents its frame layout, aligned transcript format, vocabulary source, and training prerequisites.
+- The MAE guide covers checkpoint saving, snapshot export, frozen ImageNet evaluation, and full-network fine-tuning.
+- MAE, ablation, and WalkingTours guides appear in site navigation and search, with dataset and hardware prerequisites.
+- MAE ablations match streaming and shuffled update budgets, with separate consumption, retention, window, and throughput metrics.
+- MAE provides ViT-S/16 and ViT-B/16 reconstruction recipes, a synthetic CPU example, and resumable full-pass training.
+- StreamMAE adds stochastic depth, color jitter, DataDrop, and motion-biased crops with cached admission scores.
+- WalkingTours preparation and training recipes support checksum-verified original videos and user-supplied WT++ frames.
+- The Slurm launcher can requeue runners that save state and return pause exit code 75.
+
+- The website reads public Hugging Face benchmark results directly, without Cloudflare Functions or results credentials.
+- `egl publish` supports reference checkpoints with unknown training seeds and explains inapplicable benchmarks in the website table.
+- `egl publish` publishes results with optional model exports and updates the website's
+  benchmark table from versioned, per-seed Hugging Face records.
+- `benchmark:imagenet_full_finetune` supports full-network ImageNet evaluation through `egl eval`, resumable adaptation, and optional execution optimizations.
 - EgoSchema and Ego4D NLQ score generative models zero-shot through generic multiple-choice and temporal-grounding scorers with configurable prompts and reply parsers.
 - `generative:openai_chat` queries OpenAI-compatible servers such as vLLM, caching replies on disk by full request.
 - Composed models carry generative components, and `egl eval` builds a model from `model_config` when `checkpoint` is null.
@@ -87,8 +106,6 @@ patch releases for fixes during 0.x development.
   submit individual jobs or Hydra sweep arrays.
 - `egl doctor` checks environment dependencies, CUDA, data roots, and cluster
   storage without modifying settings.
-- The documentation site uses MkDocs under `/docs/`, with a landing page at the
-  site root and `noindex` tags enabled for staging.
 - Contribution guidance includes a PR template and a local PR-message checker.
 - `saycam_default` reproduces the BabyCL paper's run, including its 26568-step
   budget, mixed precision, and 2-D Gaussian blur.
@@ -107,10 +124,24 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
-- The website benchmark separates multimodal and visual-only models for each training dataset, showing only applicable metrics.
+- The website benchmark groups live published results by training dataset and modality, omitting columns that are inapplicable to every model in a table.
+- Model and CLI guides connect checkpoint access, compatible evaluations, and complete training commands.
+- User guides describe current capabilities, dataset access, released checkpoints,
+  and publication to personal Hub repositories.
+- SAYCam and BabyView checkpoint requests collect Databrary proof links directly
+  in the Hugging Face form instead of requiring a separate email.
+- Hub fetches and uploads default to `egolearn/<name>`, while cataloged datasets retain their existing repository IDs.
+
+- SAYCam and BabyView checkpoint access instructions require evidence of access
+  to the corresponding Databrary dataset.
+- The README starts with dataset-free CPU training and links to a model export and loading example.
+- WalkingTours documentation separates shared dataset preparation from BabyCL and StreamMAE experiment guides.
+- WalkingTours preparation uses a bundled source manifest by default and retains custom manifest overrides.
+- MAE documentation separates recipe selection, training, method details, and WT++ preparation, with inventory-derived update budgets.
+- Full-pass MAE schedules use optimizer updates so streaming and IID runs receive identical learning rates.
+- Serial augmentation preserves CUDA randomness by seeding only the CPU generator.
+
 - The `generation` capability becomes `text_generation`, and generative components must produce text.
-- Site builds use pinned uv in a separate Python 3.12 environment and keep Cloudflare previews unindexed.
-- The test suite trims repetitive validation matrices and consolidates training, CLI, recording, and import checks.
 - VoE probes report pooled-surprise AUROC alongside pairwise accuracy, with
   optional group metrics for labeled pairs.
 - The documentation separates task guides from reference material and corrects
@@ -145,6 +176,16 @@ patch releases for fixes during 0.x development.
 
 - The landing page provides runnable synthetic training commands and identifies available dataset and physics benchmarks.
 
+- The spatial-relations guide states that both scene domains are required for the packaged evaluation.
+- Training guides describe exact step limits, working PyAV decoding, and opt-in mixed precision.
+
+- The MAE Slurm launcher accepts matched SAYCam and BabyView recipes, separating outputs by ablation and seed.
+- Full-pass MAE rejects explicit resume paths and checkpoint directories without a manifest before loading training state.
+- Full-pass MAE permits moving run directories and changing logging or checkpoint frequency between resume attempts.
+- MAE resume archives milestones ahead of the restored checkpoint and recreates them at their scheduled updates.
+- MAE records intentional stops as paused and counts preparation and checkpoint replay toward its wall-clock budget.
+
+- `egl publish prepare` rejects incomplete VTWT and Baby Winoground evaluations, including those with custom benchmark names.
 - Staging sites allow crawlers to read `noindex` tags without `robots.txt` blocking access to the pages.
 - VoE probes reject videos shorter than `num_frames`, preventing repeated frames
   from affecting IntPhys 2 and GRASP scores.
@@ -191,8 +232,6 @@ patch releases for fixes during 0.x development.
   its 5,000-step checkpoint cadence when inheriting shared settings.
 - Slurm submission validates UTF-8 arguments and creates snapshots without
   executing Python on login nodes.
-- The combined site build retains a root 404 page and applies the staging
-  setting consistently to the landing page and documentation.
 - A session's last segment gets its own training steps instead of sharing the
   next session's quantum.
 - `driver.max_steps` stops at exactly that step, also inside a quantum.

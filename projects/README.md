@@ -17,9 +17,3 @@ reusable; a project directory holds only what is specific to that paper.
     searchpath:
       - pkg://egolearn.configs
   ```
-
-## Unpublished work
-
-Unpublished projects live on `proj/<name>` branches pushed **only to the private
-`-dev` mirror** (see RELEASING.md). On public `main`, this directory contains
-released projects only.

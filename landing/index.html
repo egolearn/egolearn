@@ -248,10 +248,16 @@ section.block:last-of-type { padding-bottom: 72px; }
 .probe h3 small { color: var(--muted); font-size: 11px; }
 .probe p { margin: 0; font-size: 14.5px; line-height: 1.45; color: var(--muted); }
 
-.result-dataset { display: flex; flex-direction: column; gap: 24px; max-width: 980px; min-width: 0; }
-.result-dataset + .result-dataset { margin-top: 12px; }
+.benchmark-tables { display: flex; flex-direction: column; gap: 36px; min-width: 0; }
+.result-dataset { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
 .result-dataset h3 { margin: 0; font-family: var(--mono); font-weight: 400; font-size: 18px; }
-.table-box { overflow-x: auto; max-width: 980px; }
+.table-box { overflow-x: auto; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.benchmark-details { font-family: var(--mono); font-size: 11px; margin-top: 7px; min-width: 180px; }
+.benchmark-details summary { cursor: pointer; color: var(--muted); }
+.benchmark-details p { margin: 8px 0; line-height: 1.5; max-width: 300px; }
+.bench td { white-space: nowrap; }
+.bench td:first-child { white-space: normal; }
 .bench { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 15px; font-variant-numeric: tabular-nums; }
 .bench caption { text-align: left; padding-bottom: 8px; font-size: 14px; }
 .bench th { font-weight: 400; color: var(--muted); font-size: 13px; text-align: right; padding: 10px 14px; border-bottom: 1px solid var(--rule); vertical-align: bottom; }
@@ -521,54 +527,10 @@ footer.lab .links .lab-link { font-size: 0.8125rem; color: var(--muted); }
 
 <section class="wrap block" id="benchmarks">
   <h2 class="sec">egolearn benchmark</h2>
-  <section class="result-dataset" aria-labelledby="saycam-results">
-    <h3 id="saycam-results">trained on SAYCam</h3>
-    <div class="table-box">
-      <table class="bench" aria-labelledby="saycam-results saycam-multimodal">
-        <caption id="saycam-multimodal">multimodal models</caption>
-        <thead><tr><th scope="col">method</th><th scope="col">Labeled-S</th><th scope="col">BabyView</th><th scope="col">VTWT</th><th scope="col"><span class="long">Baby Winoground</span><span class="short">Winoground</span></th><th scope="col"><span class="long">Shape bias</span><span class="short">Shape</span></th><th scope="col"><span class="long">Labeled-S linear</span><span class="short">Linear</span></th></tr></thead>
-        <tbody>
-          <tr class="mockrow"><td><span class="meth">CVCL</span><span class="kind">offline</span></td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
-          <tr><td><span class="meth">BabyCL</span><span class="kind">continual</span></td><td>43.3<span class="sd">±1.4</span></td><td>32.6<span class="sd">±0.1</span></td><td>60.3<span class="sd">±2.3</span></td><td>13.2<span class="sd">±3.1</span></td><td>83.2<span class="sd">±0.4</span></td><td>46.6<span class="sd">±0.1</span></td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="table-box">
-      <table class="bench" aria-labelledby="saycam-results saycam-visual">
-        <caption id="saycam-visual">visual-only models</caption>
-        <thead><tr><th scope="col">method</th><th scope="col"><span class="long">Shape bias</span><span class="short">Shape</span></th><th scope="col"><span class="long">Labeled-S linear</span><span class="short">Linear</span></th></tr></thead>
-        <tbody>
-          <tr class="mockrow"><td><span class="meth">Memory Storyboard</span><span class="kind">continual</span></td><td>–</td><td>–</td></tr>
-        </tbody>
-        <tbody>
-          <tr class="group"><th colspan="3" scope="rowgroup">ImageNet reference</th></tr>
-          <tr class="mockrow"><td><span class="meth">ImageNet pretrained</span><span class="kind">supervised</span></td><td>–</td><td>–</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-  <section class="result-dataset" aria-labelledby="babyview-results">
-    <h3 id="babyview-results">trained on BabyView</h3>
-    <div class="table-box">
-      <table class="bench" aria-labelledby="babyview-results babyview-multimodal">
-        <caption id="babyview-multimodal">multimodal models</caption>
-        <thead><tr><th scope="col">method</th><th scope="col">Labeled-S</th><th scope="col">BabyView</th><th scope="col">VTWT</th><th scope="col"><span class="long">Baby Winoground</span><span class="short">Winoground</span></th><th scope="col"><span class="long">Shape bias</span><span class="short">Shape</span></th><th scope="col"><span class="long">Labeled-S linear</span><span class="short">Linear</span></th></tr></thead>
-        <tbody>
-          <tr class="mockrow"><td colspan="7" class="soonrow">results coming soon</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="table-box">
-      <table class="bench" aria-labelledby="babyview-results babyview-visual">
-        <caption id="babyview-visual">visual-only models</caption>
-        <thead><tr><th scope="col">method</th><th scope="col"><span class="long">Shape bias</span><span class="short">Shape</span></th><th scope="col"><span class="long">Labeled-S linear</span><span class="short">Linear</span></th></tr></thead>
-        <tbody>
-          <tr class="mockrow"><td colspan="3" class="soonrow">results coming soon</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-  <p class="note">Accuracy (%), mean ± sd over 3 seeds.</p>
+  <p id="benchmark-status" class="note" role="status">Loading published results…</p>
+  <div id="benchmark-table" class="benchmark-tables" data-results-repo="egolearn/egolearn-results"></div>
+  <noscript><p class="note">Enable JavaScript to load the published benchmark results.</p></noscript>
+  <p id="benchmark-note" class="note">Accuracy and shape preference are percentages. Values show mean ± sample sd across the listed training seeds. Single checkpoints have no sd; imported references can have an unknown training seed. Shape preference is not classification accuracy. N/A marks an inapplicable benchmark; a dash indicates missing or incompatible evaluations. Architectures, training budgets, and evaluation resolutions can differ. Expand a method’s sources for checkpoint and evaluation records.</p>
 </section>
 </main>
 
@@ -579,6 +541,7 @@ footer.lab .links .lab-link { font-size: 0.8125rem; color: var(--muted); }
 
 <footer class="lab"><div class="wrap"><div class="foot"><div class="attribution"><img class="logo-light" src="media/icon-light.svg" alt=""><img class="logo-dark" src="media/icon-dark.svg" alt=""><span>egolearn · mit license</span></div><div class="links"><a href="https://github.com/egolearn/egolearn" aria-label="GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.290 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.420-3.58-8-8-8"/></svg></a><a class="lab-link" href="https://agenticlearning.ai/">agentic learning ai lab</a></div></div></div></footer>
 
+<script type="module" src="benchmarks.mjs"></script>
 <script>
 (function () {
   var header = document.querySelector(".site-header");

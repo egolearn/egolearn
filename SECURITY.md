@@ -1,28 +1,13 @@
-# Security and repo hygiene
+# Security and checkpoint trust
 
-This repo's full git history becomes public at first release and **can never be
-rewritten afterward** (history is shared with the private mirror). Prevention is the
-only defense — hence gitleaks in pre-commit and CI, and the 500 KB file blocker.
+Check the source of a checkpoint before loading it, and keep credentials and
+restricted data outside the repository. Report vulnerabilities privately so the
+maintainers can investigate without exposing users or sensitive information.
 
-## Never commit
+## Reporting a vulnerability
 
-- Credentials of any kind: API keys (OpenAI, Anthropic, W&B, HF), SSH keys, tokens,
-  `.netrc`, `.env` files. **LLM keys are environment variables only — never CLI
-  flags** (they leak into shell history and `ps` output), never config values.
-- Personal cluster paths or usernames (`/scratch/<netid>`, `/home/<netid>`,
-  `/vast/<netid>`) — use config values or environment variables.
-- Egocentric video data or frames — SAYCam and BabyView are **access-controlled
-  human-subject datasets** (IRB / data-use agreements); no frames, captions, or
-  identifiable stills ever enter the repo, including in tests and docs. Tests use
-  synthetic clips only. The one exception is `landing/media/`: images that are
-  already public under an open license (a CC BY paper figure, BabyView's CC0
-  public crops) or shown on a dataset's own project page, each credited on the
-  landing page. Never frames taken from the access-controlled data itself.
-- Reviewer identities, review text, or rebuttal drafts.
-- Unpublished paper text or figures (that belongs in Overleaf).
-- Binaries or files >500 KB — checkpoints, datasets, videos go to the Hub
-  (docs/roadmap.md). The pre-commit hook blocks these.
-- Broad-permission share links (e.g. anyone-with-link Drive folders).
+Email [mengye@nyu.edu](mailto:mengye@nyu.edu) with a description and reproduction
+steps. Exclude credentials and restricted dataset contents from the report.
 
 ## Model export and checkpoint trust
 
@@ -48,13 +33,24 @@ revision performing the export; it does not claim to recover the training revisi
 Inspect model metadata for restricted information before publishing. Full training
 snapshots remain local run artifacts and are never published to model repos.
 
+## Never commit
+
+- Credentials, including API tokens, SSH keys, `.netrc`, and `.env` files.
+  Supply keys through environment variables rather than command arguments or configs.
+- Personal cluster paths or usernames. Use configuration values and environment variables.
+- Access-controlled SAYCam or BabyView frames, audio, transcripts, or identifiable
+  stills, including in tests and docs. Tests use synthetic inputs. The exception
+  in `landing/media/` is credited material already public under an open license
+  or on a dataset's project page, never content extracted from restricted recordings.
+- Confidential research material or broad-permission links to restricted files.
+- Binaries or files over 500 KB. Store artifacts outside Git, following the
+  [Hub access tiers](docs/evaluation/hub.md#access-tiers) before publishing anything.
+
+Gitleaks and the file-size hook check contributions, but removed files remain
+in Git history. Review the staged diff before committing new material.
+
 ## If a secret lands in a commit
 
-1. **Rotate it immediately** — assume it is compromised the moment it is pushed.
-2. Tell the PI.
-3. While the repo is still private, a coordinated history rewrite is possible.
-   After the public flip it is not; rotation is the only remedy.
-
-## Reporting a vulnerability
-
-Email the PI: mengye@nyu.edu.
+Rotate the credential immediately and notify [mengye@nyu.edu](mailto:mengye@nyu.edu)
+privately. Coordinate cleanup with the maintainers. Deleting a file or rewriting
+history does not revoke the credential or remove copies already fetched by others.

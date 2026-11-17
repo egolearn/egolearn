@@ -4,11 +4,9 @@ A "view" is a registered PIL -> Tensor[C,H,W] transform pipeline.  Each slot
 (one named part of a batch recipe) declares a list of view names; the
 composer stacks the results into a [V,C,H,W] tensor per item.
 
-Signature note (from design review): views receive the whole item dict, not
-a bare image, so that keys tied to image geometry (gaze points, boxes) could
-later be transformed together with the crops.  The core views today only
-read and write video keys; the wider signature exists but nothing uses the
-extra keys yet.
+Ordinary views receive a PIL image. A view declaring requires_context=True
+also receives the read-only video.view_context metadata attached by admission.
+This supports temporal crop scores without mutable per-worker stream state.
 
 Dataset-level preprocessing (decode fps, orientation flip, BabyView portrait
 pre-crop) does NOT belong here -- it belongs in prepare scripts / adapters.
@@ -224,13 +222,26 @@ class ViewBank:
             builder = VIEWS.get(spec.pop("name"))
             self._pipes[alias] = builder(**spec)
 
+    def get(self, name: str):
+        """Return a constructed view, including any declared context contract."""
+        return self._pipes[name]
+
     def names(self):
         return sorted(self._pipes)
 
-    def apply(self, pil_img, view_names: list[str]) -> torch.Tensor:
+    def apply(self, pil_img, view_names: list[str], context: dict | None = None) -> torch.Tensor:
         """Run each named pipeline on the PIL image and stack the results
         into a [V,C,H,W] tensor, one row per view."""
-        return torch.stack([self._pipes[v](pil_img) for v in view_names], dim=0)
+        outputs = []
+        for name in view_names:
+            pipe = self._pipes[name]
+            if getattr(pipe, "requires_context", False):
+                if context is None:
+                    raise ValueError(f"view {name!r} requires frame context from admission")
+                outputs.append(pipe(pil_img, context))
+            else:
+                outputs.append(pipe(pil_img))
+        return torch.stack(outputs, dim=0)
 
     def apply_clip(self, clip: torch.Tensor, view_names: list[str]) -> torch.Tensor:
         """Run each named pipeline on a [T,C,H,W] float clip and stack the

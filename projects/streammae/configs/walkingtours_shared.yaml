@@ -1,0 +1,26 @@
+# ViT-S/16 with the paper's WT++ geometry and stride, on explicitly ordered videos.
+defaults:
+  - streammae_shared
+  - _self_
+stream:
+  _target_: "stream:walkingtours"
+  root_dir: ${oc.env:WALKINGTOURS_ROOT,???}
+  include: null
+  sessions: ???  # ordered directories, each containing frame_00000001.jpg, ...
+  fps: 3.75  # prepared at this rate; this field does not resample frames
+run_control:
+  stride: 1
+driver:
+  warmup: {admitted: 2047}
+views:
+  reconstruction:
+    frame_size: [720, 1280]
+    crop_size: [336, 592]
+admission:
+  - {_target_: "admission:streammae_frames", patch_size: 16, frame_size: [720, 1280]}
+loader:
+  cache_frames: 256  # 1280x720 RGB frames; roughly 675 MiB per worker
+hooks:
+  # Stride 1 would otherwise archive ~500 full optimizer snapshots.
+  snapshot_each_epoch: false
+  snapshot_milestones: [0.2, 0.4, 0.6, 0.8, 1.0]

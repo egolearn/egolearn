@@ -6,13 +6,14 @@ variant, and configuration controls for memory and objective ablations.
 
 For silent KrishnaCam videos, use the
 [visual BabyCL training and benchmark guide](docs/krishnacam.md).
+For the original WalkingTours videos, use the [WalkingTours experiment guide](docs/walkingtours.md).
 
 ## Training
 
 Use the [default config](configs/saycam_default.yaml) for streaming training.
 Override `stream.root_dir`, `stream.transcript_json`, and `tokenizer.vocab_json`
-with your input paths. BabyCL expects upright SAYCam frames, already flipped from
-their raw orientation.
+with your input paths. The [training input guide](docs/training_data.md) specifies
+the 5 fps frame layout, orientation, transcript format, and vocabulary source.
 
 The [shared settings](configs/saycam_shared.yaml) also construct Labeled-S 4AFC,
 VTWT, and Baby Winoground probes. Override their manifest, CSV, image, and vocabulary
@@ -20,10 +21,17 @@ paths, or set `probes=[]` to disable them. Their manifest, CSV, and vocabulary f
 must exist even for `dry_run=true`. See the
 [evaluation data guide](../../docs/evaluation/data.md) for access and preparation.
 
+Set `SAYCAM_ROOT`, `SAYCAM_TRANSCRIPTS`, and `BABYCL_VOCAB` to the prepared inputs,
+then validate the training pipeline without constructing the evaluation probes:
+
 ```bash
-egl train projects/babycl/configs/saycam_default.yaml dry_run=true
-egl train projects/babycl/configs/saycam_default.yaml
+uv run egl train projects/babycl/configs/saycam_default.yaml \
+  stream.root_dir="$SAYCAM_ROOT" stream.transcript_json="$SAYCAM_TRANSCRIPTS" \
+  tokenizer.vocab_json="$BABYCL_VOCAB" 'probes=[]' dry_run=true
 ```
+
+Remove `dry_run=true` to train on a GPU. The default frozen segmenter needs
+ImageNet ResNeXt-50 weights, which torchvision downloads if they are not cached.
 
 The recipe combines visual instance discrimination, temporal classification, and
 image–text contrastive learning. Each full batch contains three visual segments
@@ -51,10 +59,11 @@ utterance that ends on a frame is visible at that frame
 
 ## SAYCam results
 
-The table reports `saycam_default` with seeds 1337 and 2002, final checkpoints.
-All scores are percentages. The paper column quotes the updated version of the
-[paper](https://arxiv.org/abs/2606.05115), which reaches arXiv later; the
-version there now reports an earlier Labeled-S 4AFC figure.
+The table records two completed `saycam_default` runs with seeds 1337 and 2002,
+using their final checkpoints. All scores are percentages. The paper column gives
+the authors' reference values for these protocols.
+Check the version of the linked [paper](https://arxiv.org/abs/2606.05115) when
+comparing figures, since its reported Labeled-S 4AFC value can differ.
 
 | Benchmark | Seed 1337 | Seed 2002 | Paper | Differs from the paper |
 | --- | ---: | ---: | ---: | --- |
@@ -69,13 +78,6 @@ version there now reports an earlier Labeled-S 4AFC figure.
 Baby Winoground reports the group score, which counts an item only when both
 the original and the edited scene prefer their own caption. Every row uses the
 paper's protocol, so the remaining differences come from training.
-
-The two checkpoints were trained and evaluated with this configuration before
-it was merged with the current main branch. Nothing since then changes what
-these runs computed: the options main has added are off in `saycam_default`
-and `paper_evals`, its other changes are in methods BabyCL does not use, and
-the later driver and stream fixes affect only resuming from a snapshot and
-packed frame stores, which neither run used.
 
 ### Differences from the paper
 
@@ -93,15 +95,16 @@ packed frame stores, which neither run used.
 
 Train each seed, then evaluate its final checkpoint. The training command
 skips the in-training probes, which do not change training.
-`paper_evals.yaml` lists the environment variables that point at the
-evaluation data.
+Set `RUN_DIR` to a new output directory. Set the training paths described above
+and the evaluation-data variables listed in
+[`paper_evals.yaml`](configs/paper_evals.yaml) before running these commands.
 
 ```bash
-egl train projects/babycl/configs/saycam_default.yaml seed=1337 \
-  run_dir=$RUN_DIR stream.root_dir=$SAYCAM_ROOT \
-  stream.transcript_json=$SAYCAM_TRANSCRIPTS tokenizer.vocab_json=$BABYCL_VOCAB \
-  probes=[]
-egl eval projects/babycl/configs/paper_evals.yaml checkpoint=$RUN_DIR/final.pth
+uv run egl train projects/babycl/configs/saycam_default.yaml seed=1337 \
+  "run_dir=$RUN_DIR" "stream.root_dir=$SAYCAM_ROOT" \
+  "stream.transcript_json=$SAYCAM_TRANSCRIPTS" "tokenizer.vocab_json=$BABYCL_VOCAB" \
+  'probes=[]'
+uv run egl eval projects/babycl/configs/paper_evals.yaml "checkpoint=$RUN_DIR/final.pth"
 ```
 
 One run takes about 6 hours on an NVIDIA L40S.

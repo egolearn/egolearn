@@ -1,11 +1,7 @@
 name: advisory-review
-# The agent-session reviewer (reads the PR head read-only). Runs on PR
-# open/reopen and the outerloop:review label (autoresearch:review still works), not every push.
-# terra (hermes, openai-direct) is the sole advisory reviewer: the opus
-# advisory job is sunset (2026-08-26) — terra converges where opus
-# manufactured rounds, validated here as the second opinion and on the
-# autoresearch arc. The wide lens round stays in autoresearch, where PR
-# volume warrants it.
+# Advisory reviews run on same-repository PRs when opened, reopened, or labeled
+# outerloop:review (autoresearch:review is also accepted). Update both SHA pins
+# together after reviewing the upstream workflow and reviewer code.
 on:
   pull_request_target:
     types: [opened, reopened, labeled]
@@ -14,10 +10,15 @@ permissions:
   pull-requests: write
 jobs:
   advisory:
-    # label events only run the review for the explicit re-request label
-    if: github.event.action != 'labeled' || github.event.label.name == 'outerloop:review' || github.event.label.name == 'autoresearch:review'
-    uses: outerloop-science/outerloop/.github/workflows/advisory-review-agent.yml@main
+    # pull_request_target has base-repository secrets; fork PRs never enter this job.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action != 'labeled' || github.event.label.name == 'outerloop:review' ||
+       github.event.label.name == 'autoresearch:review')
+    uses: outerloop-science/outerloop/.github/workflows/advisory-review-agent.yml@679ca2961143caf6cf63bfe176f3c9b8b6a00b7c
     with:
       bot_login: agentic-learning-bot
+      reviewer_ref: 679ca2961143caf6cf63bfe176f3c9b8b6a00b7c
+      allow_labeled_forks: false
     secrets:
       openai_reviewer_key: ${{ secrets.OPENAI_REVIEWER_KEY }}

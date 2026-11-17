@@ -15,6 +15,12 @@ Answers are public for 500 of them, and the authors' servers score the full set.
 
 ## Downloading the data
 
+Choose a writable data root before running the shell commands:
+
+```bash
+export EGOLEARN_DATA=/path/to/data
+```
+
 Questions and public answers come from the
 [EgoSchema repository](https://github.com/egoschema/EgoSchema) at commit
 `505c787376b5e066d0ae406d0e0d41245cebba15`. The loader checks both files against
@@ -29,14 +35,18 @@ done
 ```
 
 The authors distribute the videos (about 100 GB) through Kaggle. Accept the
-competition rules, then run `kaggle competitions download -c egoschema-public`.
+competition rules and install/configure the [Kaggle CLI](https://github.com/Kaggle/kaggle-api),
+then run `kaggle competitions download -c egoschema-public`.
 Place the videos as `$EGOLEARN_DATA/egoschema/videos/<q_uid>.mp4`.
 
 ## Serving the model
 
 The packaged config talks to an OpenAI-compatible server through
 `generative:openai_chat`. Its default model is Qwen2.5-VL-7B-Instruct served by
-vLLM on one GPU:
+vLLM on one GPU. Install vLLM in a separate server environment using its
+[GPU installation instructions](https://docs.vllm.ai/en/latest/getting_started/installation/gpu.html).
+The EgoLearn `qa` extra installs the client, not vLLM or its model weights.
+Start the server in that environment:
 
 ```bash
 vllm serve Qwen/Qwen2.5-VL-7B-Instruct --port 8000 --max-model-len 32768 \
@@ -44,9 +54,9 @@ vllm serve Qwen/Qwen2.5-VL-7B-Instruct --port 8000 --max-model-len 32768 \
 ```
 
 EgoSchema videos are cut from Ego4D, whose license does not allow sending them
-to third-party services. Point the evaluation only at servers the lab runs
-itself. The client reads the server's key from `EGOLEARN_LLM_API_KEY`. For a
-server started without `--api-key`, set
+to third-party services. Point the evaluation only at servers you operate
+under the dataset's access terms. The client reads the server's key from
+`EGOLEARN_LLM_API_KEY`. For a server started without `--api-key`, set
 `model_config.model.generative.vlm.api_key_env=null`.
 
 ## Running the evaluation
