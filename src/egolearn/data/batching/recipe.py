@@ -44,7 +44,6 @@ class SlotSpec:
     views: list[str] = field(default_factory=list)
     text: bool = False  # tokenize text.utterance into the slot
     labels_from: str | None = None  # LabelStore name; seg.id is looked up there at batch time
-    batch_label: bool = False  # set seg.batch_label to the item's position within the slot
     strict: bool = True
 
     def __post_init__(self):

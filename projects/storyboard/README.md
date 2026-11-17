@@ -19,13 +19,20 @@ egl train projects/storyboard/configs/saycam.yaml
 ```
 
 Each batch draws 64 frames from the short memory and 448 from the long memory.
-Instance discrimination uses both slots together, while temporal classification
-uses the long-memory slot. The default schedule performs one training update after
-each advance of 64 stream frames.
+SimCLR instance discrimination uses both slots together, while supervised
+contrastive learning (SupCon) uses only frames from the long memory. Each objective
+has its own 128-dimensional projection head, temperature 0.1, and weight 1.0.
+SupCon treats other views with the same global segment ID as positives and excludes
+self-comparisons. Labels are resolved when each batch is composed, including any
+reclustering or merging updates. The default schedule performs one training update
+after each advance of 64 stream frames.
 
-The configuration is a code-level port, without a numerical-parity claim.
-Training uses float32 arithmetic in one process. Automatic mixed precision,
-used by the original trainer, is not implemented.
+This objective combination follows the upstream
+[`--method simclr` variant](https://github.com/agentic-learning-ai-lab/memory-storyboard/blob/029cc55d91c5b5b470ab45f2a7a3653aefcc087e/training/train_storyboard_merging.py#L43).
+The upstream README example selects SimSiam + SupCon instead. The configuration
+is a code-level port without a numerical-parity claim and defaults to float32
+training in one process. Classifier-based snapshots require a new run with the
+SupCon head. You can reuse their encoder weights through `init_from`.
 
 ## Memory and segmentation
 

@@ -139,6 +139,13 @@ def test_validation_rejects_unknown_slot(toy_config, tmp_path):
         egolearn.build(cfg)
 
 
+def test_recipe_rejects_batch_local_targets(toy_config, tmp_path):
+    cfg = toy_config(tmp_path)
+    cfg["recipe"]["slots"][0]["batch_label"] = True
+    with pytest.raises(TypeError, match="batch_label"):
+        egolearn.build(cfg)
+
+
 def test_validation_rejects_unknown_view(toy_config, tmp_path):
     cfg = toy_config(tmp_path)
     cfg["recipe"]["slots"][0]["views"] = ["not_a_view", "v2"]

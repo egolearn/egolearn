@@ -120,6 +120,7 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- Memory Storyboard defaults to SimCLR plus supervised contrastive learning over global segment labels in replay.
 - BabyCL replaces batch-local temporal classification with supervised contrastive learning from global segment IDs in streaming and offline recipes.
 - WalkingTours documentation separates shared dataset preparation from BabyCL and StreamMAE experiment guides.
 - WalkingTours preparation uses a bundled source manifest by default and retains custom manifest overrides.
@@ -153,6 +154,7 @@ patch releases for fixes during 0.x development.
 
 ### Removed
 
+- Batch recipes remove `batch_label` and use `labels_from` for segment targets from a label store.
 - `probe:imagenet_linear_sgd` is replaced by standalone `benchmark:imagenet_linear_sgd`
   and the `imagenet_linear_eval` config; see [ImageNet migration](docs/evaluation.md#imagenet-migration).
 - `ImageNetLinearSGDProbe` is replaced by `ImageNetLinearBenchmark`.

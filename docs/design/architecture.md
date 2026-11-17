@@ -142,9 +142,10 @@ Batch slots route by modality, so each modality has at most one trainable encode
 Additional copies, such as EMA targets, must be configured with `frozen: true`.
 
 Losses name the batch slots and model components they use, allowing several objectives
-to share representations. Memory Storyboard combines instance discrimination with
-temporal classification. BabyCL combines instance discrimination, supervised
-contrastive learning from global segment IDs, and image–text contrastive learning.
+to share representations. Memory Storyboard combines instance discrimination over
+current and replay frames with supervised contrastive learning over replay frames.
+BabyCL combines instance discrimination, supervised contrastive learning from
+global segment IDs, and image–text contrastive learning.
 V-JEPA predicts masked video representations using a context
 encoder, a predictor, and a frozen target encoder updated by an exponential average.
 Its components are `encoder:video_vit`, `predictor:vjepa`, and `loss:vjepa`, with
@@ -243,7 +244,7 @@ configurations.
 | Segmentation features | Learner's current backbone | Frozen ImageNet ResNeXt |
 | Temporal labels | Revisable global classes | Global segment IDs, shared by merged segments |
 | Repeated updates | Reuse the batch | Resample each batch |
-| Objective | Instance discrimination and temporal classification | Instance, segment supervised contrastive, and image–text contrastive learning |
+| Objective | Instance discrimination and segment supervised contrastive learning | Instance, segment supervised contrastive, and image–text contrastive learning |
 
 <a id="design-rules"></a>
 

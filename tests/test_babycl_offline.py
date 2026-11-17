@@ -394,7 +394,7 @@ def test_iid_preset_keeps_babycl_losses_without_streaming_components():
             recipes.append(preset["recipe"]["fallback"])
         for recipe in recipes:
             slot = next(s for s in recipe["slots"] if s["name"] == "segments")
-            assert slot["labels_from"] == "events" and not slot.get("batch_label", False)
+            assert slot["labels_from"] == "events" and "batch_label" not in slot
         loss = next(loss for loss in preset["losses"] if loss["name"] == "temporal")
         assert loss["_target_"] == "loss:supcon"
         assert "cls" not in preset["model"]["heads"]
