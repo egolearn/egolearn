@@ -4,7 +4,7 @@ Implementation of the pretraining method from Assran et al.,
 [V-JEPA 2: Self-Supervised Video Models Enable Understanding, Prediction and Planning](https://arxiv.org/abs/2506.09985)
 (2025). This project trains from scratch on SAYCam-S or BabyView. It reuses
 EgoLearn's data, optimization, checkpoint, W&B and standalone evaluation interfaces.
-The [design](../../docs/design/vjepa2.md) records the architecture audit and dependency stack.
+See [data access](../../docs/evaluation/data.md) before preparing SAYCam or BabyView recordings.
 
 ## Run
 
@@ -18,20 +18,44 @@ frame interval and cuts at discontinuities; clips never cross recordings or gaps
 from frame numbers and the declared fps. BabyView extraction rate must be verified
 from preparation metadata (filter settings and frame count versus source duration);
 frame numbers alone cannot prove it.
+
 Session, frame, gap, clip and discarded-frame counts are logged. Incomplete tails
-are dropped. This is offline clip training, not chronological continual learning.
+are dropped. The initial `saycam` and `babyview` recipes use offline clip training.
+For chronological training, use the [full streaming recipes](#full-iid-and-streaming-runs).
+
+### Synthetic check
 
 ```bash
 uv sync --extra train
+export WANDB_MODE=disabled
 uv run python -m egolearn.methods.vjepa2.train \
   --config-dir projects/vjepa2/configs --config-name smoke
+```
+
+The smoke config uses only synthetic data on CPU. Use `dry_run=true` to validate
+it without training.
+
+### Initial dataset runs
+
+For an initial real-data run, choose one of the following commands after setting
+the corresponding prepared frame directory. Set `WANDB_MODE=disabled` in this
+shell if you skipped the synthetic check.
+
+```bash
+export SAYCAM_ROOT=/path/to/saycam_5fps
 uv run python -m egolearn.methods.vjepa2.train \
   --config-dir projects/vjepa2/configs --config-name saycam
+```
+
+```bash
+export BABYVIEW_ROOT=/path/to/babyview_5fps
 uv run python -m egolearn.methods.vjepa2.train \
   --config-dir projects/vjepa2/configs --config-name babyview
 ```
 
-The smoke config uses only synthetic data. Use `dry_run=true` to validate it.
+These short recipes are for initial runs. The released checkpoints use the
+[full IID and streaming recipes](#full-iid-and-streaming-runs).
+
 For a real GPU preflight, use a new output directory, `preflight=true`,
 `driver.max_steps=8`, `hooks.log_every=1`, `hooks.checkpoint_every=8` and
 `hooks.snapshot_every=8`. This checks the next shuffled batch for entirely identical-frame clips, finite
@@ -40,6 +64,8 @@ feature spread. It records the fraction of identical adjacent frame pairs and
 peak allocated GPU memory; partial duplication is measured, not rejected.
 Then start the full config in another directory. GPU runs fail if CUDA is absent.
 
+### Outputs and logging
+
 Training writes `random.pth` before the first update, copying context into the
 teacher in the same process; `final.pth`, periodic checkpoints, resumable snapshots,
 `metrics.jsonl`, and automatic run records follow. Use `resume=auto` with the same
@@ -47,8 +73,11 @@ absolute `run_dir` and unchanged scientific config/total update budget. The runn
 preserves the EMA teacher on resume and refuses to overwrite an existing baseline
 on a fresh run. Accumulation greater than one is rejected for this method.
 
-W&B defaults to online logging; set `WANDB_ENTITY`, `WANDB_PROJECT`, `WANDB_MODE`
-and credentials in the environment. Offline W&B runs can be synced later.
+The real-data recipes default to online W&B logging. The commands above disable
+it so you can run without a W&B account. Use `WANDB_MODE=offline` to retain local
+W&B logs, or set `WANDB_MODE=online`, your `WANDB_ENTITY`, `WANDB_PROJECT`, and
+credentials to upload runs. Offline W&B runs can be synced later.
+
 Loss, per-mask diagnostics, representation spread, learning rate, synchronized
 clips/sec and frames/sec are logged every 25 updates. The first rate includes
 startup/indexing; subsequent intervals include I/O and checkpoint overhead.
@@ -62,14 +91,14 @@ Use the existing immutable cluster launcher, with site resources and read-only
 archive mounts supplied through your private environment:
 
 ```bash
-egl submit --gres=gpu:1 --cpus-per-task=8 --mem=32G --time=04:00:00 -- \
+uv run egl submit --gres=gpu:1 --cpus-per-task=8 --mem=32G --time=04:00:00 -- \
   python -m egolearn.methods.vjepa2.train \
   --config-dir projects/vjepa2/configs --config-name saycam \
   run_dir="$EGOLEARN_ARTIFACTS/vjepa2-saycam-seed0"
 ```
 
-See [cluster setup](../../docs/cluster.md). Commit the reviewed implementation
-before submission; never change archived code or the queued environment.
+See [cluster setup](../../docs/cluster.md). The launcher requires a clean commit
+and preserves it in each job snapshot; keep that snapshot and environment unchanged.
 
 ## Recipe and compatibility
 
@@ -119,29 +148,30 @@ the full frame to a square; training uses random resized crops. Report `voe_acc`
 baseline need not equal 50%. One seed and one initialization are preliminary;
 no uncertainty estimate or statistically significant improvement is claimed.
 
-## Results and dependencies
+## Released checkpoints
 
-Trained seed-0 ViT-S/16 models are available in the private
-[EgoLearn Hub collection](https://huggingface.co/collections/agentic-learning-ai-lab/egolearn-6abc0a0d87953889058b0317).
-Each pinned artifact includes its model card, scientific configuration, training
-loss history, evaluation results and checksums:
+Seed-0 ViT-S/16 exports are available from the repositories below. Request access
+using the [checkpoint instructions](../../docs/evaluation/hub.md#checkpoint-access), then set
+`HF_TOKEN` to a read token for the approved account. These releases contain
+safetensors weights and JSON construction metadata.
 
 | Dataset | IID | Streaming |
 | --- | --- | --- |
-| SAYCam-S | [Checkpoint](https://huggingface.co/agentic-learning-ai-lab/egolearn-vjepa2-vits16-saycam-iid-seed0/tree/e6d997b1140d8e70f6a1745f22412b362e4f8f53) | [Checkpoint](https://huggingface.co/agentic-learning-ai-lab/egolearn-vjepa2-vits16-saycam-streaming-seed0/tree/a414d784ac5280146646d4a6b3de3a7afd5228b9) |
-| BabyView | [Checkpoint](https://huggingface.co/agentic-learning-ai-lab/egolearn-vjepa2-vits16-babyview-iid-seed0/tree/1070cec79333fbc91c563757e1eddfd4b6f08b75) | [Checkpoint](https://huggingface.co/agentic-learning-ai-lab/egolearn-vjepa2-vits16-babyview-streaming-seed0/tree/ad3a21994b21eb5074c9adfb03cb837e344376c9) |
+| SAYCam-S | [Checkpoint](https://huggingface.co/egolearn/vjepa2-vits16-saycam-iid-seed0/tree/de8ed7eecf2fc31c69fee7ef155bae522dc63374) | [Checkpoint](https://huggingface.co/egolearn/vjepa2-vits16-saycam-streaming-seed0/tree/8b47fcb1149c97f412bb73257d1bc2b9f03ca0bb) |
+| BabyView | [Checkpoint](https://huggingface.co/egolearn/vjepa2-vits16-babyview-iid-seed0/tree/d1429d2a790c35be69b5921afd1a44c0a0364ef8) | [Checkpoint](https://huggingface.co/egolearn/vjepa2-vits16-babyview-streaming-seed0/tree/f2ccedd42e06db40ec04b2b722300621f1aa91f5) |
 
-These pinned revisions contain legacy `model.pth` artifacts. Download that file
-with an authorized Hub account and pass its local path as `checkpoint` to either
-evaluation command. The restricted legacy checkpoint reader remains supported.
-These artifacts preserve every context/EMA encoder and predictor tensor, plus construction and
-training provenance, while omitting optimizer state. The bundled `training.json`
-maps the original `final.pth` hash to the artifact hash; new evaluation records
-identify the file actually loaded.
-The model cards document the single-seed results and protocol limitations.
+To evaluate a released export, pass its full revisioned file reference as
+`checkpoint`, such as:
 
-New Hub uploads use the safetensors export format described in
-[Security](../../SECURITY.md#model-export-and-checkpoint-trust):
+```text
+hf://models/egolearn/vjepa2-vits16-saycam-iid-seed0@de8ed7eecf2fc31c69fee7ef155bae522dc63374/model.safetensors
+```
+
+The loader fetches `model.json` from the same commit. Read the model card for its
+training protocol and comparison limits. Dataset access and preparation remain
+separate from permission to download the model.
+
+To export your own completed run:
 
 ```bash
 uv run egl export "$RUN_DIR/final.pth" "$RUN_DIR/export"
@@ -149,7 +179,8 @@ uv run egl export "$RUN_DIR/final.pth" "$RUN_DIR/export"
 
 Pass the resulting directory as `checkpoint` for evaluation. Its
 `checkpoint.sha256` identifies both exported files; `checkpoint.source.sha256`
-identifies the source checkpoint. The pinned legacy revisions above are unchanged.
+identifies the source checkpoint. Legacy `model.pth` checkpoints remain supported
+under the [checkpoint trust rules](../../SECURITY.md#model-export-and-checkpoint-trust).
 
 The `image_evals` configuration runs Labeled-S and BabyView frozen linear
 decoding and novel-object shape bias. Set `LABELED_S_ROOT`, `LABELED_S_SPLIT`
@@ -180,11 +211,6 @@ standardization and the existing L-BFGS scorer (L2=0.001, 500 maximum iterations
 Shape bias uses all 256 stimuli and 57,600 triplets. This is an explicit
 static-image transfer protocol, not a temporal-understanding benchmark or a
 reproduction of published V-JEPA image-evaluation scores.
-
-No dataset-scale results are committed here. Keep loss histories, checkpoints,
-records, evaluation scores and a local results report outside Git; do not infer
-results from synthetic tests or job submission. Report complete/failed/pending
-status, commit, resolved config, input identities, W&B URL and measured timings.
 
 ## Full IID and streaming runs
 
@@ -254,13 +280,10 @@ Python has not installed its handler during interpreter/import startup. The sche
 arrives near the allocation deadline. Use `--open-mode=append` to retain logs
 across requeues. Do not restart inside an expiring allocation. Schedule IntPhys evaluation as an
 `afterok` dependent job, using the same random/final protocol documented above.
-See [the full-run design](../../docs/design/vjepa2-full.md).
-
 
 ### Loader throughput and recovery
 
-The shared loader reuses the packed/pinned batch interface from the pending MAE
-work (`1c8c4a2`). `loader.packed=true` batches worker outputs into shared tensors;
+`loader.packed=true` batches worker outputs into shared tensors;
 `loader.pin_memory=true` collates a homogeneous slot into pinned CPU storage for
 GPU transfer. Multiple heterogeneous slots retain the ordinary list path.
 

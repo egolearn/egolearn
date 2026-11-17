@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 Learning from egocentric video streams (streaming SSL, continual learning, replay,
-memory, video QA). Currently scaffold-phase: `docs/roadmap.md` says what exists vs.
-what is planned — check it before assuming a module exists.
+memory, video QA). `docs/status.md` describes supported workflows and limitations;
+check the source before assuming a component exists.
 
 ## Commands
 
@@ -26,12 +26,10 @@ uv run pre-commit run --all-files
 
 - **Never port code from the source repos without an explicit request** — porting
   is triaged per-PR by the code owners (CONTRIBUTING.md "Porting policy").
-- **Merge commits only** — never rebase, squash, or force-push. History must stay
-  identical with the private `-dev` mirror (RELEASING.md).
+- **Merge commits only** — never rebase, squash, or force-push shared history.
 - Never commit secrets, personal cluster paths, dataset frames (SAYCam/BabyView are
   IRB-controlled; the only exception is credited, already-public images in
-  `landing/media/`), or files >500 KB (SECURITY.md has the full list). This private
-  repo's history goes public at first release.
+  `landing/media/`), or files >500 KB (SECURITY.md has the full list).
 - LLM API keys: environment variables only, never CLI flags or configs.
 - Imports are absolute (`from egolearn...`); code must work from an installed
   wheel — no repo-root-relative paths. Dataset roots come from config, never code.
@@ -42,4 +40,4 @@ uv run pre-commit run --all-files
   file, run `scripts/check_pr_message.py`, and keep the description aligned with
   the final diff. Review history, people, and dates stay out of the message.
 - Third-party-derived files keep attribution headers; never vendor GPL or
-  CC-BY-NC code (docs/design/streaming.md has the licensing rules).
+  CC-BY-NC code (CONTRIBUTING.md has the licensing and attribution rules).

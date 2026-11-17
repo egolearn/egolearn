@@ -64,6 +64,7 @@ def test_fetch_uses_shared_root_and_preserves_verification_options(monkeypatch, 
     data.main(["--root", str(tmp_path), "fetch", "shape-bias", "--allow-unverified"])
     assert calls[-1][0][1] == tmp_path
     assert calls[-1][1]["allow_unverified"] is True
+    assert calls[-1][1]["repo"] == "agentic-learning-ai-lab/egolearn-shape-bias"
 
 
 def test_prepare_forwards_arguments_and_explicit_paths_win(monkeypatch, tmp_path):

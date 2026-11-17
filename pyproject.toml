@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Learning from egocentric video streams: streaming SSL, continual learning, replay, memory, and video QA"
 readme = "README.md"
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.12"
 authors = [{ name = "Agentic Learning AI Lab, New York University" }]
 dependencies = [
@@ -21,7 +21,13 @@ dependencies = [
 egolearn = "egolearn.cli:main"
 egl = "egolearn.cli:main"
 
-# Optional extras are added together with the code that needs them (see docs/roadmap.md).
+[project.urls]
+Homepage = "https://github.com/agentic-learning-ai-lab/egolearn"
+Documentation = "https://github.com/agentic-learning-ai-lab/egolearn/tree/main/docs"
+Repository = "https://github.com/agentic-learning-ai-lab/egolearn"
+Issues = "https://github.com/agentic-learning-ai-lab/egolearn/issues"
+
+# Optional extras are added together with the code that needs them (see docs/status.md).
 # Still planned:
 #   eval  : scikit-learn                        (kNN/SVM readout)
 [project.optional-dependencies]
