@@ -113,13 +113,7 @@ function element(tag, text, className) {
   return node;
 }
 
-function link(text, url) {
-  const node = element("a", text);
-  node.href = url;
-  return node;
-}
-
-function modelTable(data, rows, columns, title) {
+function modelTable(rows, columns, title) {
   const table = element("table", undefined, "bench");
   table.setAttribute("aria-describedby", "benchmark-note");
   const caption = element("caption", title);
@@ -140,28 +134,7 @@ function modelTable(data, rows, columns, title) {
     const method = element("td");
     method.append(element("span", row.condition.label, "meth"));
     method.append(element("span", `${row.condition.regime} · ${row.condition.architecture}`, "kind"));
-    const details = element("details", undefined, "benchmark-details");
     const reference = row.expected_seeds[0] === null;
-    details.append(element("summary", reference ? "1 reference checkpoint · sources"
-      : `${row.runs.length} of ${row.expected_seeds.length} seeds · sources`));
-    details.append(element("p", row.condition.description));
-    if (row.runs.some(run => run.provenance?.legacy_evaluation || !run.provenance?.training_code_commit)) {
-      details.append(element("p", "Some source revisions were not recorded. See each evaluation record for provenance limits."));
-    }
-    for (const run of row.runs) {
-      const p = element("p");
-      const identity = run.seed === null ? "Training seed unknown" : `Seed ${run.seed}`;
-      const record = `https://huggingface.co/datasets/${data.results_repo}/blob/${data.revision || "main"}/runs/${run.id}.json`;
-      if (run.checkpoint.repo_id === null) {
-        p.append(document.createTextNode(`${identity} · checkpoint not uploaded`));
-      } else {
-        const model = `https://huggingface.co/${run.checkpoint.repo_id}/tree/${run.checkpoint.revision}`;
-        p.append(link(`${identity} · weights${run.checkpoint.private ? " (restricted)" : ""}`, model));
-      }
-      p.append(document.createTextNode(" · "), link("evaluation record", record));
-      details.append(p);
-    }
-    method.append(details);
     tr.append(method);
     for (const column of columns) {
       const cell = row.cells[column.id];
@@ -183,6 +156,7 @@ function modelTable(data, rows, columns, title) {
 const imageTextBenchmarks = new Set([
   "labeled_s_4afc", "babyview_4afc", "vtwt", "baby_winoground",
 ]);
+const datasetOrder = new Map([["SAYCam-S", 0], ["BabyView", 1]]);
 
 export function renderTable(data, container) {
   validateTable(data);
@@ -192,7 +166,8 @@ export function renderTable(data, container) {
   const visualOnly = row => imageTextColumns.length > 0 &&
     imageTextColumns.every(column => row.cells[column.id].status === "not_applicable");
   const fragment = document.createDocumentFragment();
-  const datasets = [...new Set(data.rows.map(row => row.condition.dataset))];
+  const datasets = [...new Set(data.rows.map(row => row.condition.dataset))]
+    .sort((a, b) => (datasetOrder.get(a) ?? 2) - (datasetOrder.get(b) ?? 2));
   for (const [index, dataset] of datasets.entries()) {
     const section = element("section", undefined, "result-dataset");
     const heading = element("h3", `trained on ${dataset}`);
@@ -208,7 +183,7 @@ export function renderTable(data, container) {
       if (!rows.length) continue;
       const columns = data.columns.filter(column =>
         rows.some(row => row.cells[column.id].status !== "not_applicable"));
-      const table = modelTable(data, rows, columns, title);
+      const table = modelTable(rows, columns, title);
       table.dataset.modality = modality;
       const caption = table.querySelector("caption");
       caption.id = `${heading.id}-${modality}`;
@@ -272,13 +247,14 @@ export function startBenchmarks({container, status, repository = container.datas
         lastData = serialized;
         lastUpdated = new Date(data.updated_at).toLocaleString();
       }
-      const message = `Results updated ${lastUpdated}. Refreshes every minute.`;
-      if (status.textContent !== message) status.textContent = message;
+      status.textContent = "";
+      status.hidden = true;
     } catch {
       const message = lastUpdated
         ? `Showing results from ${lastUpdated}. Live refresh is unavailable; retrying every minute.`
         : "Published results are temporarily unavailable. Retrying every minute.";
       if (status.textContent !== message) status.textContent = message;
+      status.hidden = false;
     } finally {
       busy = false;
     }

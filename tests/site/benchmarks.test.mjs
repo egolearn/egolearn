@@ -31,7 +31,7 @@ test("the Python-generated schema-1 feed validates with all eight default metric
   }
 });
 
-test("mixed schema feeds separate modalities and retain imported reference sources", () => {
+test("mixed schema feeds separate modalities and render unknown-seed references", () => {
   const mixed = JSON.parse(readFileSync(new URL("../fixtures/publication-v2.json", import.meta.url), "utf8"));
   const data = validateTable(mixed.table);
   const reference = data.rows.find(row => row.expected_seeds[0] === null);
@@ -45,9 +45,8 @@ test("mixed schema feeds separate modalities and retain imported reference sourc
   try {
     const container = document.getElementById("table");
     renderTable(data, container);
-    assert.match(container.textContent, /1 reference checkpoint/);
-    assert.match(container.textContent, /Training seed unknown/);
-    assert.doesNotMatch(container.textContent, /Seed null/);
+    assert.equal(container.querySelectorAll("details, summary").length, 0);
+    assert.doesNotMatch(container.textContent, /sources|Training seed unknown|Seed null/);
     const multimodal = container.querySelector('table[data-modality="multimodal"]');
     const visual = container.querySelector('table[data-modality="visual-only"]');
     assert.equal(container.querySelectorAll("table").length, 2);
@@ -85,13 +84,14 @@ test("dataset tables preserve all model variants and distinguish missing from in
   // Column aliases must not change modality classification.
   data.columns[0].id = "word_matching";
   for (const row of data.rows) {
+    row.condition.dataset = "BabyView";
     row.cells.word_matching = row.cells.labeled_s_4afc;
     delete row.cells.labeled_s_4afc;
   }
   for (const original of [...data.rows]) {
     const row = structuredClone(original);
     row.id += "-second-dataset";
-    row.condition.dataset = "Second dataset";
+    row.condition.dataset = "SAYCam-S";
     data.rows.push(row);
   }
   const incomplete = data.rows.find(row => row.id === "toy-second-dataset");
@@ -105,6 +105,8 @@ test("dataset tables preserve all model variants and distinguish missing from in
     renderTable(data, container);
     assert.deepEqual(data, before);
     assert.equal(container.querySelectorAll(".result-dataset").length, 2);
+    assert.deepEqual([...container.querySelectorAll(".result-dataset h3")].map(node => node.textContent),
+      ["trained on SAYCam-S", "trained on BabyView"]);
     const rendered = [...container.querySelectorAll("tbody tr")];
     assert.deepEqual(rendered.map(row => row.dataset.resultId).sort(), data.rows.map(row => row.id).sort());
     for (const section of container.querySelectorAll(".result-dataset")) {
@@ -127,9 +129,7 @@ test("dataset tables preserve all model variants and distinguish missing from in
           return value + sd;
         });
         assert.deepEqual(actual, expected);
-        const records = [...row.querySelectorAll("details a")]
-          .filter(link => link.textContent === "evaluation record");
-        assert.equal(records.length, source.runs.length);
+        assert.equal(row.querySelectorAll("details, summary, a").length, 0);
       }
     }
     assert.equal(container.querySelectorAll("[id]").length,
@@ -165,7 +165,7 @@ test("the feed rejects malformed, incomplete and nonfinite aggregates", () => {
   }
 });
 
-test("the browser reads the public Hub feed without credentials and pins evidence to its revision", async () => {
+test("the browser reads the public Hub feed without credentials and records its revision", async () => {
   const data = await fetchBenchmarks("test/results", async (url, options) => {
     assert.equal(url, "https://huggingface.co/datasets/test/results/resolve/main/benchmarks.json");
     assert.equal(options.credentials, "omit");
@@ -175,16 +175,6 @@ test("the browser reads the public Hub feed without credentials and pins evidenc
     return new Response(JSON.stringify(fixture()), {headers: {"x-repo-commit": "d".repeat(40)}});
   });
   assert.equal(data.revision, "d".repeat(40));
-  const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
-  globalThis.document = document;
-  try {
-    const container = document.getElementById("table");
-    renderTable(data, container);
-    const record = [...container.querySelectorAll("a")].find(a => a.textContent === "evaluation record");
-    assert.equal(record.href, `https://huggingface.co/datasets/test/results/blob/${data.revision}/runs/${"a".repeat(64)}.json`);
-  } finally {
-    delete globalThis.document;
-  }
 });
 
 test("the browser rejects invalid sources, upstream failures and mismatched feeds", async () => {
@@ -238,24 +228,25 @@ test("rendering keeps the last successful table during failures and safely adds 
     await new Promise(resolve => setImmediate(resolve));
     assert.match(container.textContent, /43\.3/);
     assert.equal(container.querySelectorAll(".meth").length, 1);
-    const details = container.querySelector("details");
-    details.setAttribute("open", "");
+    assert.equal(status.textContent, "");
+    assert.equal(status.hidden, true);
+    const table = container.querySelector("table");
     await controller.refresh();
-    assert.equal(container.querySelector("details"), details);
-    assert.ok(details.hasAttribute("open"));
+    assert.equal(container.querySelector("table"), table);
     const original = container.innerHTML;
     available = false;
     await controller.refresh();
     assert.equal(container.innerHTML, original);
     assert.match(status.textContent, /Live refresh is unavailable/);
+    assert.equal(status.hidden, false);
     const failureText = status.firstChild;
     await controller.refresh();
     assert.equal(status.firstChild, failureText);
     available = true;
     await controller.refresh();
-    assert.equal(container.querySelector("details"), details);
-    assert.ok(details.hasAttribute("open"));
-    assert.match(status.textContent, /Refreshes every minute/);
+    assert.equal(container.querySelector("table"), table);
+    assert.equal(status.textContent, "");
+    assert.equal(status.hidden, true);
     data = {...fixture(), schema_version: 99};
     await controller.refresh();
     assert.equal(container.innerHTML, original);
@@ -268,15 +259,16 @@ test("rendering keeps the last successful table during failures and safely adds 
     assert.equal(container.querySelectorAll(".meth").length, 2);
     assert.ok(container.textContent.includes(row.condition.label));
     assert.equal(container.querySelectorAll("img").length, 0);
-    assert.equal(container.querySelectorAll("details a").length, 4);
-    assert.match(status.textContent, /Refreshes every minute/);
+    assert.equal(container.querySelectorAll("details, summary").length, 0);
+    assert.equal(status.textContent, "");
+    assert.equal(status.hidden, true);
   } finally {
     controller.stop();
     delete globalThis.document;
   }
 });
 
-test("results-only records display their evidence without inventing a model link", () => {
+test("results-only records display scores without source controls", () => {
   const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
   globalThis.document = document;
   try {
@@ -288,9 +280,7 @@ test("results-only records display their evidence without inventing a model link
     const container = document.getElementById("table");
     renderTable(data, container);
     assert.match(container.textContent, /43\.3/);
-    assert.match(container.textContent, /checkpoint not uploaded/);
-    assert.equal(container.querySelectorAll("details a").length, 1);
-    assert.equal(container.querySelector("details a").textContent, "evaluation record");
+    assert.equal(container.querySelectorAll("details, summary, a").length, 0);
     checkpoint.revision = "b".repeat(40);
     assert.throws(() => validateTable(data));
   } finally {

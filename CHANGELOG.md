@@ -125,6 +125,7 @@ patch releases for fixes during 0.x development.
 ### Changed
 
 - The website benchmark groups live published results by training dataset and modality, omitting columns that are inapplicable to every model in a table.
+- The benchmark page places SAYCam-S before BabyView and removes update notices and expandable source details.
 - Model and CLI guides connect checkpoint access, compatible evaluations, and complete training commands.
 - User guides describe current capabilities, dataset access, released checkpoints,
   and publication to personal Hub repositories.
