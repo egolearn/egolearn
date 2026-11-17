@@ -120,6 +120,7 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- BabyCL replaces batch-local temporal classification with supervised contrastive learning from global segment IDs in streaming and offline recipes.
 - WalkingTours documentation separates shared dataset preparation from BabyCL and StreamMAE experiment guides.
 - WalkingTours preparation uses a bundled source manifest by default and retains custom manifest overrides.
 - MAE documentation separates recipe selection, training, method details, and WT++ preparation, with inventory-derived update budgets.

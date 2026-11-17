@@ -4,7 +4,15 @@ model's training signals, addressed through its encoders and heads)."""
 from .base import Loss
 from .clip_infonce import ClipInfoNCE
 from .ntxent import NTXent
+from .supcon import SupervisedContrastive
 from .tcl import TemporalClassification
 from .vjepa import VJEPA
 
-__all__ = ["VJEPA", "ClipInfoNCE", "Loss", "NTXent", "TemporalClassification"]
+__all__ = [
+    "VJEPA",
+    "ClipInfoNCE",
+    "Loss",
+    "NTXent",
+    "SupervisedContrastive",
+    "TemporalClassification",
+]

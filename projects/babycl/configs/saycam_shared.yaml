@@ -1,11 +1,12 @@
-# BabyCL (BabyCLIP) on SAYCam -- the paper's default run expressed purely as config.
+# BabyCL (BabyCLIP) on SAYCam with global segment supervised contrastive learning.
 #
 # Code-verified against the mcl repo's ms_train.py / ms_dataloader.py /
 # online_ms_refine.py, array 0 of ms_train_clip_importance_ablation.SBATCH:
 #   batch 128 = 3 segments x 32 frames (visual) + 32 utterance pairs x 1 frame;
 #   two-tier buffers 10%/50% with FIFO->reservoir spill; the stream advances by one
 #   finalized segment, then 8 gradient steps run, each on a freshly resampled batch;
-#   losses 0.5*(NT-Xent + TCL) + 0.5*CLIP-InfoNCE; 4-tier AdamW; cosine + 2% warmup.
+#   4-tier AdamW; cosine + 2% warmup.
+# The temporal objective uses SupCon in place of the original classifier.
 #
 # How to tell this config apart from the storyboard one, structurally:
 #   * memory units = SEGMENT and PAIR; spill admission (new items -> short tier,
@@ -13,7 +14,7 @@
 #   * the segmenter finalizes a segment only once the stream is far enough past its
 #     end that nothing can change it (the watermark rule), so each label is written
 #     once and never revised; embeddings come from a frozen encoder;
-#   * TCL uses batch-local labels (seg.batch_label), not global ids;
+#   * SupCon uses global segment ids resolved through the events LabelStore;
 #   * the pairs slot mixes 25% short / 75% long inside one memory;
 #   * fallback recipe: when pairs are starved, an all-visual batch of 4 segments is
 #     used instead (the explicit form of ms_dataloader's use_annot gating).
@@ -126,7 +127,7 @@ recipe:
     - {name: segments,
        source: {kind: mix, memory: segments, fractions: {short: 0.25, long: 0.75}},
        n: 3, unit: segment, frames_per_item: 32,
-       views: [ms_v1, ms_v2], batch_label: true, strict: true}
+       views: [ms_v1, ms_v2], labels_from: events, strict: true}
     # 32 utterance-frame pairs, 25% short / 75% long
     - {name: pairs,
        source: {kind: mix, memory: pairs, fractions: {short: 0.25, long: 0.75}},
@@ -138,7 +139,7 @@ recipe:
       - {name: segments,
          source: {kind: mix, memory: segments, fractions: {short: 0.25, long: 0.75}},
          n: 4, unit: segment, frames_per_item: 32,
-         views: [ms_v1, ms_v2], batch_label: true, strict: true}
+         views: [ms_v1, ms_v2], labels_from: events, strict: true}
 
 model:
   encoders:
@@ -146,15 +147,15 @@ model:
     text:   {_target_: "encoder:text_bow", vocab_size: auto, dim: 512}
   heads:
     proj128:  {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 128]}
-    cls:      {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 2000]}
+    segment128: {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 128]}
     embed512: {encoder: vision, _target_: "head:linear", in_dim: 2048, out_dim: 512}
 
 losses:
-  # total = 0.5*(L_I + L_S) + 0.5*L_C   (paper eq. 1)
+  # total = 0.5*(L_instance + L_segment_supcon) + 0.5*L_image_text
   - {_target_: "loss:ntxent", name: instance,
      slots: [segments], head: proj128, temperature: 0.2, weight: 0.5}
-  - {_target_: "loss:tcl", name: temporal,
-     slots: [segments], head: cls, num_classes: 2000, filter_unseen: true, weight: 0.5}
+  - {_target_: "loss:supcon", name: temporal,
+     slots: [segments], head: segment128, temperature: 0.2, weight: 0.5}
   - {_target_: "loss:clip_infonce", name: cross_modal,
      slot: pairs, vision_head: embed512, temperature: 0.07, weight: 0.5,
      use_sample_weights: false}   # clip-importance ablation: flip to true
@@ -166,7 +167,7 @@ solver:
     #         BN/bias exempt from decay
     - {match: "^encoders\\.vision\\.|^heads\\.embed512\\.", lr: 1.0e-3,
        weight_decay: 1.0e-4, split_no_decay: true}
-    # tier 2: everything else (projector, classifier, word embeddings) @ 1e-4
+    # tier 2: everything else (projectors, word embeddings) @ 1e-4
     - {match: ".*", lr: 1.0e-4, weight_decay: 1.0e-4}
   # anchored to training start (the default): the LR warmup starts counting from the
   # first training step, not from the start of buffer filling, so warmup = 2% of the

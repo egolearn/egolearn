@@ -21,8 +21,8 @@ Two label fields are computed here at batch time instead of being stored:
   * seg.id          -- looked up in the slot's LabelStore at THIS moment, so
                        Memory Storyboard's retroactive relabeling of old
                        segments is visible to the loss;
-  * seg.batch_label -- the item's position within the slot (BabyCL's TCL
-                       labels).
+  * seg.batch_label -- the item's position within the slot, for recipes that
+                       request batch-local labels.
 
 Batch layout: ``batch[slot_name]`` is a dict with
   views    FloatTensor [B, V, C, H, W]  (clip slots: [B, V, T, C, H, W])

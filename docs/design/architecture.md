@@ -143,7 +143,8 @@ Additional copies, such as EMA targets, must be configured with `frozen: true`.
 
 Losses name the batch slots and model components they use, allowing several objectives
 to share representations. Memory Storyboard combines instance discrimination with
-temporal classification, while BabyCL adds an image–text contrastive objective.
+temporal classification. BabyCL combines instance discrimination, supervised
+contrastive learning from global segment IDs, and image–text contrastive learning.
 V-JEPA predicts masked video representations using a context
 encoder, a predictor, and a frozen target encoder updated by an exponential average.
 Its components are `encoder:video_vit`, `predictor:vjepa`, and `loss:vjepa`, with
@@ -240,9 +241,9 @@ configurations.
 | Memory unit | Frames | Visual segments and utterance–frame pairs |
 | Tier routing | Independent admission to short and long tiers | Short-tier overflow into long tier |
 | Segmentation features | Learner's current backbone | Frozen ImageNet ResNeXt |
-| Labels for temporal classification | Revisable global classes | Batch-local segment classes |
+| Temporal labels | Revisable global classes | Global segment IDs, shared by merged segments |
 | Repeated updates | Reuse the batch | Resample each batch |
-| Objective | Instance discrimination and temporal classification | Those objectives plus image–text contrastive learning |
+| Objective | Instance discrimination and temporal classification | Instance, segment supervised contrastive, and image–text contrastive learning |
 
 <a id="design-rules"></a>
 

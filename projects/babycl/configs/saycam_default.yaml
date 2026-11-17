@@ -21,6 +21,6 @@ solver:
 
 driver:
   max_steps: 26568
-  # the original's --amp: segment forwards and their losses in float16 with a
-  # loss scaler; the cross-modal branch was forced to float32
+  # Segment forwards use float16 autocast with a loss scaler. SupCon keeps its
+  # similarities/log probabilities in float32, as does the cross-modal branch.
   amp: {dtype: float16, fp32_slots: [pairs]}

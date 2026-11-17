@@ -24,7 +24,10 @@ containers instead. The supplied archive contains 436 recordings at approximatel
 ## Training settings
 
 The config trains a ResNeXt-50 from scratch with equally weighted NT-Xent and
-TCL losses. Each step draws four visual segments and samples 32 frames from each,
+segment supervised contrastive losses. The latter uses global segment IDs and
+a separate 128-dimensional projection head at temperature 0.2. Views sharing an
+ID are positives within each batch, including segments merged by the segmenter.
+Each step draws four visual segments and samples 32 frames from each,
 with two augmented views per frame. A frozen ImageNet ResNeXt-50 supplies features
 for segmentation, with weights downloaded into `TORCH_HOME` on first use.
 
@@ -238,11 +241,11 @@ Include empty recordings with their `fps`, `num_frames: 0`, and `segments: []`.
 
 The driver checks session names, frame counts, timestamps, and label coverage
 before training. TC uses the same fixed target for a frame regardless of batch
-order, with all classes active from the first update. Streaming BabyCL instead
-uses batch-local labels. When converting an online segmenter's evolving output,
-resolve overlapping revisions explicitly and retain that rule with the manifest's
-provenance. Checkpoint evaluation uses the vision encoder, without either training
-head.
+order, with all classes active from the first update. Streaming BabyCL uses
+global segment IDs for supervised contrastive learning. When converting an online
+segmenter's evolving output, resolve overlapping revisions explicitly and retain
+that rule with the manifest's provenance. Checkpoint evaluation uses the vision
+encoder, without either training head.
 
 Resume requires the same temporal-manifest bytes used for the saved run. New
 snapshots store this identity directly, and older snapshots can supply it through

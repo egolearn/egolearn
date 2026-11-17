@@ -26,17 +26,27 @@ egl train projects/babycl/configs/saycam_default.yaml dry_run=true
 egl train projects/babycl/configs/saycam_default.yaml
 ```
 
-The recipe combines visual instance discrimination, temporal classification, and
-image–text contrastive learning. Each full batch contains three visual segments
-with 32 sampled frames each, plus 32 utterance–frame pairs. Early batches use an
-all-visual fallback when too few utterance pairs are available.
+The recipe combines visual instance discrimination, segment supervised contrastive
+learning (SupCon), and image–text contrastive learning. Each full batch contains
+three visual segments with 32 sampled frames each, plus 32 utterance–frame pairs.
+Early batches use an all-visual fallback when too few utterance pairs are available.
+
+SupCon uses the segmenter's global IDs, resolved from the label store when each
+batch is composed. Every other view with the same ID is a positive, including
+views from different segments that share a merged ID. Different IDs supply
+negatives within the batch. The loss averages log probabilities over positives
+and then anchors, using a separate 128-dimensional projection head at temperature
+0.2. Each of the three objectives has weight 0.5.
 
 Visual segments and utterance pairs occupy separate memories, each with a short
 FIFO tier whose overflow enters a long reservoir tier. After a segment is
 admitted, training performs eight updates with freshly sampled batches.
 
-`saycam_default` follows the paper's run, including two choices that are
-artifacts of the original code:
+The recipe uses global segment SupCon in place of the temporal classifier.
+Classifier-based snapshots require a new run with the new projection head;
+the vision encoder can be reused through `init_from`.
+
+`saycam_default` retains the paper's run length and precision settings:
 
 - **Run length.** The original fixed 26568 steps before training (3321
   offline-storyboard segments times 8 updates) and indexed the learning-rate
@@ -44,7 +54,8 @@ artifacts of the original code:
   `driver.max_steps` and `solver.schedule.total_steps` reproduce this. Set both
   to `null` to train on the whole stream with the progress-driven schedule.
 - **Precision.** `driver.amp` runs the segment branch in float16 with a loss
-  scaler and keeps the cross-modal branch in float32, as the original did.
+  scaler and keeps the cross-modal branch in float32. SupCon computes its
+  similarities and log probabilities in float32.
 
 The segment views also use the 2-D Gaussian blur (`blur_impl: torchvision`), an
 utterance that ends on a frame is visible at that frame
@@ -52,7 +63,8 @@ utterance that ends on a frame is visible at that frame
 
 ## SAYCam results
 
-The table reports `saycam_default` with seeds 1337 and 2002, final checkpoints.
+The table reports the earlier TCL-based `saycam_default` with seeds 1337 and
+2002, final checkpoints. These are not results for the global-ID SupCon recipe.
 All scores are percentages. The paper column quotes the updated version of the
 [paper](https://arxiv.org/abs/2606.05115), which reaches arXiv later; the
 version there now reports an earlier Labeled-S 4AFC figure.
@@ -71,12 +83,9 @@ Baby Winoground reports the group score, which counts an item only when both
 the original and the edited scene prefer their own caption. Every row uses the
 paper's protocol, so the remaining differences come from training.
 
-The two checkpoints were trained and evaluated with this configuration before
-it was merged with the current main branch. Nothing since then changes what
-these runs computed: the options main has added are off in `saycam_default`
-and `paper_evals`, its other changes are in methods BabyCL does not use, and
-the later driver and stream fixes affect only resuming from a snapshot and
-packed frame stores, which neither run used.
+The checkpoints use the temporal-classification objective. Their results remain
+reference measurements for that recipe; the SupCon variant has no reported
+training results here.
 
 ### Differences from the paper
 
@@ -92,7 +101,9 @@ packed frame stores, which neither run used.
 
 ### Reproducing the table
 
-Train each seed, then evaluate its final checkpoint. The training command
+Use repository commit `8f39160a4d6595cf43e2a7c1b8d03aa21a8683a5` for the TCL configuration
+and implementation used by these reproduction commands. Train each seed, then
+evaluate its final checkpoint. The training command
 skips the in-training probes, which do not change training.
 `paper_evals.yaml` lists the environment variables that point at the
 evaluation data.
@@ -117,7 +128,7 @@ This differs from the paper's CVCL-only IID baseline:
 
 | Setting | Paper IID baseline | `saycam_iid` |
 | --- | --- | --- |
-| Losses | CVCL only | NT-Xent + TCL + CLIP-InfoNCE |
+| Losses | CVCL only | NT-Xent + SupCon + CLIP-InfoNCE |
 | Batch | 8 image/text pairs | 3 x 32 visual frames + 32 image/text pairs |
 | Epochs | 400 | 1 by default, configurable with `driver.epochs` |
 | AdamW learning rate | 1e-4 | 1e-3 vision/embed head, 1e-4 remaining parameters |
@@ -132,7 +143,7 @@ which documents its format and launch command.
 ## Ablations
 
 The following settings express the paper's ablation choices. For pairs-only runs,
-remove the segment slot, its fallback, and the NT-Xent and TCL losses together.
+remove the segment slot, its fallback, and the NT-Xent and SupCon losses together.
 
 | Paper ablation | Configuration change |
 | --- | --- |
@@ -141,7 +152,7 @@ remove the segment slot, its fallback, and the NT-Xent and TCL losses together.
 | Multimodal fraction | Use segment/pair counts 3/32, 2/64, or 1/96 for fractions 1/4, 1/2, or 3/4 |
 | Clip-importance weighting | Enable `use_sample_weights` on the image–text loss and supply transcript `clip_importance` values |
 | Four or eight resampled updates | Set `driver.rate.steps_per_admit` |
-| CL-CVCL baseline | Use a pairs-only recipe and remove NT-Xent and TCL |
+| CL-CVCL baseline | Use a pairs-only recipe and remove NT-Xent and SupCon |
 | One-pass CVCL | Also set `driver.rate.steps_per_admit: 1` |
 | BabyView | Select `stream:babyview`, normalize text, and supply frames pre-cropped to 9:16 portrait |
 

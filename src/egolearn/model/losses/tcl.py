@@ -9,9 +9,9 @@ largest label seen so far.
 
 The `slots` argument (slots are the named groups of items in the batch)
 expresses what the original code did with tensor slicing: Memory Storyboard
-applies TCL to the replay portion only (slots: [replay]); BabyCL applies it
-to the whole visual batch with batch-local labels (slots: [segments], labels
-derived by the composer).
+applies TCL to the replay portion only (slots: [replay]). BabyCL's mixed
+recipes use supervised contrastive learning; the separate temporal-only IID
+baseline uses TCL with fixed manifest labels.
 """
 
 from __future__ import annotations

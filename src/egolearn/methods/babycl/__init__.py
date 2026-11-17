@@ -9,7 +9,7 @@ view      : cvcl_aug, babycl_ms_aug
 decoder   : babycl_prepared_video
 
 Everything else BabyCL uses comes from the shared core toolbox (saycam/babyview
-adapters, ntxent/tcl/clip_infonce losses, simclr views, resnext50, Table policies).
+adapters, ntxent/supcon/clip_infonce losses, simclr views, resnext50, Table policies).
 """
 
 from . import an_chunks, data, model, prepared_video, refine, segmenter  # noqa: F401
