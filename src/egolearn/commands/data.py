@@ -86,6 +86,15 @@ DATASETS = (
         (("--data_root", "labeled-s"), ("--output", "labeled-s-4afc/manifest.json")),
     ),
     Dataset(
+        "konkle-4afc",
+        "upstream-licensed",
+        "Konkle object photographs; download the object-categories set from the Konkle lab",
+        "https://konklab.fas.harvard.edu/",
+        None,
+        _BENCHMARKS + "konkle_4afc.prepare",
+        (("--data_root", "konkle-objects"), ("--output", "konkle-4afc/manifest.json")),
+    ),
+    Dataset(
         "labeled-s-splits",
         "public",
         "Split identifiers only; images require separate access",

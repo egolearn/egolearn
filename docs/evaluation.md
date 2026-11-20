@@ -157,6 +157,7 @@ running evaluation.
 | Labeled-S linear decoding, BabyCL paper protocol | `probe:labeled_s_stratified_linear` | [All images, per-category 80/20 split](evaluation/data.md#labeled-s-linear-data) | `top1`; 1/26 uniform-guess accuracy |
 | mini-ImageNet linear decoding | `probe:mini_imagenet_linear` | 100-class `train/` and `val/` class folders | `top1`; 1/100 uniform-guess accuracy |
 | BabyView 4AFC | `probe:four_afc` | [Frozen trials on vocabulary-matched categories](#babyview-protocols) | `four_afc_acc`; 0.25 chance |
+| Konkle 4AFC | `probe:konkle_4afc` | [6,000 seeded trials over 60 object categories](#konkle-4afc) | `four_afc_acc`; 0.25 chance |
 | BabyView linear decoding | `probe:linear` | [Frozen split over all 72 categories](#babyview-protocols) | `top1`; 1/72 uniform-guess accuracy |
 | VTWT | `probe:vtwt` | [CSV labels, frames, and training vocabulary](evaluation/data.md#babyvlm-benchmark-data) | `vtwt_acc`; 0.5 chance |
 | Baby Winoground | `probe:baby_winoground` | [CSV labels, positive/negative images, and training vocabulary](evaluation/data.md#babyvlm-benchmark-data) | `bw_group_acc`; 0.25 for independent random choices |
@@ -234,6 +235,7 @@ complete [BabyVLM](evaluation/data.md#babyvlm-evaluation-config) and
 | Labeled-S linear | `probe:labeled_s_linear`, `probe:labeled_s_stratified_linear` | `egolearn.evaluation.benchmarks.labeled_s_linear` |
 | mini-ImageNet linear | `probe:mini_imagenet_linear` | `egolearn.evaluation.benchmarks.mini_imagenet_linear` |
 | BabyView 4AFC and linear | `probe:four_afc`, `probe:linear` | `egolearn.evaluation.benchmarks.babyview_4afc` |
+| Konkle 4AFC | `probe:konkle_4afc` | `egolearn.evaluation.benchmarks.konkle_4afc` |
 | Generic fixed-feature linear | `probe:linear` | `egolearn.evaluation.linear_probe` |
 | Generic SGD linear | `probe:linear_sgd` | `egolearn.evaluation.linear_sgd_probe` |
 | VTWT | `probe:vtwt` | `egolearn.evaluation.benchmarks.vtwt` |
@@ -365,6 +367,67 @@ to score a public model. For a manifest outside the default collection, pass
 `"benchmarks.0.manifest=$SHAPE_BIAS_MANIFEST"` in its evaluation command.
 If you already have access to the [hosted collection](evaluation/hub.md#packaged-collections),
 you can fetch a verified copy instead of preparing it locally.
+
+## Konkle 4AFC
+
+Konkle 4AFC tests word-object matching on studio photographs that appear in no
+training corpus: 60 object categories with 17 photographs each, from the
+[Konkle et al. (2010)](https://konklab.fas.harvard.edu/) object set. The
+categories are the test split of Vong et al. (2024). The protocol follows
+[Scaling cross-situational word learning on children's naturalistic experiences](https://arxiv.org/abs/2610.31842)
+and the `EVAL.md` of its [code release](https://github.com/mcfrank/vlm-headcam).
+
+Each trial pairs a category word with one photograph of that category and one
+photograph from each of three other categories. A trial is correct when the
+target has the highest cosine similarity to the word. The probe draws 100
+trials per category with `numpy.random.default_rng(0)`, visiting categories in
+sorted order, and reports the mean of the per-category accuracies.
+
+A category whose label is missing from the model vocabulary scores 0.25 and
+is removed from the foil pool, as in the reference implementation. Two models
+therefore see identical trials only when their vocabularies cover the same
+categories.
+
+| Metric | Meaning |
+| --- | --- |
+| `four_afc_acc` | Mean accuracy over all 60 categories, with out-of-vocabulary categories at 0.25 |
+| `four_afc_acc_in_vocab` | Mean accuracy over in-vocabulary categories only |
+| `four_afc_categories` | Number of categories in the manifest |
+| `four_afc_oov_categories` | Number of categories scored at chance |
+
+Two things differ from the reference numbers. The reference models score a word
+against 17 region vectors per image and keep the maximum; this probe scores one
+pooled image representation. The reference image copy also uses different file
+names, so the seeded draws select different photographs within a category.
+
+Download the object-categories set from the Konkle lab, extract it, and list
+the test images in a manifest:
+
+```bash
+uv run egl data prepare konkle-4afc \
+  --data_root /path/to/17-objects --output data/konkle_4afc/manifest.json
+```
+
+The preparer reads both the original layout, which keeps two photographs per
+category in a `TestItems` folder, and a flattened copy. It fails unless every
+test category has exactly 17 photographs. Add the probe to an evaluation config:
+
+```yaml
+_imports_:
+  - egolearn.methods.babycl
+  - egolearn.evaluation.benchmarks.konkle_4afc
+
+benchmarks:
+  - _target_: probe:konkle_4afc
+    name: konkle_4afc
+    manifest: data/konkle_4afc/manifest.json
+    vocab_json: /path/to/training_vocab.json
+    vision_head: embed512
+    view: resize
+    size: 224
+```
+
+Set `output_json` to also write the per-category accuracies.
 
 ## Checkpoint compatibility
 

@@ -9,6 +9,7 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- Konkle objects 4AFC (`probe:konkle_4afc`) scores word-object matching on 60 categories of studio photographs, with `egl data prepare konkle-4afc` and a results-table column.
 - The first-evaluation tutorial runs a public checkpoint on locally prepared stimuli and explains its output.
 - The CLI guide includes a dataset-free CPU example that saves, exports, and reloads a toy model.
 

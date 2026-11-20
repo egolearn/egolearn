@@ -19,6 +19,7 @@ PREPARER_OPTIONS = {
     "babyview-4afc": "--vocab_json",
     "labeled-s-4afc": "--trials_json",
     "grasp": "--data_root",
+    "konkle-4afc": "--output",
 }
 
 
@@ -179,6 +180,7 @@ def test_preparation_explains_missing_extra(monkeypatch, capsys, tmp_path):
         ("babyview-4afc", ["--help"]),
         ("labeled-s-4afc", ["--help"]),
         ("grasp", ["--help"]),
+        ("konkle-4afc", ["--help"]),
     ],
 )
 def test_installed_preparation_help_needs_no_training_dependencies(tmp_path, name, help_args):

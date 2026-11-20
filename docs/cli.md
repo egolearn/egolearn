@@ -177,6 +177,7 @@ Each preparer also runs directly as an installed Python module:
 | --- | --- |
 | `labeled-s-4afc` | `python -m egolearn.evaluation.benchmarks.labeled_s_4afc.prepare` |
 | `babyview-4afc` | `python -m egolearn.evaluation.benchmarks.babyview_4afc.prepare` |
+| `konkle-4afc` | `python -m egolearn.evaluation.benchmarks.konkle_4afc.prepare` |
 | `shape-bias` | `python -m egolearn.evaluation.benchmarks.shape_bias.prepare` |
 | `spatial-relations` | `python -m egolearn.evaluation.benchmarks.spatial_relations.prepare` |
 | `spatial-monitoring` | `python -m egolearn.evaluation.benchmarks.spatial_relations.subset` |

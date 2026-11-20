@@ -51,6 +51,14 @@ def preparation_parser(
         parser.add_argument("--trials_json", type=Path, required=True)
         parser.add_argument("--vocab_json", type=Path, required=True)
         parser.add_argument("--output", type=Path, required=True)
+    elif name == "konkle-4afc":
+        parser.add_argument(
+            "--data_root",
+            type=Path,
+            required=True,
+            help="directory holding one folder of photographs per object category",
+        )
+        parser.add_argument("--output", type=Path, required=True, help="manifest.json to write")
     elif name == "grasp":
         parser.add_argument(
             "--data_root",
