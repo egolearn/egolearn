@@ -88,11 +88,11 @@ DATASETS = (
     Dataset(
         "konkle-4afc",
         "upstream-licensed",
-        "Konkle object photographs; download the object-categories set from the Konkle lab",
+        "Local trials referencing Konkle object photographs, which are downloaded separately",
         "https://konklab.fas.harvard.edu/",
         None,
         _BENCHMARKS + "konkle_4afc.prepare",
-        (("--data_root", "konkle-objects"), ("--output", "konkle-4afc/manifest.json")),
+        (("--data_root", "konkle-objects"), ("--output", "konkle-4afc/trials.json")),
     ),
     Dataset(
         "labeled-s-splits",

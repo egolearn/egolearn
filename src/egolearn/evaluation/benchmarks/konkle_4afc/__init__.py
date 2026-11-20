@@ -13,25 +13,26 @@ https://github.com/mcfrank/vlm-headcam:
 * accuracy is the mean over all 60 categories of per-category accuracy;
 * a category whose label is outside the model vocabulary scores chance (0.25)
   and is left out of the foil pool, so trial draws match across models only
-  when every label is in vocabulary.
+  when their vocabularies cover the same categories.
+
+The preparer draws the trials for one vocabulary and writes them in
+probe:four_afc's manifest format; out-of-vocabulary categories are recorded as
+``chance_trials``. Scoring reuses probe:four_afc unchanged.
 
 The reference implementation scores a word against 17 region vectors per image
-and takes the maximum. Here the score is the cosine similarity between the
-text representation and one pooled image representation, as in the other 4AFC
-benchmarks.
+and takes the maximum. probe:four_afc scores the cosine similarity between the
+text representation and one pooled image representation.
 
 Config::
 
     _imports_: [egolearn.evaluation.benchmarks.konkle_4afc]
-    probes:
-      - {_target_: "probe:konkle_4afc", name: konkle_4afc,
-         manifest: <konkle_4afc_manifest.json>, vocab_json: <vocab.json>,
+    benchmarks:
+      - {_target_: "probe:four_afc", name: konkle_4afc,
+         manifest: <konkle_4afc_trials.json>, vocab_json: <vocab.json>,
          vision_head: embed512, view: resize, size: 224}
 """
 
-from egolearn.evaluation.benchmarks.konkle_4afc.probe import Konkle4AFCProbe, sample_trials
-
-__all__ = ["Konkle4AFCProbe", "sample_trials"]
+from egolearn.evaluation.four_afc import FourAFCProbe  # noqa: F401  (registers probe:four_afc)
 
 # Literal metadata for the generated benchmark reference; keep data terms separate from code.
 BENCHMARK_METADATA = {
@@ -39,5 +40,8 @@ BENCHMARK_METADATA = {
     "source": "[Konkle et al. object categories](https://konklab.fas.harvard.edu/)",
     "license": "Images distributed by the Konkle lab for research use; obtained separately",
     "access": "upstream-licensed",
-    "prepare": ('`egl data prepare konkle-4afc --data_root "$DATA_ROOT" --output "$MANIFEST"`'),
+    "prepare": (
+        '`egl data prepare konkle-4afc --data_root "$DATA_ROOT" '
+        '--vocab_json "$VOCAB_JSON" --output "$MANIFEST"`'
+    ),
 }

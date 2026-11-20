@@ -19,7 +19,7 @@ PREPARER_OPTIONS = {
     "babyview-4afc": "--vocab_json",
     "labeled-s-4afc": "--trials_json",
     "grasp": "--data_root",
-    "konkle-4afc": "--output",
+    "konkle-4afc": "--vocab_json",
 }
 
 

@@ -1,10 +1,11 @@
-"""List the Konkle test-60 images (60 categories, 17 photographs each) in a manifest."""
+"""Draw the Konkle 4AFC trials for one vocabulary and write a probe:four_afc manifest."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
+
+import numpy as np
 
 from egolearn.commands.prepare_parsers import preparation_parser
 
@@ -92,14 +93,46 @@ def category_images(directory: Path) -> list[Path]:
     return sorted(found, key=lambda path: (path.name, str(path)))
 
 
-def prepare_manifest(data_root: Path, output: Path) -> int:
-    """Validate the 60 x 17 image set and write a new manifest.
+def sample_trials(pools: dict[str, list[str]], n_trials: int = 100, seed: int = 0) -> list[dict]:
+    """Draw ``n_trials`` trials per category in probe:four_afc's entry format.
 
-    Existing output files are never overwritten; validation completes before
-    writing. The manifest records absolute image paths and each file's SHA-256.
+    The order of random draws reproduces ``eval_4afc_region`` in
+    mcfrank/vlm-headcam: categories are visited in sorted order, and each
+    trial draws the target image, then three foil categories without
+    replacement, then one image from each foil category. The target is
+    ``images[0]``.
+    """
+    if len(pools) < 4:
+        raise ValueError("4AFC needs at least four categories")
+    if n_trials <= 0:
+        raise ValueError("n_trials must be positive")
+    rng = np.random.default_rng(seed)
+    categories = sorted(pools)
+    trials = []
+    for category in categories:
+        others = [c for c in categories if c != category]
+        for _ in range(n_trials):
+            images = [pools[category][int(rng.choice(len(pools[category])))]]
+            foils = [others[int(i)] for i in rng.choice(len(others), 3, replace=False)]
+            images += [pools[foil][int(rng.choice(len(pools[foil])))] for foil in foils]
+            trials.append({"text": category, "images": images, "answer": 0})
+    return trials
+
+
+def prepare_manifest(
+    data_root: Path, vocab_json: Path, output: Path, n_trials: int = 100, seed: int = 0
+) -> dict:
+    """Validate the 60 x 17 image set and write a new trial manifest.
+
+    Categories whose label is not one token of the vocabulary get no trials and
+    are left out of the foil pool. They are counted in ``chance_trials``, which
+    probe:four_afc scores at 0.25, so the reported accuracy is the mean over
+    all 60 categories. Existing output files are never overwritten; validation
+    completes before writing. Returns the manifest's ``report``.
     """
     root = data_root.expanduser().resolve()
-    categories = {}
+    vocab = json.loads(vocab_json.expanduser().read_text())
+    pools = {}
     for category in TEST_CATEGORIES:
         images = category_images(root / category)
         if len(images) != IMAGES_PER_CATEGORY:
@@ -107,27 +140,42 @@ def prepare_manifest(data_root: Path, output: Path) -> int:
                 f"Expected {IMAGES_PER_CATEGORY} images for {category!r} under {root}, "
                 f"found {len(images)}"
             )
-        categories[category] = [
-            {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
-            for path in images
-        ]
+        pools[category] = [str(path) for path in images]
+    scored = sorted(c for c in pools if c in vocab)
+    oov = sorted(set(pools) - set(scored))
+    trials = sample_trials({c: pools[c] for c in scored}, n_trials, seed)
+    report = {
+        "protocol": "arXiv:2610.31842 Konkle 4AFC, Vong et al. (2024) test categories",
+        "n_categories": len(pools),
+        "n_trials_per_category": n_trials,
+        "seed": seed,
+        "oov_categories_at_chance": oov,
+    }
 
     output = output.expanduser()
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("x") as handle:
-        json.dump({"split": "test60", "categories": categories}, handle, indent=2)
+        manifest = {"trials": trials, "chance_trials": n_trials * len(oov), "report": report}
+        json.dump(manifest, handle, indent=2)
         handle.write("\n")
-    return sum(len(images) for images in categories.values())
+    return report
 
 
 def main() -> None:
     parser = preparation_parser("konkle-4afc", description=__doc__)
     args = parser.parse_args()
     try:
-        count = prepare_manifest(args.data_root, args.output)
-    except (OSError, ValueError) as error:
+        report = prepare_manifest(
+            args.data_root, args.vocab_json, args.output, args.n_trials, args.seed
+        )
+    except (OSError, ValueError, TypeError) as error:
         parser.error(str(error))
-    print(f"Wrote {count} images in {len(TEST_CATEGORIES)} categories to {args.output}")
+    oov = report["oov_categories_at_chance"]
+    scored = report["n_categories"] - len(oov)
+    print(
+        f"Wrote {scored * args.n_trials} trials over {scored} categories to {args.output}; "
+        f"out of vocabulary, scored at chance: {oov}"
+    )
 
 
 if __name__ == "__main__":

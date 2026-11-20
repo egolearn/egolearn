@@ -19,7 +19,13 @@ Manifest json format::
 
     {"trials": [{"text": "ball",
                  "images": ["/path0.jpg", ...4 paths...],
-                 "answer": 0}, ...]}
+                 "answer": 0}, ...],
+     "chance_trials": 0}
+
+``chance_trials`` is optional. It counts trials that cannot be shown to the
+model, such as words outside its vocabulary, and each adds 0.25 of a correct
+answer to ``four_afc_acc``. With it set, ``four_afc_acc_scored`` reports the
+accuracy on the listed trials alone.
 """
 
 from __future__ import annotations
@@ -52,7 +58,11 @@ class FourAFCProbe(Probe):
     ):
         self.name = name
         with open(manifest) as f:
-            self.trials: list[dict] = json.load(f)["trials"]
+            loaded = json.load(f)
+        self.trials: list[dict] = loaded["trials"]
+        self.chance_trials = int(loaded.get("chance_trials", 0))
+        if self.chance_trials < 0:
+            raise ValueError("chance_trials must not be negative")
         self.tokenizer = VocabTokenizer.from_json(
             vocab_json, add_sos_eos=False, normalize=normalize_text
         )
@@ -78,4 +88,10 @@ class FourAFCProbe(Probe):
             )
             pred = int(torch.argmax(img_feats @ txt.t()))
             correct += int(pred == int(trial.get("answer", 0)))
-        return {"four_afc_acc": correct / max(1, len(self.trials))}
+        if not self.chance_trials:
+            return {"four_afc_acc": correct / max(1, len(self.trials))}
+        total = len(self.trials) + self.chance_trials
+        return {
+            "four_afc_acc": (correct + 0.25 * self.chance_trials) / total,
+            "four_afc_acc_scored": correct / max(1, len(self.trials)),
+        }
