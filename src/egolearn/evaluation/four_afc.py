@@ -60,9 +60,10 @@ class FourAFCProbe(Probe):
         with open(manifest) as f:
             loaded = json.load(f)
         self.trials: list[dict] = loaded["trials"]
-        self.chance_trials = int(loaded.get("chance_trials", 0))
-        if self.chance_trials < 0:
-            raise ValueError("chance_trials must not be negative")
+        chance_trials = loaded.get("chance_trials", 0)
+        if type(chance_trials) is not int or chance_trials < 0:
+            raise ValueError("chance_trials must be a non-negative integer")
+        self.chance_trials = chance_trials
         self.tokenizer = VocabTokenizer.from_json(
             vocab_json, add_sos_eos=False, normalize=normalize_text
         )

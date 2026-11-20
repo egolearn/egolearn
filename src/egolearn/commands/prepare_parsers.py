@@ -71,12 +71,7 @@ def preparation_parser(
             required=True,
             help="the unpacked level2 directory holding the P_<Test>/ and IP_<Test>/ folders",
         )
-        parser.add_argument(
-            "--vocab_json", type=Path, required=True, help="the model's training vocab.json"
-        )
-        parser.add_argument("--output", type=Path, required=True, help="trial manifest to write")
-        parser.add_argument("--n_trials", type=int, default=100, help="trials per category")
-        parser.add_argument("--seed", type=int, default=0)
+        parser.add_argument("--output", type=Path, required=True, help="manifest.json to write")
     else:
         raise ValueError(f"unknown preparer {name!r}")
     return parser

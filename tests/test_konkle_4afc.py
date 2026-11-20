@@ -130,3 +130,7 @@ def test_four_afc_scores_chance_trials_at_one_quarter(tmp_path, monkeypatch):
     credited.write_text(json.dumps({"trials": trials, "chance_trials": 5}))
     result = FourAFCProbe("p", str(credited), str(vocab), "embed").run(_Model(text), ctx)
     assert result == {"four_afc_acc": pytest.approx(0.525), "four_afc_acc_scored": 0.8}
+    for bad in (0.9, -1, True, "5"):
+        credited.write_text(json.dumps({"trials": trials, "chance_trials": bad}))
+        with pytest.raises(ValueError, match="non-negative integer"):
+            FourAFCProbe("p", str(credited), str(vocab), "embed")
