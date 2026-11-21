@@ -176,6 +176,8 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- The benchmark page displays the current BabyCL BabyView results, retaining the selected legacy row for older feeds.
+
 - The landing page provides runnable synthetic training commands and identifies available dataset and physics benchmarks.
 
 - The spatial-relations guide states that both scene domains are required for the packaged evaluation.

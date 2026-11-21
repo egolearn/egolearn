@@ -159,6 +159,38 @@ test("dataset tables select BabyView results and keep scores aligned with reorde
   }
 });
 
+test("BabyView displays the current BabyCL result and prefers it over the legacy result", () => {
+  for (const includeLegacy of [false, true]) {
+    const {table: data} = JSON.parse(readFileSync(new URL("../fixtures/publication-v2.json", import.meta.url), "utf8"));
+    const current = data.rows.find(row => row.id === "toy");
+    current.id = current.condition.id = "babycl-supcon-babyview";
+    current.condition.label = "BabyCL";
+    const visual = data.rows.find(row => row.id === "reference");
+    for (const row of data.rows) row.condition.dataset = "BabyView";
+    if (includeLegacy) {
+      const legacy = structuredClone(current);
+      legacy.id = legacy.condition.id = "babycl-babyview-legacy-offline-refined-seed1337";
+      legacy.condition.label = "BabyCL (legacy offline-refined, 60,000 steps)";
+      data.rows.unshift(legacy);
+    }
+    const before = structuredClone(data);
+    const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
+    globalThis.document = document;
+    try {
+      const container = document.getElementById("table");
+      renderTable(data, container);
+      const rows = [...container.querySelectorAll('table[data-modality="multimodal"] tbody tr')];
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].dataset.resultId, current.id);
+      assert.equal(rows[0].querySelector(".meth").textContent, "BabyCL");
+      assert.equal(container.querySelector('table[data-modality="visual-only"] tbody tr').dataset.resultId, visual.id);
+      assert.deepEqual(data, before);
+    } finally {
+      delete globalThis.document;
+    }
+  }
+});
+
 test("metrics display percentages, unavailable cells and singleton uncertainty correctly", () => {
   const data = validateTable(fixture());
   const column = data.columns[0];

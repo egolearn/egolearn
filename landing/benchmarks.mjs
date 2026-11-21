@@ -132,7 +132,7 @@ function modelTable(rows, columns, title) {
     const tr = element("tr");
     tr.dataset.resultId = row.id;
     const method = element("td");
-    const label = row.id === babyviewMultimodalResult ? "BabyCL" : row.condition.label;
+    const label = babyviewMultimodalResults.includes(row.id) ? "BabyCL" : row.condition.label;
     method.append(element("span", label, "meth"));
     method.append(element("span", `${row.condition.regime} · ${row.condition.architecture}`, "kind"));
     const reference = row.expected_seeds[0] === null;
@@ -158,7 +158,10 @@ const imageTextBenchmarks = new Set([
   "labeled_s_4afc", "babyview_4afc", "vtwt", "baby_winoground",
 ]);
 const datasetOrder = new Map([["SAYCam-S", 0], ["BabyView", 1]]);
-const babyviewMultimodalResult = "babycl-babyview-legacy-offline-refined-seed1337";
+const babyviewMultimodalResults = [
+  "babycl-supcon-babyview",
+  "babycl-babyview-legacy-offline-refined-seed1337",
+];
 
 export function renderTable(data, container) {
   validateTable(data);
@@ -167,6 +170,10 @@ export function renderTable(data, container) {
   // inapplicability for every image-text benchmark, including for BabyCL variants.
   const visualOnly = row => imageTextColumns.length > 0 &&
     imageTextColumns.every(column => row.cells[column.id].status === "not_applicable");
+  // Prefer the current BabyCL result while preserving the selected legacy row
+  // for older feeds. Show only one multimodal BabyView result.
+  const babyviewMultimodalResult = babyviewMultimodalResults.find(id =>
+    data.rows.some(row => row.id === id));
   const displayRows = data.rows.filter(row => row.condition.dataset !== "BabyView" ||
     visualOnly(row) || row.id === babyviewMultimodalResult);
   const fragment = document.createDocumentFragment();
