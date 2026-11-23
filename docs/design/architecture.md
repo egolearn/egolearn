@@ -100,16 +100,17 @@ the saved memory.
 Memory Storyboard segments with the model it is training, so its segments change
 as the model improves, and its labels must be revisable. BabyCL's frozen
 segmenter finalizes a segment once later frames cannot change it, so each label
-is written once. Its temporal objective numbers the segments within each batch.
+is written once. Its supervised contrastive objective treats frames that share
+a global segment ID as positives.
 
 | Choice | Memory Storyboard | BabyCL |
 | --- | --- | --- |
 | Memory unit | Frames | Visual segments and utterance–frame pairs |
 | Tier routing | Independent admission to short and long tiers | Short-tier overflow into the long tier |
 | Segmentation features | Learner's current backbone | Frozen ImageNet ResNeXt-50 |
-| Segment labels | Revisable global classes | Batch-local segment classes |
+| Segment labels | Revisable global classes | Global segment IDs, shared by merged segments |
 | Repeated updates | Reuse the batch | Resample each batch |
-| Objectives | Instance discrimination and a temporal objective | The same, plus image–text contrastive learning |
+| Objectives | Instance discrimination and segment supervised contrastive learning | The same, plus image–text contrastive learning |
 
 ## Extension points
 

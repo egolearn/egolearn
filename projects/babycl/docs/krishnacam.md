@@ -29,7 +29,7 @@ the command with `resume=auto`. Submit long runs with the
 | Setting | SAYCam | KrishnaCam |
 | --- | --- | --- |
 | Input | Extracted 5 fps frames and transcripts | MP4 at about 30 fps, no audio |
-| Objectives | Instance, temporal and image–text | Instance and temporal |
+| Objectives | Instance, segment SupCon and image–text | Instance and segment SupCon |
 | Batch | 3 segments of 32 frames and 32 pairs | 4 segments of 32 frames |
 | Segment memory | 406 FIFO, 2,030 reservoir | 138 FIFO, 692 reservoir |
 | Run length | The paper run's step count | One full pass |

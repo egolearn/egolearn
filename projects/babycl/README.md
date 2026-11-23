@@ -9,9 +9,10 @@ and the settings for the paper's ablations. Visual-only versions train on
 A frozen ImageNet ResNeXt-50 cuts the stream into segments of about three
 minutes, which enter one replay memory while utterance–frame pairs enter
 another. After each new segment, the learner runs eight updates on batches of
-three segments and 32 pairs. Each batch trains instance discrimination, a
-temporal objective that groups frames from the same segment, and image–text
-contrastive learning. The
+three segments and 32 pairs. Each batch trains instance discrimination,
+supervised contrastive learning (SupCon) over segments, and image–text
+contrastive learning. SupCon treats frames that share a global segment ID as
+positives, so segments that the segmenter merges count as one class. The
 [architecture page](../../docs/design/architecture.md#method-differences)
 compares these choices with Memory Storyboard's.
 
@@ -50,26 +51,32 @@ Each of the paper's ablations is a config change:
 | Multimodal fraction | Segment and pair counts of 3/32, 2/64 or 1/96 for 1/4, 1/2 or 3/4 |
 | Updates per segment | `driver.rate.steps_per_admit` |
 | Clip-importance weighting | `use_sample_weights: true` on the image–text loss, with `clip_importance` in the transcripts |
-| CL-CVCL baseline | Remove the segment slot, its fallback, and the instance and temporal losses |
+| CL-CVCL baseline | Remove the segment slot, its fallback, and the instance and SupCon losses |
 
 ## SAYCam results
 
-The table compares the final checkpoints of two `saycam_default` runs with the
-paper, in percent. The paper reports Labeled-S 4AFC as a five-seed mean with an
-approximate 95% interval, which differs between paper versions, and the other
+The table reports the final checkpoints of three `saycam_default` runs, scored
+with [`paper_evals.yaml`](configs/paper_evals.yaml), in percent. SD is the
+sample standard deviation over the three seeds. The paper column gives the
+authors' temporal-classification recipe: Labeled-S 4AFC as a five-seed mean with
+an approximate 95% interval, which differs between paper versions, and the other
 rows from its best seed. Baby Winoground is the group score.
 
-| Benchmark | Seed 1337 | Seed 2002 | Paper |
-| --- | ---: | ---: | ---: |
-| Labeled-S 4AFC | 42.53 | 43.04 | 42.72 ± 1.36 |
-| Labeled-S linear | 45.26 | 44.91 | 44.95 |
-| mini-ImageNet linear | 25.52 | 26.12 | 25.60 |
-| VTWT | 60.60 | 58.43 | 61.32 |
-| Baby Winoground | 15.89 | 12.05 | 14.79 |
-| BabyView 4AFC | 30.99 | 30.29 | 32.53 |
-| BabyView linear | 49.71 | 52.06 | 49.96 |
+| Benchmark | Seed 1337 | Seed 2002 | Seed 3003 | Mean ± SD | Paper |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Labeled-S 4AFC | 43.13 | 44.17 | 43.57 | 43.62 ± 0.52 | 42.72 ± 1.36 |
+| Labeled-S linear | 47.09 | 47.56 | 48.04 | 47.56 ± 0.48 | 44.95 |
+| mini-ImageNet linear | 26.74 | 26.80 | 26.90 | 26.81 ± 0.08 | 25.60 |
+| VTWT | 60.08 | 59.15 | 60.50 | 59.91 ± 0.69 | 61.32 |
+| Baby Winoground | 13.70 | 12.05 | 12.05 | 12.60 ± 0.95 | 14.79 |
+| BabyView 4AFC | 32.94 | 30.72 | 33.93 | 32.53 ± 1.64 | 32.53 |
+| BabyView linear | 52.57 | 51.81 | 52.15 | 52.18 ± 0.38 | 49.96 |
 
-To reproduce a column, set the evaluation-data variables listed at the top of
+The seed 3003 run is released as
+[`egolearn/babycl-resnext50-saycam`](https://huggingface.co/egolearn/babycl-resnext50-saycam),
+which requires approved SAYCam access.
+
+To reproduce a seed, set the evaluation-data variables listed at the top of
 [`paper_evals.yaml`](configs/paper_evals.yaml), then train and evaluate:
 
 ```bash
@@ -81,8 +88,13 @@ uv run egl train projects/babycl/configs/saycam_default.yaml seed=1337 \
 uv run egl eval projects/babycl/configs/paper_evals.yaml "checkpoint=$RUN_DIR/final.pth"
 ```
 
+Repeat with `seed=2002` and `seed=3003`, each in its own `RUN_DIR`.
+
 ### Differences from the paper
 
+- The paper trains a temporal classifier whose targets depend on each segment's
+  position in the batch. These runs use SupCon over the segmenter's global IDs
+  instead. Commit `8f39160` has the earlier temporal-classification recipe.
 - EgoLearn draws its randomness differently, so a seed here is not the paper's
   seed. Same-seed reruns of the original code vary by about two points on
   Labeled-S 4AFC.

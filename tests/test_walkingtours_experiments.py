@@ -39,7 +39,7 @@ def test_wt_recipes_share_all_ten_videos_and_sampling(tmp_path):
     assert baby["stream"]["sessions"][-1] == "wildlife"
     assert baby["admission"][0]["fps"] == 3.75
     assert baby["admission"][0]["embed_stride"] / 3.75 == 12
-    assert [loss["_target_"] for loss in baby["losses"]] == ["loss:ntxent", "loss:tcl"]
+    assert [loss["_target_"] for loss in baby["losses"]] == ["loss:ntxent", "loss:supcon"]
     assert baby["driver"]["max_steps"] is None
     assert mae["run_control"]["stride"] == 1
 

@@ -1,5 +1,4 @@
-"""Port of BabyCL's OnlineSegmenter (mcl utils/online_ms_refine.py) as a
-VisualSegment emitter.
+"""Port of BabyCL's online segmenter as a VisualSegment emitter.
 
 The algorithm is 1:1 with the original.  It keeps a sliding window over frame
 embeddings (subsampled by embed_stride).  Each utterance whose end has already
@@ -13,8 +12,8 @@ its end that nothing can change it any more; the original calls that boundary
 the watermark (win_right - seg_extend_max_sec * fps; on flush everything is
 finalized).  Global segment ids only ever increase; a new segment reuses the
 previous id when their representative frames are similar enough
-(cos >= global_merge_cos), and ids carry across sessions (last_gid /
-last_rep_feat handover).
+(cos >= global_merge_cos), and ids carry across sessions (the last id and its
+representative feature are handed over).
 
 Framework adaptations (everything else is verbatim):
   * frames arrive as Observations; embeddings come from the bound
@@ -22,10 +21,10 @@ Framework adaptations (everything else is verbatim):
     original's per-frame embedding with the same frozen encoder;
   * labels (global ids) are written once per emitted segment through the
     LabelStore instead of living inside the event;
-  * the original also computes similarity-expanded utterance chunks, but the
-    mcl FEEDER discards them (`big, _ = seg.pop_ready_outputs()`) and emits AN
-    chunks from raw timestamp runs instead -- so this component emits only
-    VisualSegments, and admission:an_chunk_emitter reproduces the feeder path.
+  * the original also computes similarity-expanded utterance chunks, but its
+    training loop discards them and emits AN chunks from raw timestamp runs
+    instead -- so this component emits only VisualSegments, and
+    admission:an_chunk_emitter reproduces the AN-chunk path.
 """
 
 from __future__ import annotations
@@ -72,7 +71,7 @@ class BabyCLOnlineSegmenter(EventBuilder):
         compute_stride_frames: int = 10,
     ):
         self.fps = float(fps)
-        # -- derived quantities, verbatim from OnlineSegmenter.__init__ ------
+        # -- derived quantities, verbatim from the original -----------------
         if avg_seg_frames is not None:
             self.T_frames = int(avg_seg_frames)
         else:
@@ -92,7 +91,7 @@ class BabyCLOnlineSegmenter(EventBuilder):
         self.seg_extend_max_sec = float(seg_extend_max_sec)
         self.compute_stride_frames = max(1, int(compute_stride_frames))
 
-        # -- cross-session global-id continuity (feeder handover) -----------
+        # -- cross-session global-id continuity (session handover) ----------
         self._last_gid = -1
         self._last_rep: torch.Tensor | None = None
 
@@ -109,7 +108,7 @@ class BabyCLOnlineSegmenter(EventBuilder):
         self._pending_embed: list[tuple[int, ItemRef]] = []
         self._pending_new_sub = 0
         self._utter_items: list[dict] = []  # visible utterances
-        self._emitted_upto = -1  # emitted_upto_full
+        self._emitted_upto = -1  # end of the last emitted segment, full-frame index
 
     def start_session(self, sid: str) -> None:
         self._reset_session(sid)
@@ -118,7 +117,7 @@ class BabyCLOnlineSegmenter(EventBuilder):
         if obs.session != self._sid:
             return
         if obs.channel == "transcript":
-            # surfaced at its end time == "max_t visible" in the original
+            # surfaced at its end time, when the original treats it as visible
             self._utter_items.append(dict(obs.payload))
             return
         if obs.channel != "video":
@@ -303,7 +302,7 @@ class BabyCLOnlineSegmenter(EventBuilder):
 
     # ------------------------------------------------------------------
     def _build_visible_chunks(self) -> list[dict]:
-        """Verbatim _build_visible_chunks: every visible utterance -> one raw
+        """Verbatim port: every visible utterance -> one raw
         chunk [min ts, max ts], clipped to the window, mapped to sub domain."""
         if not self._utter_items or not self._times:
             return []
@@ -342,7 +341,7 @@ class BabyCLOnlineSegmenter(EventBuilder):
         return chunks_sub
 
     def _assign_global_id(self, rep_feat: torch.Tensor) -> int:
-        """Verbatim _assign_global_id: adjacent-merge by cosine."""
+        """Verbatim port: adjacent-merge by cosine."""
         f = F.normalize(rep_feat.view(1, -1), dim=1).squeeze(0)
         if self._last_rep is None:
             gid = max(0, self._last_gid + 1) if self._last_gid < 0 else self._last_gid

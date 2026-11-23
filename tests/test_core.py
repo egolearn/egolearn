@@ -127,6 +127,13 @@ def test_clip_unit_loads_contiguous_consistent_clips():
     assert torch.equal(sv[0, 2], sv[0, 7])  # clamped repeats
 
 
+def test_recipe_rejects_batch_local_targets(toy_config, tmp_path):
+    cfg = toy_config(tmp_path)
+    cfg["recipe"]["slots"][0]["batch_label"] = True
+    with pytest.raises(TypeError, match="batch_label"):
+        egolearn.build(cfg)
+
+
 def test_validation_rejects_text_loss_without_text_encoder(toy_config, tmp_path):
     cfg = toy_config(tmp_path)
     cfg["recipe"]["slots"][0]["strict"] = False

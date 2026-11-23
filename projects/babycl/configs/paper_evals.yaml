@@ -1,11 +1,10 @@
-# The BabyCL paper's end-of-training evaluations, each with the original's
-# protocol (mcl scripts/end_of_training/eval_ckpt_all.SBATCH plus the in-training
-# Labeled-S 4AFC).  Run on a trained checkpoint:
+# The BabyCL paper's end-of-training evaluations and its in-training Labeled-S
+# 4AFC, each with the original protocol.  Run on a trained checkpoint:
 #
 #   egl eval projects/babycl/configs/paper_evals.yaml checkpoint=$RUN_DIR/final.pth
 #
 # Data locations come from the environment, never this file:
-#   LABELED_S_MANIFEST       Labeled-S 4AFC trials (prepare_labeled_s_4afc)
+#   LABELED_S_MANIFEST       Labeled-S 4AFC trials (labeled_s_4afc.prepare)
 #   BABYCL_VOCAB             the training vocab.json
 #   LABELED_S_ROOT           Labeled-S ImageFolder root (26 category dirs)
 #   MINI_IMAGENET_ROOT       mini-ImageNet root with train/ and val/
@@ -47,10 +46,10 @@ benchmarks:
      pos_dir: "${oc.env:SAYCAM_TRANSCRIPT_FRAMES}",
      neg_dir: "${oc.env:BABY_WINOGROUND_NEG_DIR}",
      vocab_json: "${oc.env:BABYCL_VOCAB}", vision_head: embed512, image_norm: imagenet}
-  # --transform crop --norm imagenet
+  # center crop with ImageNet normalization, as the original evaluation does
   - {_target_: "probe:four_afc", name: babyview_4afc,
      manifest: "${oc.env:BABYVIEW_4AFC_MANIFEST}", vocab_json: "${oc.env:BABYCL_VOCAB}",
      vision_head: embed512, view: center_crop, size: 224}
-  # --feature_tap 2048: pooled backbone, standardized, L-BFGS l2=1e-3
+  # 2048-d pooled backbone features, standardized, L-BFGS l2=1e-3
   - {_target_: "probe:linear", name: babyview_linear,
      manifest: "${oc.env:BABYVIEW_LINEAR_MANIFEST}", view: center_crop, size: 224}

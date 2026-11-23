@@ -27,8 +27,8 @@ repeating the command with `resume=auto`. Submit long runs with the
 
 ## Differences from SAYCam
 
-The videos have no transcripts, so the recipe trains the instance and temporal
-objectives without image–text pairs. Each batch holds four segments of 32
+The videos have no transcripts, so the recipe trains the instance and segment
+supervised contrastive objectives without image–text pairs. Each batch holds four segments of 32
 frames, and the run consumes the whole stream. The segment memory is a
 28-segment FIFO that overflows into a 140-segment reservoir, about 10% and 50%
 of a 14-hour stream in three-minute segments.

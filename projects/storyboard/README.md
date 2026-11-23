@@ -33,7 +33,7 @@ classes with close prototypes.
 | Short memory | 5,000-frame FIFO, admitting every eighth frame |
 | Long memory | 45,000-frame weighted reservoir, admitting every frame |
 | Batch | 64 short-memory and 448 long-memory frames |
-| Objectives | Instance discrimination on the batch, and a temporal objective grouping long-memory frames by segment |
+| Objectives | SimCLR instance discrimination on the batch, and supervised contrastive learning over long-memory frames that treats frames with the same segment label as positives |
 | Updates | One per 64 stream frames, reusing the batch for extra updates |
 | Optimizer | SGD, constant learning rate 0.05 |
 | Input | 112-pixel crops |

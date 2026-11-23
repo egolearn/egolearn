@@ -73,7 +73,7 @@ recording above into two segments:
   "videos": [{
     "video_dir": "S_example",
     "frames": ["S_example_0.00.jpg", "S_example_0.20.jpg", "S_example_0.40.jpg"],
-    "segments": [{"start": 0, "end": 2}, {"start": 2, "end": 3}]
+    "segments": [{"start": 0, "end": 2, "global_id": 7}, {"start": 2, "end": 3, "global_id": 8}]
   }]
 }
 ```
@@ -82,4 +82,11 @@ recording above into two segments:
 recording. `frames` lists the recording's files in numeric timestamp order.
 Segment bounds are zero-based frame indices with an exclusive `end`, and a
 recording's segments must cover all its frames without gaps or overlap.
+
+`global_id` is an optional nonnegative integer label. Segments with the same ID
+are positives for SupCon. Give it for every segment or for none; without it,
+each segment is its own class. `stream.root_dir` sets the frame location and
+overrides any `root_dir` stored in the file. Resuming a run requires the same
+storyboard file as the saved run.
+
 A pairs-only run, with no segment slot, needs no storyboard.

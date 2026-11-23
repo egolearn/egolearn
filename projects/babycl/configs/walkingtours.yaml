@@ -40,18 +40,18 @@ recipe:
     - {name: segments,
        source: {kind: mix, memory: segments, fractions: {short: 0.25, long: 0.75}},
        n: 4, unit: segment, frames_per_item: 32,
-       views: [ms_v1, ms_v2], batch_label: true, strict: true}
+       views: [ms_v1, ms_v2], labels_from: events, strict: true}
 model:
   encoders:
     vision: {_target_: "encoder:resnext50", pretrained: false}
   heads:
     proj128: {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 128]}
-    cls: {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 2000]}
+    segment128: {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 128]}
 losses:
   - {_target_: "loss:ntxent", name: instance,
      slots: [segments], head: proj128, temperature: 0.2, weight: 0.5}
-  - {_target_: "loss:tcl", name: temporal,
-     slots: [segments], head: cls, num_classes: 2000, filter_unseen: true, weight: 0.5}
+  - {_target_: "loss:supcon", name: temporal,
+     slots: [segments], head: segment128, temperature: 0.2, weight: 0.5}
 solver:
   opt: adamw
   groups:

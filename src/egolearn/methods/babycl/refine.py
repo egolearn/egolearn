@@ -1,4 +1,4 @@
-"""VERBATIM port of BabyCL's segmentation math (mcl utils/online_ms_refine.py).
+"""VERBATIM port of BabyCL's segmentation math.
 
 These six functions are copied 1:1 from the original; the only change is that
 device-placement arguments were dropped (all tensors live on CPU here).  Do not

@@ -1,9 +1,8 @@
-"""Port of BabyCL's AN-chunk admission path (mcl ms_dataloader OnlineFeeder:
-_prepare_chunks_for_video / _emit_completed_chunks).
+"""Port of BabyCL's AN-chunk admission path.
 
 An AN chunk pairs one utterance with the run of frames it spans.  The behavior below
 is code-verified against the original -- note these are NOT the segmenter's
-similarity-expanded chunks (the feeder discards those):
+similarity-expanded chunks (the original discards those):
 
   * each utterance's raw timestamps are mapped to 5fps steps; steps with no matching
     frame are dropped; STRICTLY CONTIGUOUS step runs (diff == 1) become separate
@@ -32,7 +31,7 @@ class ANChunkEmitter(EventBuilder):
 
     def __init__(self, fps: float = 5.0):
         self.fps = float(fps)
-        # feeder-lifetime dedup (all sessions): (utt_num, start, end, sid)
+        # run-lifetime dedup (all sessions): (utt_num, start, end, sid)
         self._seen_keys: set[tuple[int, int, int, str]] = set()
         self._out: list[dict] = []
         self._reset("")
@@ -43,8 +42,8 @@ class ANChunkEmitter(EventBuilder):
         self._refs: list[ItemRef] = []
         self._step2first: dict[int, int] = {}
         self._pending: list[dict] = []  # chunks waiting for all their frames to stream past
-        # utterances waiting for the frame of their LAST timestamp: mcl
-        # builds step2first over the whole video before splitting, so an
+        # utterances waiting for the frame of their LAST timestamp: the original
+        # maps steps to frames over the whole video before splitting, so an
         # utterance whose final timestamp rounds to a frame step the stream
         # has not reached yet must wait, not lose that step
         self._raw_pending: list[dict] = []
@@ -79,7 +78,7 @@ class ANChunkEmitter(EventBuilder):
 
     # ------------------------------------------------------------------
     def _prepare_chunks(self, payload: dict) -> None:
-        """Verbatim run-splitting from _prepare_chunks_for_video."""
+        """The original's run-splitting, verbatim."""
         raw_ts = payload.get(K.TEXT_TIMESTAMPS) or []
         steps = sorted({round(float(t) * self.fps) for t in raw_ts})
         steps = [st for st in steps if st in self._step2first]
@@ -113,7 +112,7 @@ class ANChunkEmitter(EventBuilder):
         """Run the verbatim run-splitting for utterances whose last
         timestamped frame has streamed past (or unconditionally at session
         end).  Splitting earlier would silently drop the not-yet-seen steps,
-        which mcl -- with its whole-video step2first -- never does."""
+        which the original -- with its whole-video step map -- never does."""
         if not self._raw_pending:
             return
         last = round(self._times[-1] * self.fps) if self._times else -1
