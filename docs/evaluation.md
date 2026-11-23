@@ -157,6 +157,7 @@ running evaluation.
 | Labeled-S linear decoding, BabyCL paper protocol | `probe:labeled_s_stratified_linear` | [All images, per-category 80/20 split](evaluation/data.md#labeled-s-linear-data) | `top1`; 1/26 uniform-guess accuracy |
 | mini-ImageNet linear decoding | `probe:mini_imagenet_linear` | 100-class `train/` and `val/` class folders | `top1`; 1/100 uniform-guess accuracy |
 | BabyView 4AFC | `probe:four_afc` | [Frozen trials on vocabulary-matched categories](#babyview-protocols) | `four_afc_acc`; 0.25 chance |
+| Konkle 4AFC | `probe:four_afc` | [Trials over 60 object categories, drawn per vocabulary](#konkle-4afc) | `four_afc_acc`; 0.25 chance |
 | BabyView linear decoding | `probe:linear` | [Frozen split over all 72 categories](#babyview-protocols) | `top1`; 1/72 uniform-guess accuracy |
 | VTWT | `probe:vtwt` | [CSV labels, frames, and training vocabulary](evaluation/data.md#babyvlm-benchmark-data) | `vtwt_acc`; 0.5 chance |
 | Baby Winoground | `probe:baby_winoground` | [CSV labels, positive/negative images, and training vocabulary](evaluation/data.md#babyvlm-benchmark-data) | `bw_group_acc`; 0.25 for independent random choices |
@@ -234,6 +235,7 @@ complete [BabyVLM](evaluation/data.md#babyvlm-evaluation-config) and
 | Labeled-S linear | `probe:labeled_s_linear`, `probe:labeled_s_stratified_linear` | `egolearn.evaluation.benchmarks.labeled_s_linear` |
 | mini-ImageNet linear | `probe:mini_imagenet_linear` | `egolearn.evaluation.benchmarks.mini_imagenet_linear` |
 | BabyView 4AFC and linear | `probe:four_afc`, `probe:linear` | `egolearn.evaluation.benchmarks.babyview_4afc` |
+| Konkle 4AFC | `probe:four_afc` | `egolearn.evaluation.benchmarks.konkle_4afc` |
 | Generic fixed-feature linear | `probe:linear` | `egolearn.evaluation.linear_probe` |
 | Generic SGD linear | `probe:linear_sgd` | `egolearn.evaluation.linear_sgd_probe` |
 | VTWT | `probe:vtwt` | `egolearn.evaluation.benchmarks.vtwt` |
@@ -365,6 +367,63 @@ to score a public model. For a manifest outside the default collection, pass
 `"benchmarks.0.manifest=$SHAPE_BIAS_MANIFEST"` in its evaluation command.
 If you already have access to the [hosted collection](evaluation/hub.md#packaged-collections),
 you can fetch a verified copy instead of preparing it locally.
+
+## Konkle 4AFC
+
+Konkle 4AFC tests word–object matching on studio photographs that appear in no
+training corpus. It uses 60 object categories from the
+[Konkle et al. (2010)](https://konklab.fas.harvard.edu/) object set, with 17
+photographs each, and follows the protocol of
+[Scaling cross-situational word learning on children's naturalistic experiences](https://arxiv.org/abs/2610.31842).
+Each trial shows a category word with one photograph of that category and three
+photographs of other categories. The model is correct when the target photograph
+is the most similar to the word.
+
+Download the object set from the Konkle lab, extract it, and draw the trials for
+the model's training vocabulary:
+
+```bash
+uv run egl data prepare konkle-4afc \
+  --data_root /path/to/17-objects --vocab_json /path/to/training_vocab.json \
+  --output data/konkle_4afc/trials.json
+```
+
+A category whose label is missing from the vocabulary gets no trials and is
+scored at chance (0.25). The preparer prints these categories. Two models see the
+same trials only when their vocabularies cover the same categories.
+
+Add the probe to an evaluation config and run it with `egl eval`:
+
+```yaml
+defaults:
+  - /evaluate
+  - _self_
+
+_imports_:
+  - egolearn.evaluation.benchmarks.konkle_4afc
+benchmarks:
+  - _target_: "probe:four_afc"
+    name: konkle_4afc
+    manifest: data/konkle_4afc/trials.json
+    vocab_json: /path/to/training_vocab.json
+    vision_head: embed512
+    view: resize
+    size: 224
+```
+
+```bash
+uv run egl eval path/to/konkle.yaml checkpoint=runs/example/final.pth
+```
+
+| Metric | Meaning |
+| --- | --- |
+| `four_afc_acc` | Accuracy over all 60 categories, with out-of-vocabulary categories at 0.25 |
+| `four_afc_acc_scored` | Accuracy over in-vocabulary categories only, reported when some are out of vocabulary |
+
+Scores are not directly comparable with the paper's. The paper's models score a
+word against 17 region vectors per image and keep the best match, while
+`probe:four_afc` scores one pooled image representation. Its copy of the images
+also names files differently, so the same seed selects different photographs.
 
 ## Checkpoint compatibility
 
