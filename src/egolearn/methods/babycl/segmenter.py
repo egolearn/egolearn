@@ -1,5 +1,4 @@
-"""Port of BabyCL's OnlineSegmenter (mcl utils/online_ms_refine.py) as a
-VisualSegment emitter.
+"""Port of BabyCL's OnlineSegmenter as a VisualSegment emitter.
 
 The algorithm is 1:1 with the original.  It keeps a sliding window over frame
 embeddings (subsampled by embed_stride).  Each utterance whose end has already
@@ -22,8 +21,8 @@ Framework adaptations (everything else is verbatim):
     original's per-frame embedding with the same frozen encoder;
   * labels (global ids) are written once per emitted segment through the
     LabelStore instead of living inside the event;
-  * the original also computes similarity-expanded utterance chunks, but the
-    mcl FEEDER discards them (`big, _ = seg.pop_ready_outputs()`) and emits AN
+  * the original also computes similarity-expanded utterance chunks, but its
+    FEEDER discards them (`big, _ = seg.pop_ready_outputs()`) and emits AN
     chunks from raw timestamp runs instead -- so this component emits only
     VisualSegments, and admission:an_chunk_emitter reproduces the feeder path.
 """

@@ -14,8 +14,7 @@ Loading is two-phase: refs for EVERY slot are drawn first (no pixels), then
 the decode+augment work of the whole batch goes to the Loader in one call --
 frames and clips together -- so a worker pool sees one well-packed submission
 instead of one barrier per slot, and a strict slot coming up short is
-discovered before a single pixel is decoded (mcl's feeder gates the same
-way: it checks use_annot before gathering).
+discovered before a single pixel is decoded.
 
 Segment labels are resolved from the slot's LabelStore at batch time, so
 Memory Storyboard's retroactive relabeling of old segments is visible to the loss.

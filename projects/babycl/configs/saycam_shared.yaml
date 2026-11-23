@@ -1,7 +1,6 @@
 # BabyCL (BabyCLIP) on SAYCam with global segment supervised contrastive learning.
 #
-# Code-verified against the mcl repo's ms_train.py / ms_dataloader.py /
-# online_ms_refine.py, array 0 of ms_train_clip_importance_ablation.SBATCH:
+# Code-verified against the original training code:
 #   batch 128 = 3 segments x 32 frames (visual) + 32 utterance pairs x 1 frame;
 #   two-tier buffers 10%/50% with FIFO->reservoir spill; the stream advances by one
 #   finalized segment, then 8 gradient steps run, each on a freshly resampled batch;
@@ -23,7 +22,7 @@
 # open-ended stream is a deliberately deferred question).  Values below derive from
 # SAYCam-S at 5 fps: ~4060 3-minute segments -> short 406 (10%) / long 2030 (50%);
 # 33737 usable utterances -> short round(3373.7)=3374 / long round(16868.5)=16868
-# (mcl rounds half to even).
+# (rounding half to even).
 
 defaults:
   - /config          # packaged root: seed, wandb, dry_run, resume
@@ -47,8 +46,8 @@ stream:
   include: "S_*"      # subset when root holds several children (SAYCam A/S/Y)
   transcript_json: /path/to/expand_correct_seg.json    # <- utterances
   fps: 5.0
-  # an utterance ending on a frame's timestamp is visible at that frame (mcl's
-  # feeder: max(ts) <= t), for the segmenter's anchors and the AN chunk emitter
+  # an utterance ending on a frame's timestamp is visible at that frame
+  # (max(ts) <= t), for the segmenter's anchors and the AN chunk emitter
   transcript_first: true
   # Packed alternative, same refs (build with `python -m egolearn.data.packed pack`;
   # see docs/data_loading.md):

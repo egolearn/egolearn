@@ -1,6 +1,6 @@
 # Streaming BabyCL defaults; shared components also serve the offline variant.
 #
-# The original (mcl ms_train.py --online) fixed its run length before training:
+# The original fixed its run length before training:
 # steps_needed = 3321 offline-storyboard segments x 8 repeats = 26568 steps, the
 # LR schedule indexed by that count (warmup max(100, 2%) steps, cosine to 0).
 # At that budget it had pushed 3751 segments (incl. the 406 of buffer warmup)

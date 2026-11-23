@@ -6,11 +6,10 @@ Reads the release's manifest.csv (category, stem, jpeg_path) and writes:
   babyview_linear.json        frozen stratified split for probe:linear
   babyview_report.json        provenance: counts, OOV list, seeds
 
-The trial construction is a faithful port of the source generator
-(mcl eval/babyview_4afc/generate_trials.py): identical RNG call order and
-seed, identical category ordering (sorted, vocabulary-filtered), so the
-emitted trials match the source repo's frozen 4150-trial json image for
-image.  The linear-probe split uses ALL categories (no vocabulary filter)
+The trial construction is a faithful port of the source generator:
+identical RNG call order and seed, identical category ordering (sorted,
+vocabulary-filtered), so the emitted trials match the source repo's frozen
+4150-trial json image for image.  The linear-probe split uses ALL categories (no vocabulary filter)
 and its own seed.
 
 Usage (data already on disk, or --download to fetch the zip first):

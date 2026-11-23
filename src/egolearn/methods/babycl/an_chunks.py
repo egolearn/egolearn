@@ -1,4 +1,4 @@
-"""Port of BabyCL's AN-chunk admission path (mcl ms_dataloader OnlineFeeder:
+"""Port of BabyCL's AN-chunk admission path (the original feeder's
 _prepare_chunks_for_video / _emit_completed_chunks).
 
 An AN chunk pairs one utterance with the run of frames it spans.  The behavior below
@@ -43,7 +43,7 @@ class ANChunkEmitter(EventBuilder):
         self._refs: list[ItemRef] = []
         self._step2first: dict[int, int] = {}
         self._pending: list[dict] = []  # chunks waiting for all their frames to stream past
-        # utterances waiting for the frame of their LAST timestamp: mcl
+        # utterances waiting for the frame of their LAST timestamp: the original
         # builds step2first over the whole video before splitting, so an
         # utterance whose final timestamp rounds to a frame step the stream
         # has not reached yet must wait, not lose that step
@@ -113,7 +113,7 @@ class ANChunkEmitter(EventBuilder):
         """Run the verbatim run-splitting for utterances whose last
         timestamped frame has streamed past (or unconditionally at session
         end).  Splitting earlier would silently drop the not-yet-seen steps,
-        which mcl -- with its whole-video step2first -- never does."""
+        which the original -- with its whole-video step2first -- never does."""
         if not self._raw_pending:
             return
         last = round(self._times[-1] * self.fps) if self._times else -1

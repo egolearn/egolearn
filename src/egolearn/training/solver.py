@@ -119,7 +119,7 @@ class ProgressCosine:
     curve matches the original's step-indexed schedule: warmup over 2% of the run,
     cosine over the remainder.
 
-    `warmup_min_steps` is a LOWER bound on warmup length (mcl:
+    `warmup_min_steps` is a LOWER bound on warmup length (the original BabyCL:
     `max(100, int(0.02 * steps_needed))`) -- on very short runs warmup stretches to
     at least this many gradient steps.
 
@@ -128,9 +128,9 @@ class ProgressCosine:
     sane open-ended default; smarter open-ended schedules are a deferred question.
 
     `total_steps` switches to a STEP-indexed schedule, for reproducing an original
-    that fixes its step budget up front (mcl's BabyCL: `steps_needed` from the offline
+    that fixes its step budget up front (the original BabyCL: `steps_needed` from the offline
     storyboard, with `driver.max_steps` set to the same value).  Gradient step `s`
-    (0-based, `clock.step`) gets exactly mcl's LambdaLR factor: with
+    (0-based, `clock.step`) gets exactly the original's LambdaLR factor: with
     `warm = max(warmup_min_steps, int(warmup_frac * total_steps))`, `(s + 1) / warm`
     while `s < warm`, then cosine from 1 to `floor` over the remaining
     `total_steps - warm` steps.  Stream progress and `anchor` are ignored.
