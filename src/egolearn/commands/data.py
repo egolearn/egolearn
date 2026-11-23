@@ -35,7 +35,7 @@ DATASETS = (
         "shape-bias",
         _BENCHMARKS + "shape_bias.prepare",
         (("--asset-dir", ".sources/shape-bias"), ("--output-dir", "shape-bias")),
-        repo="agentic-learning-ai-lab/egolearn-shape-bias",
+        repo="egolearn/shape-bias",
     ),
     Dataset(
         "spatial-relation-categorization",
@@ -43,7 +43,7 @@ DATASETS = (
         "Hosted spatial relation monitoring subsets (monitoring/)",
         "https://doi.org/10.1016/j.cognition.2023.105690",
         "spatial-relation-categorization",
-        repo="agentic-learning-ai-lab/egolearn-spatial-relation-categorization",
+        repo="egolearn/spatial-relation-categorization",
     ),
     Dataset(
         "spatial-relations",

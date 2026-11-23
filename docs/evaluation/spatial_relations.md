@@ -26,9 +26,9 @@ frequent checks during training.
 
 The packaged config `spatial_relations_eval` reads the monitoring subsets
 directly from the Hugging Face dataset
-`agentic-learning-ai-lab/egolearn-spatial-relation-categorization` (CC BY 4.0,
-cite the paper). The dataset needs repository access and `HF_TOKEN`, as
-described in [Models and Hub data](hub.md). To keep a verified local copy, run:
+[`egolearn/spatial-relation-categorization`](https://huggingface.co/datasets/egolearn/spatial-relation-categorization)
+(CC BY 4.0, cite the paper). The dataset is public. To keep a verified local
+copy, run:
 
 ```bash
 uv run egl data fetch spatial-relation-categorization --revision v1
@@ -95,8 +95,8 @@ _imports_:
 probes:
   - _target_: "probe:spatial_relations"
     name: spatial_relations_monitoring
-    abstract_2d_manifest: "hf://datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization@v1/monitoring/2d-stimuli/manifest.json"
-    rendered_3d_manifest: "hf://datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization@v1/monitoring/3d-stimuli/manifest.json"
+    abstract_2d_manifest: "hf://datasets/egolearn/spatial-relation-categorization@v1/monitoring/2d-stimuli/manifest.json"
+    rendered_3d_manifest: "hf://datasets/egolearn/spatial-relation-categorization@v1/monitoring/3d-stimuli/manifest.json"
 ```
 
 ## Metrics

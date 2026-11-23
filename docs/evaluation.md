@@ -13,7 +13,7 @@ you render locally:
 ```bash
 uv run egl data prepare shape-bias
 uv run egl eval shape_bias_eval \
-  checkpoint=hf://models/egolearn/babycl-resnext50-krishnacam-seed0@311ec535c5a6bcefded0e01f449ad56eaa1b9dc1/model.safetensors \
+  checkpoint=hf://models/egolearn/babycl-resnext50-krishnacam@21c05a86e3042f767a36c03311d594c368275d67/model.safetensors \
   "benchmarks.0.manifest=${EGOLEARN_DATA:-data}/shape-bias/stimulus_manifest.json" \
   device=cpu output_json=shape_bias_results.json
 ```
@@ -58,9 +58,9 @@ benchmarks compare images with words, so they need a model with a text encoder
 and its training vocabulary. EgoSchema and Ego4D NLQ score a generative model
 behind an OpenAI-compatible server, such as vLLM, instead of a checkpoint.
 
-The shape-bias and spatial-relations configs read lab-hosted datasets that need
-[Hub access](evaluation/hub.md#packaged-collections). Without it, prepare the
-data locally and override the manifest path as in the example. To run many
+The shape-bias and spatial-relations configs read
+[public Hub datasets](evaluation/hub.md#packaged-collections). To work offline,
+prepare the data locally and override the manifest path as in the example. To run many
 checkpoints and seeds, use [benchmark suites](benchmark_suites.md).
 
 ## Custom configs

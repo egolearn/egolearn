@@ -157,14 +157,14 @@ then set `HF_TOKEN` to a read token for the approved account.
 
 | Dataset | IID | Streaming |
 | --- | --- | --- |
-| SAYCam-S | [Checkpoint](https://huggingface.co/egolearn/vjepa2-vits16-saycam-iid-seed0/tree/de8ed7eecf2fc31c69fee7ef155bae522dc63374) | [Checkpoint](https://huggingface.co/egolearn/vjepa2-vits16-saycam-streaming-seed0/tree/8b47fcb1149c97f412bb73257d1bc2b9f03ca0bb) |
-| BabyView | [Checkpoint](https://huggingface.co/egolearn/vjepa2-vits16-babyview-iid-seed0/tree/d1429d2a790c35be69b5921afd1a44c0a0364ef8) | [Checkpoint](https://huggingface.co/egolearn/vjepa2-vits16-babyview-streaming-seed0/tree/f2ccedd42e06db40ec04b2b722300621f1aa91f5) |
+| SAYCam-S | [Checkpoint](https://huggingface.co/egolearn/vjepa2-vits16-saycam-iid/tree/bbe9cb7e92a2f6cb78b6784715de5bc2d1e88b9e) | [Checkpoint](https://huggingface.co/egolearn/vjepa2-vits16-saycam-streaming/tree/17be42122124145b26f0b63d25d9e57338257d4b) |
+| BabyView | [Checkpoint](https://huggingface.co/egolearn/vjepa2-vits16-babyview-iid/tree/ccb260d1d88d69ab146fc2699b221c26c7096787) | [Checkpoint](https://huggingface.co/egolearn/vjepa2-vits16-babyview-streaming/tree/3eeb5e429aa55bc58a24f6b664c05812e46ab2af) |
 
 Pass a release to the evaluation commands as a revisioned `checkpoint` reference,
 for example:
 
 ```text
-hf://models/egolearn/vjepa2-vits16-saycam-iid-seed0@de8ed7eecf2fc31c69fee7ef155bae522dc63374/model.safetensors
+hf://models/egolearn/vjepa2-vits16-saycam-iid@bbe9cb7e92a2f6cb78b6784715de5bc2d1e88b9e/model.safetensors
 ```
 
 Each model card describes its training run. To export your own completed run in

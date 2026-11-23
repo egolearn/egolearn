@@ -11,22 +11,23 @@ model card describes the training data and limitations.
 
 | Model and training data | Weights | Training guide |
 | --- | --- | --- |
-| BabyCL full-stream on SAYCam, seeds [1337](https://huggingface.co/egolearn/babycl-resnext50-saycam-fullstream-seed1337), [1338](https://huggingface.co/egolearn/babycl-resnext50-saycam-fullstream-seed1338), [1339](https://huggingface.co/egolearn/babycl-resnext50-saycam-fullstream-seed1339) | Approval | [BabyCL](../../projects/babycl/README.md) |
-| Visual BabyCL on BabyView, seed [1337](https://huggingface.co/egolearn/babycl-resnext50-babyview-visual-seed1337) | Approval | None packaged |
-| Visual BabyCL on KrishnaCam, seeds [0](https://huggingface.co/egolearn/babycl-resnext50-krishnacam-seed0), [1](https://huggingface.co/egolearn/babycl-resnext50-krishnacam-seed1), [2](https://huggingface.co/egolearn/babycl-resnext50-krishnacam-seed2) | Public | [BabyCL on KrishnaCam](../../projects/babycl/docs/krishnacam.md) |
-| Visual BabyCL on WalkingTours, seed [1337](https://huggingface.co/egolearn/babycl-resnext50-walkingtours-seed1337) | Public | [BabyCL on WalkingTours](../../projects/babycl/docs/walkingtours.md) |
-| V-JEPA 2 on SAYCam, seed 0, [IID](https://huggingface.co/egolearn/vjepa2-vits16-saycam-iid-seed0) and [streaming](https://huggingface.co/egolearn/vjepa2-vits16-saycam-streaming-seed0) | Approval | [V-JEPA 2](../../projects/vjepa2/README.md) |
-| V-JEPA 2 on BabyView, seed 0, [IID](https://huggingface.co/egolearn/vjepa2-vits16-babyview-iid-seed0) and [streaming](https://huggingface.co/egolearn/vjepa2-vits16-babyview-streaming-seed0) | Approval | [V-JEPA 2](../../projects/vjepa2/README.md) |
+| [BabyCL on SAYCam-S](https://huggingface.co/egolearn/babycl-resnext50-saycam) | Approval | [BabyCL](../../projects/babycl/README.md) |
+| [BabyCL on BabyView](https://huggingface.co/egolearn/babycl-resnext50-babyview) | Approval | None packaged |
+| [BabyCL on KrishnaCam](https://huggingface.co/egolearn/babycl-resnext50-krishnacam) | Public | [BabyCL on KrishnaCam](../../projects/babycl/docs/krishnacam.md) |
+| [BabyCL on WalkingTours](https://huggingface.co/egolearn/babycl-resnext50-walkingtours) | Public | [BabyCL on WalkingTours](../../projects/babycl/docs/walkingtours.md) |
+| V-JEPA 2 on SAYCam-S, [IID](https://huggingface.co/egolearn/vjepa2-vits16-saycam-iid) and [streaming](https://huggingface.co/egolearn/vjepa2-vits16-saycam-streaming) | Approval | [V-JEPA 2](../../projects/vjepa2/README.md) |
+| V-JEPA 2 on BabyView, [IID](https://huggingface.co/egolearn/vjepa2-vits16-babyview-iid) and [streaming](https://huggingface.co/egolearn/vjepa2-vits16-babyview-streaming) | Approval | [V-JEPA 2](../../projects/vjepa2/README.md) |
 
 Pass a model to `egl eval` as
 `checkpoint=hf://models/egolearn/<repo>@<commit>/model.safetensors`, with a
 commit from the model's history, as the [evaluation example](../evaluation.md#example)
 does. The families support different [benchmarks](../evaluation.md#benchmark-selection):
 
-- **BabyCL on SAYCam** runs image and image–text benchmarks. These full-stream
-  runs are longer than the `saycam_default` runs in the BabyCL results table.
-- **Visual BabyCL** has no text encoder, so it cannot run 4AFC, VTWT or Baby
-  Winoground.
+- **BabyCL on SAYCam-S and BabyView** runs image and image–text benchmarks. The
+  SAYCam-S model is the seed 3003 run in the
+  [BabyCL results table](../../projects/babycl/README.md#saycam-results).
+- **BabyCL on KrishnaCam and WalkingTours** has no text encoder, so it cannot
+  run 4AFC, VTWT or Baby Winoground.
 - **V-JEPA 2** needs the static-image adapter config from the
   [V-JEPA 2 guide](../../projects/vjepa2/README.md) for image benchmarks.
 
@@ -46,23 +47,21 @@ access first, then request the weights:
 
 After approval, set `HF_TOKEN` in your environment to a read
 [access token](https://huggingface.co/docs/hub/security-tokens) from the same
-Hugging Face account, and keep it out of configs, command lines and Git. Model
-approval does not cover the hosted benchmark data.
+Hugging Face account, and keep it out of configs, command lines and Git.
 
 ## Packaged collections
 
 `shape_bias_eval` and `spatial_relations_eval` read their inputs from two
-lab-hosted dataset repositories at revision `v1`, which need access approval
-and `HF_TOKEN`.
+public dataset repositories at revision `v1`.
 
 | Repository | Contents | Config |
 | --- | --- | --- |
-| [egolearn-shape-bias](https://huggingface.co/datasets/agentic-learning-ai-lab/egolearn-shape-bias/tree/v1) | Shape-bias stimuli from Tartaglini, Vong and Lake (2022) | `shape_bias_eval` |
-| [egolearn-spatial-relation-categorization](https://huggingface.co/datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization/tree/v1) | Spatial monitoring subsets from Davidson, Orhan and Lake (2024) | `spatial_relations_eval` |
+| [egolearn/shape-bias](https://huggingface.co/datasets/egolearn/shape-bias/tree/v1) | Shape-bias stimuli from Tartaglini, Vong and Lake (2022) | `shape_bias_eval` |
+| [egolearn/spatial-relation-categorization](https://huggingface.co/datasets/egolearn/spatial-relation-categorization/tree/v1) | Spatial monitoring subsets from Davidson, Orhan and Lake (2024) | `spatial_relations_eval` |
 
-Without access, prepare the [shape-bias](data.md#shape-bias) or
-[spatial-relations](spatial_relations.md) inputs yourself. With access,
-`egl data fetch` downloads a collection and checks its published checksums:
+`egl data fetch` downloads a collection and checks its published checksums.
+You can also prepare the [shape-bias](data.md#shape-bias) or
+[spatial-relations](spatial_relations.md) inputs yourself.
 
 ```bash
 uv run egl data fetch shape-bias --revision v1
@@ -81,7 +80,7 @@ Any input path in a config can name a file in a Hub repository at a tag or
 commit:
 
 ```text
-hf://datasets/agentic-learning-ai-lab/egolearn-shape-bias@v1/stimulus_manifest.json
+hf://datasets/egolearn/shape-bias@v1/stimulus_manifest.json
 ```
 
 Without the `datasets/` or `models/` prefix, data inputs read dataset

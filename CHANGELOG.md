@@ -141,7 +141,8 @@ patch releases for fixes during 0.x development.
   and publication to personal Hub repositories.
 - SAYCam and BabyView checkpoint requests collect Databrary proof links directly
   in the Hugging Face form instead of requiring a separate email.
-- Hub fetches and uploads default to `egolearn/<name>`, while cataloged datasets retain their existing repository IDs.
+- Hub fetches and uploads default to `egolearn/<name>`. The shape-bias and spatial-relation collections are public at `egolearn/shape-bias` and `egolearn/spatial-relation-categorization`.
+- The model catalog lists one released checkpoint per method and dataset, named without seed or objective suffixes, such as `egolearn/babycl-resnext50-krishnacam`.
 
 - SAYCam and BabyView checkpoint access instructions require evidence of access
   to the corresponding Databrary dataset.

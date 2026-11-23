@@ -35,15 +35,15 @@ Evaluate a public ResNeXt-50 model on the stimuli you prepared:
 
 ```bash
 uv run egl eval shape_bias_eval \
-  checkpoint=hf://models/egolearn/babycl-resnext50-krishnacam-seed0@311ec535c5a6bcefded0e01f449ad56eaa1b9dc1/model.safetensors \
+  checkpoint=hf://models/egolearn/babycl-resnext50-krishnacam@21c05a86e3042f767a36c03311d594c368275d67/model.safetensors \
   "benchmarks.0.manifest=${EGOLEARN_DATA:-data}/shape-bias/stimulus_manifest.json" \
   device=cpu output_json=shape_bias_results.json
 ```
 
 egolearn downloads the weights and their metadata from that fixed revision.
 The `manifest` override points the benchmark at your local stimuli instead of
-the hosted copy, which needs access. The model's training data and limitations
-are on its [model card](https://huggingface.co/egolearn/babycl-resnext50-krishnacam-seed0).
+the hosted copy. The model's training data and limitations
+are on its [model card](https://huggingface.co/egolearn/babycl-resnext50-krishnacam).
 
 The command writes `shape_bias_results.json` in the current directory and a
 run record under `runs/eval/records/`. Wait until it exits successfully before

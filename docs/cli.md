@@ -95,9 +95,8 @@ uv run egl data fetch shape-bias --revision v1
 ```
 
 `list` shows each dataset's access tier and whether egolearn can prepare it
-locally or fetch it from the Hub. Fetching still needs access to the hosted
-repository, and [dataset access](evaluation/data.md) explains how to obtain
-each dataset. `prepare NAME --help` lists a preparer's options. Data goes
+locally or fetch it from the Hub, and [dataset access](evaluation/data.md)
+explains how to obtain each dataset. `prepare NAME --help` lists a preparer's options. Data goes
 under `$EGOLEARN_DATA`, or `./data` when it is unset, and neither `prepare`
 nor `fetch` writes over an existing collection by default.
 
