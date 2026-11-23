@@ -61,22 +61,27 @@ utterance that ends on a frame is visible at that frame
 
 ## SAYCam results
 
-The table records two completed runs of the earlier `saycam_default`, which used
-temporal classification instead of SupCon, with seeds 1337 and 2002 and their
-final checkpoints. All scores are percentages. The paper column gives the
-authors' reference values for these protocols.
-Check the version of the linked [paper](https://arxiv.org/abs/2606.05115) when
-comparing figures, since its reported Labeled-S 4AFC value can differ.
+The table reports three `saycam_default` runs, with seeds 1337, 2002 and 3003,
+each scored at its final checkpoint with [`paper_evals.yaml`](configs/paper_evals.yaml).
+All scores are percentages, and SD is the sample standard deviation over the
+three seeds.
 
-| Benchmark | Seed 1337 | Seed 2002 | Paper | Differs from the paper |
-| --- | ---: | ---: | ---: | --- |
-| Labeled-S 4AFC | 42.53 | 43.04 | 42.72 ± 1.36 | Paper: end-of-training mean ± approximate 95% CI over five seeds |
-| Labeled-S linear | 45.26 | 44.91 | 44.95 | Paper: end-of-training checkpoint of the best seed |
-| mini-ImageNet linear | 25.52 | 26.12 | 25.60 | Paper: end-of-training checkpoint of the best seed |
-| VTWT | 60.60 | 58.43 | 61.32 | Paper: end-of-training checkpoint of the best seed |
-| Baby Winoground | 15.89 | 12.05 | 14.79 | Paper: end-of-training checkpoint of the best seed |
-| BabyView 4AFC | 30.99 | 30.29 | 32.53 | Paper: end-of-training checkpoint of the best seed |
-| BabyView linear | 49.71 | 52.06 | 49.96 | Paper: end-of-training checkpoint of the best seed |
+The paper column gives the authors' values for their temporal-classification
+recipe. Its Labeled-S 4AFC is an end-of-training mean with an approximate 95%
+interval over five seeds; the other rows come from the end-of-training
+checkpoint of its best seed. Check the version of the linked
+[paper](https://arxiv.org/abs/2606.05115) when comparing figures, since its
+reported Labeled-S 4AFC value can differ.
+
+| Benchmark | Seed 1337 | Seed 2002 | Seed 3003 | Mean ± SD | Paper |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Labeled-S 4AFC | 43.13 | 44.17 | 43.57 | 43.62 ± 0.52 | 42.72 ± 1.36 |
+| Labeled-S linear | 47.09 | 47.56 | 48.04 | 47.56 ± 0.48 | 44.95 |
+| mini-ImageNet linear | 26.74 | 26.80 | 26.90 | 26.81 ± 0.08 | 25.60 |
+| VTWT | 60.08 | 59.15 | 60.50 | 59.91 ± 0.69 | 61.32 |
+| Baby Winoground | 13.70 | 12.05 | 12.05 | 12.60 ± 0.95 | 14.79 |
+| BabyView 4AFC | 32.94 | 30.72 | 33.93 | 32.53 ± 1.64 | 32.53 |
+| BabyView linear | 52.57 | 51.81 | 52.15 | 52.18 ± 0.38 | 49.96 |
 
 Baby Winoground reports the group score, which counts an item only when both
 the original and the edited scene prefer their own caption. Every row uses the
@@ -84,6 +89,10 @@ paper's protocol, so the remaining differences come from training.
 
 ### Differences from the paper
 
+- **Segment objective.** The paper trains a temporal classifier whose targets
+  depend on each segment's position in the batch. These runs use SupCon over
+  the segmenter's global IDs instead. Commit `8f39160` has the earlier
+  temporal-classification recipe.
 - **Randomness.** EgoLearn draws its sampling, augmentation and initialization
   randomness differently, so a seed here is not the paper's seed. The paper's
   code is not run-to-run reproducible either: same-seed reruns of its default
@@ -96,8 +105,7 @@ paper's protocol, so the remaining differences come from training.
 
 ### Reproducing the table
 
-Check out commit `8f39160` for the temporal-classification recipe these runs
-used. Train each seed, then evaluate its final checkpoint. The training command
+Train each seed, then evaluate its final checkpoint. The training command
 skips the in-training probes, which do not change training.
 Set `RUN_DIR` to a new output directory. Set the training paths described above
 and the evaluation-data variables listed in
@@ -111,7 +119,7 @@ uv run egl train projects/babycl/configs/saycam_default.yaml seed=1337 \
 uv run egl eval projects/babycl/configs/paper_evals.yaml "checkpoint=$RUN_DIR/final.pth"
 ```
 
-One run takes about 6 hours on an NVIDIA L40S.
+Repeat with `seed=2002` and `seed=3003`, each in its own `RUN_DIR`.
 
 ## Offline BabyCL variant
 
