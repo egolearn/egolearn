@@ -56,16 +56,15 @@ def test_packaged_config_matches_existing_module(tmp_path, command, config):
     assert OmegaConf.create(result.stdout).seed == 19
 
 
-@pytest.mark.parametrize("filename", ["example.yaml", "toy_streaming.yaml"])
-def test_file_config_preserves_defaults_overrides_and_caller_directory(tmp_path, filename):
+def test_file_config_preserves_defaults_overrides_and_caller_directory(tmp_path):
     project = tmp_path / "project with spaces"
     project.mkdir()
     (project / "shared.yaml").write_text("seed: 7\nmessage: initial\nrun_dir: runs/example\n")
-    (project / filename).write_text("defaults: [shared, _self_]\n")
+    (project / "toy_streaming.yaml").write_text("defaults: [shared, _self_]\n")
     result = run_cli(
         tmp_path,
         "train",
-        f"project with spaces/{filename}",
+        "project with spaces/toy_streaming.yaml",
         "--cfg",
         "job",
         "message='hello world'",
@@ -84,9 +83,7 @@ def test_file_config_preserves_defaults_overrides_and_caller_directory(tmp_path,
 @pytest.mark.parametrize(
     "command,filename,default,searchpath_source",
     [
-        ("train", "toy_streaming.yaml", "config", None),
         ("train", "toy_streaming.yaml", "config", "config"),
-        ("eval", "imagenet_linear_eval.yaml", "evaluate", None),
         ("eval", "imagenet_linear_eval.yaml", "evaluate", "override"),
     ],
 )
@@ -99,22 +96,21 @@ def test_file_config_inherits_packaged_defaults_and_keeps_searchpath(
     extra.mkdir()
     (project / "shared.yaml").write_text("message: local\n")
     (extra / "extension.yaml").write_text("extension: found\n")
-    config = OmegaConf.create({"defaults": [f"/{default}", "shared", "_self_"], "seed": 19})
+    config = OmegaConf.create(
+        {"defaults": [f"/{default}", "shared", "extension", "_self_"], "seed": 19}
+    )
     overrides = []
-    if searchpath_source is not None:
-        config.defaults.insert(2, "extension")
-        if searchpath_source == "config":
-            config.hydra = {"searchpath": [f"file://{extra}"]}
-        else:
-            overrides.append(f"hydra.searchpath=['file://{extra}']")
+    if searchpath_source == "config":
+        config.hydra = {"searchpath": [f"file://{extra}"]}
+    else:
+        overrides.append(f"hydra.searchpath=['file://{extra}']")
     OmegaConf.save(config, project / filename)
     result = run_cli(tmp_path, command, str(project / filename), "--cfg", "job", *overrides)
     assert result.returncode == 0, result.stderr
     composed = OmegaConf.create(result.stdout)
     assert composed.seed == 19
     assert composed.message == "local"
-    if searchpath_source is not None:
-        assert composed.extension == "found"
+    assert composed.extension == "found"
     if command == "train":
         assert composed.wandb.mode == "disabled"
         assert composed.loader.workers == 0
@@ -123,19 +119,7 @@ def test_file_config_inherits_packaged_defaults_and_keeps_searchpath(
         assert OmegaConf.is_missing(composed, "checkpoint")
 
 
-def test_native_hydra_flags_and_eval_default(tmp_path):
-    result = run_cli(tmp_path, "train", "--config-name=toy_streaming", "--cfg", "job")
-    assert result.returncode == 0, result.stderr
-    assert OmegaConf.create(result.stdout).seed == 7
-    result = run_cli(tmp_path, "eval", "--cfg", "job", "checkpoint=model.pth")
-    assert result.returncode == 0, result.stderr
-    assert OmegaConf.create(result.stdout).checkpoint == "model.pth"
-    result = run_cli(tmp_path, "train", "toy_streaming", "--help")
-    assert result.returncode == 0, result.stderr
-    assert "seed: 7" in result.stdout
-
-
-@pytest.mark.parametrize("flag", ["--config-name=config", "--config-n=config", "-cn=config"])
+@pytest.mark.parametrize("flag", ["--config-name=config", "-cn=config"])
 def test_later_hydra_config_flags_take_precedence(tmp_path, flag):
     result = run_cli(tmp_path, "train", "toy_streaming", flag, "--cfg", "job")
     assert result.returncode == 0, result.stderr

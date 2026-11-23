@@ -40,12 +40,11 @@ every name you can pass. A config file of your own can start from the packaged
 defaults with `defaults: [/config, _self_]` and override only what it changes.
 
 Training configs turn Weights & Biases logging off. To log online, export
-`WANDB_API_KEY` and name your own entity and project, since the default entity
-belongs to the lab:
+`WANDB_API_KEY` and name a project. Runs go to your default W&B entity unless you
+set `wandb.entity` or `WANDB_ENTITY`:
 
 ```bash
-uv run egl train toy_streaming wandb.mode=online \
-  wandb.entity=YOUR_ENTITY wandb.project=YOUR_PROJECT
+uv run egl train toy_streaming wandb.mode=online wandb.project=YOUR_PROJECT
 ```
 
 ## Exporting weights

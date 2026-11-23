@@ -6,7 +6,7 @@ seed: 0
 record_json: auto  # unique run_dir/records/<id>/record.json; null disables recording
 record_fail_on_nonfinite: false  # suites opt into immediate failure; ordinary runs skip
 wandb:
-  entity: nyu-mengye-group
+  entity: null     # null logs to WANDB_ENTITY or your account's default entity
   project: null
   mode: disabled
 dry_run: false     # build and validate the whole pipeline, then exit without training

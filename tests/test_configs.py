@@ -11,7 +11,7 @@ def test_toy_streaming_config_composes_and_builds() -> None:
     with initialize_config_module(config_module="egolearn.configs", version_base="1.3"):
         cfg = compose(config_name="toy_streaming")
     assert cfg.seed == 7  # _self_ wins over the root default
-    assert cfg.wandb.entity == "nyu-mengye-group"
+    assert cfg.wandb.entity is None
     assert cfg.wandb.mode == "disabled"
     plain = OmegaConf.to_container(cfg, resolve=True)
     assert isinstance(plain, dict)

@@ -129,6 +129,10 @@ patch releases for fixes during 0.x development.
 
 - The documentation site is about half its former length, with task-first pages and no site-specific cluster details.
 - The MAE and StreamMAE guides are two pages, BabyCL's offline inputs are part of its SAYCam inputs page, and the data-loading performance page is removed.
+- The packaged config leaves `wandb.entity` unset, so online W&B runs log to your default entity.
+- The website benchmark groups live published results by training dataset and modality, omitting columns that are inapplicable to every model in a table. Visual-only tables omit image-text benchmarks, including Konkle 4AFC.
+- The benchmark page places SAYCam-S before BabyView and removes update notices and expandable source details.
+- The benchmark page labels ImageNet references as Others and places shape preference last.
 - Model and CLI guides connect checkpoint access, compatible evaluations, and complete training commands.
 - User guides describe current capabilities, dataset access, released checkpoints,
   and publication to personal Hub repositories.
@@ -178,6 +182,8 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- `probe:four_afc` (protocol version 2) splits credit among images tied for the highest similarity and rejects non-finite similarities and out-of-range answers, instead of counting ties and NaN as correct when the target is the first image.
+- The landing page provides runnable synthetic training commands and identifies available dataset and physics benchmarks.
 - The spatial-relations guide states that both scene domains are required for the packaged evaluation.
 - Training guides describe exact step limits, working PyAV decoding, and opt-in mixed precision.
 

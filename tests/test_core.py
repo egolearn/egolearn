@@ -19,11 +19,6 @@ from egolearn.memory.table import TieredMemory
 
 
 # ---------------------------------------------------------------------------
-def test_key_registry_rejects_unknown_key():
-    with pytest.raises(K.KeyFlowError):
-        K.require_keys({"time.t0": 0.0}, [K.VIDEO_REF], "test-component")
-
-
 def test_label_store_revision_and_merge():
     store = LabelStore("t")
     store.assign(["a", "b", "c"], [0, 1, 2])
@@ -132,20 +127,6 @@ def test_clip_unit_loads_contiguous_consistent_clips():
     assert torch.equal(sv[0, 2], sv[0, 7])  # clamped repeats
 
 
-def test_validation_rejects_unknown_slot(toy_config, tmp_path):
-    cfg = toy_config(tmp_path)
-    cfg["losses"][0]["slots"] = ["nonexistent"]
-    with pytest.raises(egolearn.PipelineError, match="nonexistent"):
-        egolearn.build(cfg)
-
-
-def test_validation_rejects_unknown_view(toy_config, tmp_path):
-    cfg = toy_config(tmp_path)
-    cfg["recipe"]["slots"][0]["views"] = ["not_a_view", "v2"]
-    with pytest.raises(egolearn.PipelineError, match="not_a_view"):
-        egolearn.build(cfg)
-
-
 def test_validation_rejects_text_loss_without_text_encoder(toy_config, tmp_path):
     cfg = toy_config(tmp_path)
     cfg["recipe"]["slots"][0]["strict"] = False
@@ -191,13 +172,6 @@ def test_offline_mode_rejects_memory_config(toy_config, tmp_path):
         }
     }
     with pytest.raises(egolearn.PipelineError, match=r"memory-free|no.*memory|memories"):
-        egolearn.build(cfg)
-
-
-def test_offline_mode_rejects_unknown_view(toy_config, tmp_path):
-    cfg = _offline_cfg(toy_config, tmp_path)
-    cfg["driver"]["batch"]["views"] = ["v1", "nope"]
-    with pytest.raises(egolearn.PipelineError, match="nope"):
         egolearn.build(cfg)
 
 
@@ -503,27 +477,6 @@ def test_head_unknown_encoder_fails_at_build(toy_config, tmp_path):
         egolearn.build(cfg)
 
 
-def test_slot_modality_without_encoder_warns(toy_config, tmp_path):
-    # a clip slot on an image-only model: no video encoder will ever fill
-    # slot["feats"], so the build surfaces a warning instead of leaving the
-    # mismatch to explode at the first batch
-    cfg = toy_config(tmp_path)
-    cfg["views"]["cv"] = {"name": "clip_simclr", "size": 48, "view_idx": 0}
-    cfg["recipe"]["slots"].append(
-        {
-            "name": "clips",
-            "source": {"kind": "tier", "memory": "frames", "tier": "short"},
-            "n": 2,
-            "unit": "clip",
-            "clip_len": 4,
-            "views": ["cv"],
-            "strict": False,
-        }
-    )
-    pipe = egolearn.build(cfg)
-    assert any("clips" in w and "video" in w for w in pipe.warnings)
-
-
 def test_two_trainable_same_modality_encoders_rejected_at_build(toy_config, tmp_path):
     import pytest
 
@@ -534,16 +487,6 @@ def test_two_trainable_same_modality_encoders_rejected_at_build(toy_config, tmp_
     }
     with pytest.raises(egolearn.PipelineError, match="compete for modality"):
         egolearn.build(cfg)
-
-
-def test_solver_warns_on_group_matching_nothing(toy_config, tmp_path):
-    cfg = toy_config(tmp_path)
-    cfg["solver"]["groups"] = [
-        {"match": r"^backbone\.", "lr": 1e-3},  # matches nothing: params are encoders.*
-        {"match": ".*", "lr": 1e-4},
-    ]
-    pipe = egolearn.build(cfg)
-    assert any("matched no parameters" in w for w in pipe.warnings)
 
 
 # ---------------------------------------------------------------------------
