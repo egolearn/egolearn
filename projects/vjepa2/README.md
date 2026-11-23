@@ -103,10 +103,13 @@ lets each data worker reuse decoded frames across updates.
 ## IntPhys 2
 
 Prepare the IntPhys 2 `Main` split with the [IntPhys 2 guide](../../docs/evaluation/intphys2.md)
-and set `INTPHYS2_ROOT` to it. Evaluate the trained model and its random
-initialization with the same configuration:
+and set `INTPHYS2_ROOT` to it. Set `RUN_DIR` to your training run's `run_dir`,
+here the short SAYCam recipe's default. Evaluate the trained model and its
+random initialization with the same configuration:
 
 ```bash
+export INTPHYS2_ROOT=/path/to/intphys2/Main
+export RUN_DIR=runs/vjepa2_saycam
 uv run python -m egolearn.evaluate --config-dir projects/vjepa2/configs \
   --config-name intphys2 checkpoint="$RUN_DIR/random.pth" output_json="$RUN_DIR/random-intphys2.json"
 uv run python -m egolearn.evaluate --config-dir projects/vjepa2/configs \
@@ -137,6 +140,7 @@ environment variables:
 Then evaluate `final.pth`, and `random.pth` with a separate output path:
 
 ```bash
+export RUN_DIR=runs/vjepa2_saycam
 uv run python -m egolearn.evaluate --config-dir projects/vjepa2/configs \
   --config-name image_evals checkpoint="$RUN_DIR/final.pth" \
   output_json="$RUN_DIR/trained-image-evals.json"
@@ -167,6 +171,7 @@ Each model card describes its training run. To export your own completed run in
 the same format, run:
 
 ```bash
+export RUN_DIR=runs/vjepa2_full_saycam_iid
 uv run egl export "$RUN_DIR/final.pth" "$RUN_DIR/export"
 ```
 

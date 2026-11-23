@@ -74,8 +74,10 @@ convert it to a manifest:
 
 ```bash
 uv run egl data prepare labeled-s-4afc \
-  --data_root "$LABELED_S_ROOT" --trials_json "$LABELED_S_TRIALS" \
-  --vocab_json "$VOCAB_JSON" --output data/labeled_s_4afc_manifest.json
+  --data_root /path/to/labeled_s \
+  --trials_json /path/to/eval_object_categories_4150.json \
+  --vocab_json /path/to/training_vocab.json \
+  --output data/labeled_s_4afc_manifest.json
 ```
 
 The converter checks the counts, the vocabulary coverage and every image path.

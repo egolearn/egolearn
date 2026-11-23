@@ -105,8 +105,10 @@ orders differ only in which frames each update sees.
 ## StreamMAE settings
 
 StreamMAE keeps MAE's encoder, decoder and masked-patch loss but changes which
-frames each update trains on and how they are augmented. Each addition has an
-override that turns it off:
+frames each update trains on and how they are augmented. In the `full_*`
+StreamMAE recipes, each addition has an override that turns it off. The
+[matched ablations](#matched-ablations) select these variants with `ablation`
+instead.
 
 | Addition | Default | Override to disable |
 | --- | --- | --- |
@@ -121,9 +123,12 @@ the prepared frame rate changes the motion signal. Set
 its region at random.
 
 To change the stride, set `run_control.stride`, `driver.advance.n` and
-`driver.warmup.admitted` together. The warmup must equal the window size minus
-the stride, and the runner rejects other values. Use a new run directory after
-any of these changes.
+`driver.warmup.admitted` together. The runner requires the warmup to equal
+`run_control.reference_window_size` minus the stride. The reference window
+defaults to the window size, which gives 2,016 for the `full_*` StreamMAE
+recipes at stride 32. The matched recipes fix it at 2,048 for every variant,
+so their warmup stays 2,016 even when the window holds 512 frames. Use a new run
+directory after any of these changes.
 
 ## Matched ablations
 
@@ -191,9 +196,12 @@ update that ends each IID epoch, in both streaming and IID runs.
 ## Export and evaluation
 
 `final.pth` and the snapshots hold the full training state, which loads with
-pickle. Export the encoder weights from a run you created:
+pickle. Export the encoder weights from a run you created, here the default
+`run_dir` of `full_saycam_streammae`:
 
 ```bash
+export RUN_DIR=runs/streammae_saycam
+export EXPORT_DIR=exports/streammae_saycam
 uv run egl export "$RUN_DIR/final.pth" "$EXPORT_DIR" --trusted-snapshot
 ```
 
@@ -207,6 +215,7 @@ To evaluate on ImageNet, set `IMAGENET_ROOT` to an ImageFolder directory with
 or fine-tune the whole network:
 
 ```bash
+export IMAGENET_ROOT=/path/to/imagenet
 uv run egl eval imagenet_linear_eval checkpoint="$EXPORT_DIR" \
     data_root="$IMAGENET_ROOT" benchmarks.0.encoder=vision output_json=imagenet_linear.json
 uv run egl eval imagenet_full_finetune_eval checkpoint="$EXPORT_DIR" \

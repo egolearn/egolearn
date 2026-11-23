@@ -25,9 +25,10 @@ cp scripts/slurm/env.example.sh env.sh
 chmod 600 env.sh
 ```
 
-In `env.sh`, set `SCRATCH` to a writable directory outside `$HOME`, under
-which the template puts job directories, environments, datasets, outputs and
-caches. Also set `SBATCH_ACCOUNT` and `SBATCH_PARTITION` for your site, and
+In `env.sh`, set `SCRATCH` to a writable directory outside `$HOME`. The
+template puts job directories, environments, datasets, outputs and caches under
+it, and exports their paths, such as `EGOLEARN_JOB_ROOT` for job directories and
+`EGOLEARN_ARTIFACTS` for outputs. Also set `SBATCH_ACCOUNT` and `SBATCH_PARTITION` for your site, and
 `EGOLEARN_PREP_SBATCH_ARGS` for the CPU partition used by setup jobs. Export
 `HF_TOKEN` and `WANDB_API_KEY` there too, rather than with `hf auth login` or
 `wandb login`, which write credentials under `$HOME`. Git ignores `env.sh`.

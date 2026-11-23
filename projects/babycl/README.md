@@ -73,6 +73,7 @@ To reproduce a column, set the evaluation-data variables listed at the top of
 [`paper_evals.yaml`](configs/paper_evals.yaml), then train and evaluate:
 
 ```bash
+export RUN_DIR=runs/babycl-saycam-seed1337
 uv run egl train projects/babycl/configs/saycam_default.yaml seed=1337 \
   "run_dir=$RUN_DIR" "stream.root_dir=$SAYCAM_ROOT" \
   "stream.transcript_json=$SAYCAM_TRANSCRIPTS" "tokenizer.vocab_json=$BABYCL_VOCAB" \
@@ -98,6 +99,7 @@ available from the start, reading segments from a
 [storyboard file](docs/training_data.md#offline-storyboard) that you provide:
 
 ```bash
+export BABYCL_STORYBOARD=/path/to/storyboard.json
 uv run egl train projects/babycl/configs/saycam_iid.yaml \
   "stream.root_dir=$SAYCAM_ROOT" "stream.transcript_json=$SAYCAM_TRANSCRIPTS" \
   "tokenizer.vocab_json=$BABYCL_VOCAB" "driver.batch.storyboard_json=$BABYCL_STORYBOARD"

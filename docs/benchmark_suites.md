@@ -125,8 +125,9 @@ uv run egl bench run benchmarks/babycl_saycam.yaml \
   --output "$EGOLEARN_ARTIFACTS/babycl-suite" --submit --sbatch=--gres=gpu:1
 ```
 
-Keep the output directory and every pinned input on storage that the compute
-nodes can read.
+`EGOLEARN_ARTIFACTS` is the output root that the cluster `env.sh` exports. Keep
+the output directory and every pinned input on storage that the compute nodes
+can read.
 
 ## BabyCL SAYCam suite
 

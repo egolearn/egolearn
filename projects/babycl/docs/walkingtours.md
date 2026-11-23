@@ -2,15 +2,16 @@
 
 This page shows how to train visual BabyCL on the ten original WalkingTours
 videos in one chronological pass. Prepare the frames first with the
-[WalkingTours dataset guide](../../../docs/datasets/walkingtours.md), which also
-sets `WALKINGTOURS_ROOT`.
+[WalkingTours dataset guide](../../../docs/datasets/walkingtours.md).
 
 ## Training
 
-Install the training dependencies with `uv sync --extra train`. Validate the
-config, then train on a GPU:
+Install the training dependencies with `uv sync --extra train`. Set
+`WALKINGTOURS_ROOT` to the prepared frame directory, validate the config, then
+train on a GPU:
 
 ```bash
+export WALKINGTOURS_ROOT=/path/to/walkingtours
 uv run egl train projects/babycl/configs/walkingtours.yaml \
     "stream.root_dir=$WALKINGTOURS_ROOT" dry_run=true
 uv run egl train projects/babycl/configs/walkingtours.yaml \
