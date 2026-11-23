@@ -24,10 +24,7 @@ containers instead. The supplied archive contains 436 recordings at approximatel
 ## Training settings
 
 The config trains a ResNeXt-50 from scratch with equally weighted NT-Xent and
-segment supervised contrastive losses. The latter uses global segment IDs and
-a separate 128-dimensional projection head at temperature 0.2. Views sharing an
-ID are positives within each batch, including segments merged by the segmenter.
-Each step draws four visual segments and samples 32 frames from each,
+segment supervised contrastive (SupCon) losses. Each step draws four visual segments and samples 32 frames from each,
 with two augmented views per frame. A frozen ImageNet ResNeXt-50 supplies features
 for segmentation, with weights downloaded into `TORCH_HOME` on first use.
 

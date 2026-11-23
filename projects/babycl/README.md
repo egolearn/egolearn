@@ -31,20 +31,12 @@ learning (SupCon), and image–text contrastive learning. Each full batch contai
 three visual segments with 32 sampled frames each, plus 32 utterance–frame pairs.
 Early batches use an all-visual fallback when too few utterance pairs are available.
 
-SupCon uses the segmenter's global IDs, resolved from the label store when each
-batch is composed. Every other view with the same ID is a positive, including
-views from different segments that share a merged ID. Different IDs supply
-negatives within the batch. The loss averages log probabilities over positives
-and then anchors, using a separate 128-dimensional projection head at temperature
-0.2. Each of the three objectives has weight 0.5.
+SupCon treats frames that share a global segment ID as positives, so segments
+that the segmenter merges count as one class.
 
 Visual segments and utterance pairs occupy separate memories, each with a short
 FIFO tier whose overflow enters a long reservoir tier. After a segment is
 admitted, training performs eight updates with freshly sampled batches.
-
-The recipe uses global segment SupCon in place of the temporal classifier.
-Classifier-based snapshots require a new run with the new projection head;
-the vision encoder can be reused through `init_from`.
 
 `saycam_default` retains the paper's run length and precision settings:
 
@@ -54,8 +46,7 @@ the vision encoder can be reused through `init_from`.
   `driver.max_steps` and `solver.schedule.total_steps` reproduce this. Set both
   to `null` to train on the whole stream with the progress-driven schedule.
 - **Precision.** `driver.amp` runs the segment branch in float16 with a loss
-  scaler and keeps the cross-modal branch in float32. SupCon computes its
-  similarities and log probabilities in float32.
+  scaler and keeps the cross-modal branch in float32.
 
 The segment views also use the 2-D Gaussian blur (`blur_impl: torchvision`), an
 utterance that ends on a frame is visible at that frame
@@ -63,8 +54,8 @@ utterance that ends on a frame is visible at that frame
 
 ## SAYCam results
 
-The table reports the earlier TCL-based `saycam_default` with seeds 1337 and
-2002, final checkpoints. These are not results for the global-ID SupCon recipe.
+The table reports the earlier `saycam_default`, which used temporal classification
+instead of SupCon, with seeds 1337 and 2002 and final checkpoints.
 All scores are percentages. The paper column quotes the updated version of the
 [paper](https://arxiv.org/abs/2606.05115), which reaches arXiv later; the
 version there now reports an earlier Labeled-S 4AFC figure.
@@ -83,10 +74,6 @@ Baby Winoground reports the group score, which counts an item only when both
 the original and the edited scene prefer their own caption. Every row uses the
 paper's protocol, so the remaining differences come from training.
 
-The checkpoints use the temporal-classification objective. Their results remain
-reference measurements for that recipe; the SupCon variant has no reported
-training results here.
-
 ### Differences from the paper
 
 - **Randomness.** EgoLearn draws its sampling, augmentation and initialization
@@ -101,9 +88,8 @@ training results here.
 
 ### Reproducing the table
 
-Use repository commit `8f39160a4d6595cf43e2a7c1b8d03aa21a8683a5` for the TCL configuration
-and implementation used by these reproduction commands. Train each seed, then
-evaluate its final checkpoint. The training command
+Check out commit `8f39160` for the temporal-classification recipe these runs
+used. Train each seed, then evaluate its final checkpoint. The training command
 skips the in-training probes, which do not change training.
 `paper_evals.yaml` lists the environment variables that point at the
 evaluation data.

@@ -122,6 +122,7 @@ patch releases for fixes during 0.x development.
 
 - Memory Storyboard defaults to SimCLR plus supervised contrastive learning over global segment labels in replay.
 - BabyCL replaces batch-local temporal classification with supervised contrastive learning from global segment IDs in streaming and offline recipes.
+- BabyCL and Memory Storyboard snapshots with a temporal classifier cannot resume under the new recipes; `init_from` reuses their encoders.
 - WalkingTours documentation separates shared dataset preparation from BabyCL and StreamMAE experiment guides.
 - WalkingTours preparation uses a bundled source manifest by default and retains custom manifest overrides.
 - MAE documentation separates recipe selection, training, method details, and WT++ preparation, with inventory-derived update budgets.

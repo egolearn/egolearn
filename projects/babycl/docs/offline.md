@@ -29,11 +29,9 @@ This synthetic example contains two frames and one segment:
 - Segment bounds are zero-based frame indices with an exclusive `end`. Segments
   must be nonempty, ordered, contiguous, and cover `[0, len(frames))` without gaps
   or overlaps. Utterance timestamps are not segment indices.
-- `global_id` is a nonnegative 64-bit integer shared across sessions. Segments
-  with the same ID supply positives for the supervised contrastive loss.
-  Supply it for every segment or omit it throughout the manifest. When omitted,
-  IDs are assigned consecutively across the entire manifest in video and segment
-  order, before session filtering. This gives each segment a distinct global ID.
+- `global_id` is an optional nonnegative integer label. Segments with the same
+  ID are positives for the supervised contrastive loss. Give it for every segment
+  or for none. Without it, each segment is its own class.
 - `stream.root_dir` owns data paths, overriding any `root_dir` stored in the
   manifest. The file's SHA-256 is printed when its index is built.
 
@@ -49,8 +47,6 @@ uv run python -m egolearn.train --config-dir projects/babycl/configs --config-na
   tokenizer.vocab_json="$VOCAB_JSON" driver.batch.storyboard_json="$STORYBOARD_JSON"
 ```
 
-Each update draws the configured number of storyboard segments with replacement
-and retains their global IDs, including repeated draws of the same segment.
-Each epoch shuffles the full utterance index once. Prefetch and resume use the
-same seed-derived batch sequence. Resume requires the same storyboard bytes as
-the saved run, so changed segment labels cannot silently alter the objective.
+Each update draws the configured number of storyboard segments with replacement,
+and each epoch shuffles the full utterance index once. Resuming requires the same
+storyboard file as the saved run.
