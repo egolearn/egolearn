@@ -22,9 +22,7 @@ benchmarks = [
 ]
 imports = ["egolearn.evaluation.benchmarks.imagenet_linear"]
 
-result = evaluate_checkpoint(
-    "run/final.pth", benchmarks=benchmarks, imports=imports, device="cuda"
-)
+result = evaluate_checkpoint("run/final.pth", benchmarks=benchmarks, imports=imports, device="cuda")
 print(result.results["imagenet"]["top1"])
 result.save_json("evaluation.json")
 ```
