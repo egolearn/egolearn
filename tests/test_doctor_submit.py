@@ -55,6 +55,16 @@ def test_cuda_query_failures_are_bounded_and_reported(monkeypatch):
     assert doctor.check_cuda(True).status == "fail"
 
 
+def test_cluster_checks_report_all_missing_settings(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    for names in doctor.cluster_variables().values():
+        for name in names:
+            monkeypatch.delenv(name, raising=False)
+    checks = doctor.inspect_environment(cluster=True, skip_cuda=True)
+    missing = {c.name for c in checks if c.status == "fail"}
+    assert set(doctor.cluster_variables()["required"]) <= missing
+
+
 @pytest.mark.parametrize("location", ["login", "compute", "container"])
 def test_cluster_tools_match_the_execution_location(tmp_path, monkeypatch, location):
     monkeypatch.chdir(tmp_path)

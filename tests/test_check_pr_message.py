@@ -64,9 +64,34 @@ def test_invalid_sections(body: str, expected: str) -> None:
     assert expected in errors("t", body)
 
 
+def test_review_history_and_changelog_sections_are_refused() -> None:
+    extra = "## Review history\n\nr1\n\n## Changelog\n\nAdded a thing.\n\n## Test plan"
+    found = errors("t", GOOD.replace("## Test plan", extra))
+    assert "section '## Review history' does not belong in a PR message" in found
+    assert "section '## Changelog' does not belong in a PR message" in found
+
+
 def test_title_length_boundary() -> None:
     assert errors("x" * 72, GOOD) == []
     assert errors("x" * 73, GOOD) == ["title is 73 characters, max 72"]
+
+
+def test_title_rules() -> None:
+    for title, expected in [
+        ("Add a thing.", "title has a period"),
+        ("Fix #12", "title carries an issue number; put it in the body"),
+        ("Add a thing (wip)", "title says WIP"),
+        ("  ", "title is empty"),
+        ("\nAdd a thing", "title must be one line"),
+    ]:
+        assert errors(title, GOOD) == [expected], title
+
+
+def test_repeated_title_fails() -> None:
+    assert "title repeated as a heading" in errors("Add a thing", "## Add a thing\n\n" + GOOD)
+    assert "body starts with a top-level heading (the title repeated)" in errors(
+        "t", "\n# t\n\n" + GOOD
+    )
 
 
 def test_checklist_reports_missing_topics() -> None:

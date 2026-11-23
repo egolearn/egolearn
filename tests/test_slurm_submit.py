@@ -396,7 +396,7 @@ def test_relative_output_resolves_before_chdir(cluster):
     assert f"--output={checkout}/logs/job-%j.out" in calls[-1]["args"]
 
 
-@pytest.mark.parametrize("option", ["--export=NONE", "--wrap=true"])
+@pytest.mark.parametrize("option", ["--array=1-2", "--export=NONE", "--chdir=/tmp", "--wrap=true"])
 def test_reserved_options_refused(cluster, option):
     result, calls = submit(cluster, option, "--", "true", ok=False)
     assert "managed by submit" in result.stderr
@@ -507,6 +507,11 @@ def test_uncertain_submission_preserves_code_and_prep(cluster):
     assert len(calls) == 2
     assert not Path(env["CANCEL_LOG"]).exists()
     assert list(Path(env["EGOLEARN_JOB_ROOT"]).glob("run-*/code/program.py"))
+
+
+def test_auto_resume_mentions_persistent_output_directory(cluster):
+    result, _ = submit(cluster, "--", "python", "program.py", "resume=auto")
+    assert "absolute run_dir" in result.stderr
 
 
 def test_unignored_logs_cannot_dirty_the_next_submission(cluster):
