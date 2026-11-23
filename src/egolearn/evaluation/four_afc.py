@@ -12,8 +12,12 @@ Protocol decisions, made once here so every dataset scores identically:
 * image preprocessing (`view`/`size`) is explicit config, because mixing
   preprocessing across model families was a documented pitfall -- and on
   non-square crops (BabyView) the choice changes the number.
-* a trial is correct iff the target image has the highest cosine
-  similarity to the text; chance = 1/4.
+* a trial scores 1 when the target image alone has the highest cosine
+  similarity to the text, and 1/k when k images share the highest
+  similarity and the target is one of them: the expected score of breaking
+  ties at random. Chance is 1/4, and a model that cannot tell the images
+  apart scores exactly that, wherever the manifest puts the target.
+  Non-finite similarities raise instead of producing a score.
 
 Manifest json format::
 
@@ -22,6 +26,7 @@ Manifest json format::
                  "answer": 0}, ...],
      "chance_trials": 0}
 
+``answer`` is the target's index in ``images`` and defaults to 0.
 ``chance_trials`` is optional. It counts trials that cannot be shown to the
 model, such as words outside its vocabulary, and each adds 0.25 of a correct
 answer to ``four_afc_acc``. With it set, ``four_afc_acc_scored`` reports the
@@ -45,6 +50,8 @@ from egolearn.evaluation.probe import Probe
 @PROBES.register("four_afc")
 class FourAFCProbe(Probe):
     requires_capabilities = (K.CAP_IMAGE_REPRESENTATION, K.CAP_TEXT_REPRESENTATION)
+    # 2: tied images share the credit; 1 gave every tie to the first image.
+    version = "2"
 
     def __init__(
         self,
@@ -60,6 +67,10 @@ class FourAFCProbe(Probe):
         with open(manifest) as f:
             loaded = json.load(f)
         self.trials: list[dict] = loaded["trials"]
+        for trial in self.trials:
+            answer = trial.get("answer", 0)
+            if type(answer) is not int or not 0 <= answer < len(trial["images"]):
+                raise ValueError(f"answer must index an image of the {trial['text']!r} trial")
         chance_trials = loaded.get("chance_trials", 0)
         if type(chance_trials) is not int or chance_trials < 0:
             raise ValueError("chance_trials must be a non-negative integer")
@@ -72,7 +83,7 @@ class FourAFCProbe(Probe):
 
     @torch.no_grad()
     def run(self, model, ctx) -> dict[str, float]:
-        correct = 0
+        correct = 0.0
         for trial in self.trials:
             imgs = []
             for path in trial["images"]:
@@ -87,8 +98,13 @@ class FourAFCProbe(Probe):
             txt = F.normalize(
                 model.encode("text", ids.to(ctx.device), lens.to(ctx.device)).pooled, dim=1
             )
-            pred = int(torch.argmax(img_feats @ txt.t()))
-            correct += int(pred == int(trial.get("answer", 0)))
+            scores = (img_feats @ txt.t()).squeeze(1)
+            if not bool(torch.isfinite(scores).all()):
+                raise ValueError(f"non-finite 4AFC similarity for {trial['text']!r}")
+            # argmax would give every tie (and every NaN) to the first image,
+            # which is where the preparers put the target.
+            tied = scores == scores.max()
+            correct += float(tied[trial.get("answer", 0)]) / int(tied.sum())
         if not self.chance_trials:
             return {"four_afc_acc": correct / max(1, len(self.trials))}
         total = len(self.trials) + self.chance_trials

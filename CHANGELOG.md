@@ -180,6 +180,7 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- `probe:four_afc` (protocol version 2) splits credit among images tied for the highest similarity and rejects non-finite similarities and out-of-range answers, instead of counting ties and NaN as correct when the target is the first image.
 - The landing page provides runnable synthetic training commands and identifies available dataset and physics benchmarks.
 - The spatial-relations guide states that both scene domains are required for the packaged evaluation.
 - Training guides describe exact step limits, working PyAV decoding, and opt-in mixed precision.

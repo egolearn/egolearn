@@ -1,4 +1,4 @@
-"""Konkle 4AFC: trial sampling, chance credit, and manifest preparation on synthetic data."""
+"""Konkle 4AFC: trial sampling, chance and tie credit, and manifest preparation."""
 
 from __future__ import annotations
 
@@ -79,33 +79,36 @@ def test_prepare_reads_test_items_and_excludes_out_of_vocabulary_categories(tmp_
 
 
 class _Model:
-    """Images encode to their mean colour; each word to its category's colour."""
+    """Images encode to their mean colour (or ``image_value``); words to their category's colour."""
 
-    def __init__(self, text):
+    def __init__(self, text, image_value=None):
         self.text = text
+        self.image_value = image_value
 
     def encode(self, modality, x, lengths=None):
-        pooled = x.mean(dim=(2, 3)) if modality == "image" else self.text[x[:, 0]]
+        if modality == "text":
+            return SimpleNamespace(pooled=self.text[x[:, 0]])
+        pooled = x.mean(dim=(2, 3))
+        if self.image_value is not None:
+            pooled = torch.full_like(pooled, self.image_value)
         return SimpleNamespace(pooled=pooled)
 
     def apply_head(self, head, x):
         return x
 
 
-def test_four_afc_scores_chance_trials_at_one_quarter(tmp_path, monkeypatch):
+NAMES = ["apple", "ball", "cat", "dog"]
+
+
+def _colour_images(tmp_path, monkeypatch):
+    """Save one solid-colour image per name; return their paths, vocabulary, and word colours."""
     colours = torch.tensor([[1.0, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0]])
-    names = ["apple", "ball", "cat", "dog"]
     paths = []
-    for name, colour in zip(names, colours, strict=True):
+    for name, colour in zip(NAMES, colours, strict=True):
         paths.append(str(tmp_path / f"{name}.png"))
         Image.new("RGB", (8, 8), tuple(int(255 * v) for v in colour)).save(paths[-1])
-    trials = [
-        {"text": name, "images": [paths[i], *paths[:i], *paths[i + 1 :]], "answer": 0}
-        for i, name in enumerate(names)
-    ]
-    trials.append({"text": "apple", "images": paths[1:] + paths[:1], "answer": 0})
     vocab = tmp_path / "vocab.json"
-    ids = {name: index + 2 for index, name in enumerate(names)}
+    ids = {name: index + 2 for index, name in enumerate(NAMES)}
     vocab.write_text(json.dumps({"<pad>": 0, "<unk>": 1, **ids}))
     monkeypatch.setattr(
         "egolearn.evaluation.four_afc.VIEWS.get",
@@ -119,6 +122,16 @@ def test_four_afc_scores_chance_trials_at_one_quarter(tmp_path, monkeypatch):
     )
     text = torch.zeros(6, 3)
     text[2:6] = colours
+    return paths, vocab, text
+
+
+def test_four_afc_scores_chance_trials_at_one_quarter(tmp_path, monkeypatch):
+    paths, vocab, text = _colour_images(tmp_path, monkeypatch)
+    trials = [
+        {"text": name, "images": [paths[i], *paths[:i], *paths[i + 1 :]], "answer": 0}
+        for i, name in enumerate(NAMES)
+    ]
+    trials.append({"text": "apple", "images": paths[1:] + paths[:1], "answer": 0})
     ctx = SimpleNamespace(device=torch.device("cpu"))
 
     plain = tmp_path / "plain.json"
@@ -134,3 +147,30 @@ def test_four_afc_scores_chance_trials_at_one_quarter(tmp_path, monkeypatch):
         credited.write_text(json.dumps({"trials": trials, "chance_trials": bad}))
         with pytest.raises(ValueError, match="non-negative integer"):
             FourAFCProbe("p", str(credited), str(vocab), "embed")
+
+
+def test_four_afc_splits_credit_among_tied_images(tmp_path, monkeypatch):
+    paths, vocab, text = _colour_images(tmp_path, monkeypatch)
+    red, green, blue, _ = paths
+    trials = [
+        {"text": "apple", "images": [red, red, green, blue], "answer": 0},
+        {"text": "apple", "images": [red, green, red, red], "answer": 0},
+        {"text": "apple", "images": [green, red, red, blue], "answer": 2},
+    ]
+    manifest = tmp_path / "trials.json"
+    manifest.write_text(json.dumps({"trials": trials}))
+    probe = FourAFCProbe("p", str(manifest), str(vocab), "embed")
+    assert probe.version == "2"
+    ctx = SimpleNamespace(device=torch.device("cpu"))
+
+    result = probe.run(_Model(text), ctx)
+    assert result == {"four_afc_acc": pytest.approx((1 / 2 + 1 / 3 + 1 / 2) / 3)}
+    # Identical image embeddings tie all four images, so the model scores chance.
+    assert probe.run(_Model(text, image_value=1.0), ctx) == {"four_afc_acc": 0.25}
+    with pytest.raises(ValueError, match="non-finite"):
+        probe.run(_Model(text, image_value=float("nan")), ctx)
+    # A negative answer would otherwise index the last image.
+    for bad in (-1, 4, True, "0"):
+        manifest.write_text(json.dumps({"trials": [{**trials[0], "answer": bad}]}))
+        with pytest.raises(ValueError, match="answer must index"):
+            FourAFCProbe("p", str(manifest), str(vocab), "embed")
