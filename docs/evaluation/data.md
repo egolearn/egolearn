@@ -1,8 +1,8 @@
-# SAYCam evaluation data
+# Dataset access and preparation
 
-Prepare Labeled-S, VTWT, and Baby Winoground inputs for models with image and
-text representations. You need approved image access and the evaluated model's
-training vocabulary before preparing these benchmarks.
+Obtain access to SAYCam or BabyView recordings before preparing training inputs.
+The evaluation sections below cover Labeled-S, VTWT, and Baby Winoground, which
+also require the evaluated model's training vocabulary.
 
 ## SAYCam access
 
@@ -21,6 +21,20 @@ images and local manifests must stay outside version control. See
 | Labeled-S 4AFC | Labeled-S release on Databrary | Frozen BabyCL trials and the model's training vocabulary | [Manifest and vocabulary](#labeled-s-4afc-data) |
 | VTWT | Multimodal SAYCam-S frames on Databrary | [VTWT labels][vtwt-labels] | [Frames and CSV inputs](#babyvlm-benchmark-data) |
 | Baby Winoground | SAYCam-S frames and `BabyVLM_V1` synthetic images on Databrary | [Baby Winoground labels][bw-labels] | [Frames, negatives, and CSV inputs](#babyvlm-benchmark-data) |
+
+## BabyView training data
+
+BabyView training recordings are shared through Databrary. Follow the
+[BabyView access guide](https://babyview-project.github.io/access/) to obtain an
+authorized investigator or affiliate account, institutional approval, and access
+to the relevant release. Read the project's data-use guidelines before downloading
+recordings, and use storage approved by your institution.
+
+Access to model weights is requested separately through the
+[EgoLearn checkpoint form](hub.md#checkpoint-access). BabyView training
+recordings are distinct from the public object-crop release used for
+[BabyView evaluation](../evaluation.md#babyview-protocols); downloading those crops
+does not grant access to training videos.
 
 ## Labeled-S 4AFC data
 

@@ -13,9 +13,14 @@ and flips them during loading; BabyCL instead expects upright input frames.
 See [dataset access](../../docs/evaluation/data.md#saycam-access)
 for the source data requirements.
 
+Set `SAYCAM_ROOT` to that prepared frame directory and choose a new run directory:
+
 ```bash
-egl train projects/storyboard/configs/saycam.yaml dry_run=true
-egl train projects/storyboard/configs/saycam.yaml
+export SAYCAM_ROOT=/path/to/saycam_5fps
+uv run egl train projects/storyboard/configs/saycam.yaml \
+  "stream.root_dir=$SAYCAM_ROOT" run_dir=runs/storyboard-example dry_run=true
+uv run egl train projects/storyboard/configs/saycam.yaml \
+  "stream.root_dir=$SAYCAM_ROOT" run_dir=runs/storyboard-example
 ```
 
 Each batch draws 64 frames from the short memory and 448 from the long memory.
@@ -27,8 +32,8 @@ schedule performs one training update after each advance of 64 stream frames.
 The objectives follow the upstream
 [`--method simclr` variant](https://github.com/agentic-learning-ai-lab/memory-storyboard/blob/029cc55d91c5b5b470ab45f2a7a3653aefcc087e/training/train_storyboard_merging.py#L43),
 whereas the upstream README example uses SimSiam. The configuration is a
-code-level port without a numerical-parity claim, and it trains in float32 in
-one process.
+code-level port without a numerical-parity claim. It trains in float32 in one
+process, and the shared trainer's `driver.amp` option turns on mixed precision.
 
 ## Memory and segmentation
 
@@ -43,8 +48,9 @@ a dynamic quantile threshold to decide which classes to merge.
 
 You can change memory capacities and training rate in the config. The default
 `driver.rate.resample: false` makes additional updates reuse the batch, matching the
-original method's repeated-gradient setting. KrishnaCam has no packaged adapter or
-training config; adapting it requires checking frame naming, timing, and preprocessing.
+original method's repeated-gradient setting. No Memory Storyboard-specific KrishnaCam
+recipe is packaged. The [KrishnaCam guide](../krishnacam/README.md) covers general
+video training; adapting this method also requires matching timing and preprocessing.
 
 ## Evaluation
 

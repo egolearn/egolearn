@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "Please cite this software and the relevant method papers when using EgoLearn."
+type: software
+title: "EgoLearn: learning from egocentric video streams"
+authors:
+  - name: "Agentic Learning AI Lab, New York University"
+    website: "https://agenticlearning.ai"
+repository-code: "https://github.com/agentic-learning-ai-lab/egolearn"
+license: MIT
+abstract: >-
+  EgoLearn provides streaming and offline self-supervised learning, bounded replay
+  memory, temporal segmentation, and evaluation for first-person video models.

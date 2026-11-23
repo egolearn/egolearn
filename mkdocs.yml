@@ -28,6 +28,8 @@ watch:
   - projects/streammae/wtpp.md
   - projects/streammae/walkingtours.md
   - projects/vjepa2/README.md
+  - projects/krishnacam/README.md
+  - projects/babycl/docs
   - scripts/docs/hooks.py
   - scripts/docs/reference.py
   - src/egolearn
@@ -137,16 +139,17 @@ nav:
   - Home: index.md
   - Get started:
     - Overview: overview.md
+    - First checkpoint evaluation: evaluation/first_evaluation.md
     - Command line: cli.md
     - Cluster jobs: cluster.md
     - Data loading: data_loading.md
     - Start from a checkpoint: initialization.md
   - Datasets:
+    - Access and preparation: evaluation/data.md
     - WalkingTours: datasets/walkingtours.md
   - Evaluation:
     - Checkpoint evaluation: evaluation.md
-    - SAYCam evaluation data: evaluation/data.md
-    - Hub artifacts: evaluation/hub.md
+    - Models and Hub data: evaluation/hub.md
     - Benchmark suites: benchmark_suites.md
     - Publishing results: publishing_results.md
     - Spatial relations: evaluation/spatial_relations.md
@@ -159,6 +162,9 @@ nav:
   - Methods:
     - BabyCL:
       - Overview: projects/babycl.md
+      - SAYCam inputs: projects/babycl/training_data.md
+      - Offline inputs: projects/babycl/offline.md
+      - KrishnaCam: projects/babycl/krishnacam.md
       - WalkingTours: projects/babycl/walkingtours.md
     - Memory Storyboard: projects/storyboard.md
     - MAE and StreamMAE:
@@ -169,16 +175,14 @@ nav:
       - WalkingTours: projects/streammae/walkingtours.md
       - WT++ preparation: projects/streammae/wtpp.md
     - V-JEPA 2: projects/vjepa2.md
+    - KrishnaCam: projects/krishnacam.md
   - Design:
     - Architecture: design/architecture.md
     - Data-loading performance: design/data_loading_performance.md
-    - Streaming design history: design/streaming.md
-    - V-JEPA 2: design/vjepa2.md
-    - V-JEPA 2 full runs: design/vjepa2-full.md
   # Filled from source by scripts/docs/reference.py on each build.
   - Reference: []
   - Project:
-    - Roadmap: roadmap.md
+    - Status and limitations: status.md
     - Changelog: changelog.md
     - Contributing: contributing.md
     - Security: security.md

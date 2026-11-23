@@ -19,6 +19,7 @@ PREPARER_OPTIONS = {
     "babyview-4afc": "--vocab_json",
     "labeled-s-4afc": "--trials_json",
     "grasp": "--data_root",
+    "konkle-4afc": "--vocab_json",
 }
 
 
@@ -64,6 +65,7 @@ def test_fetch_uses_shared_root_and_preserves_verification_options(monkeypatch, 
     data.main(["--root", str(tmp_path), "fetch", "shape-bias", "--allow-unverified"])
     assert calls[-1][0][1] == tmp_path
     assert calls[-1][1]["allow_unverified"] is True
+    assert calls[-1][1]["repo"] == "agentic-learning-ai-lab/egolearn-shape-bias"
 
 
 def test_prepare_forwards_arguments_and_explicit_paths_win(monkeypatch, tmp_path):
@@ -178,6 +180,7 @@ def test_preparation_explains_missing_extra(monkeypatch, capsys, tmp_path):
         ("babyview-4afc", ["--help"]),
         ("labeled-s-4afc", ["--help"]),
         ("grasp", ["--help"]),
+        ("konkle-4afc", ["--help"]),
     ],
 )
 def test_installed_preparation_help_needs_no_training_dependencies(tmp_path, name, help_args):

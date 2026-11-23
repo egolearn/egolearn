@@ -1,7 +1,7 @@
 # compute_iou and the recall and mIoU loop in TemporalGroundingScorer._metrics are
 # adapted from EGO4D/episodic-memory NLQ/VSLNet/utils/evaluate_ego4d_nlq.py at
 # 5275b9570a3d77884e8685bad474309f7778db1f (MIT, Copyright (c) 2021 EGO4D Dataset and
-# Benchmark Suite).
+# Benchmark Suite; full notice in THIRD_PARTY_NOTICES.md).
 """Generic temporal-grounding scorer for generative models.
 
 A benchmark builds ``GroundingItem``s (a query, a clip, the clip's duration

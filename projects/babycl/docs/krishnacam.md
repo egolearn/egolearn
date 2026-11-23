@@ -53,8 +53,8 @@ uv run python scripts/bench/bench_full_pipeline.py \
 The pilot uses the full model and batch, with replay capacities reduced to four
 short and 16 long segments. You can compare worker counts with repeated
 `--override loader.workers=4` or `8`, giving each run a separate directory.
-Use multiples of eight for exact step limits, which the driver checks between
-segment advances.
+The driver stops at the exact step limit, including within a segment advance.
+A step limit does not need to be a multiple of eight.
 
 The report includes elapsed time with replay warmup, optimizer steps per second,
 logical frame requests per second, and peak allocated GPU memory. Frame requests

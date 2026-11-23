@@ -13,20 +13,31 @@ submit the worker array. Load the site's required modules in the planning shell.
 
 Keep the checkout and all storage on scratch, outside `$HOME`. Copy
 `scripts/slurm/env.example.sh` to the git-ignored `env.sh`, set `SCRATCH` to your
-site's writable storage root, edit account/partition settings, and run:
+site's writable storage root, and edit account/partition settings.
+For BabyCL, prepare the [SAYCam frames, transcripts, and vocabulary](../projects/babycl/docs/training_data.md)
+before submitting. Set their absolute paths after sourcing your environment:
 
 ```bash
 chmod 600 env.sh
 source env.sh
+export SAYCAM_ROOT=/path/to/saycam_5fps
+export SAYCAM_TRANSCRIPTS=/path/to/expand_correct_seg.json
+export BABYCL_VOCAB=/path/to/vocab.json
 scripts/slurm/submit --gres=gpu:1 --cpus-per-task=8 --mem=64G --time=24:00:00 -- \
   python -m egolearn.train --config-dir projects/babycl/configs \
-  --config-name saycam_default stream.root_dir="$EGOLEARN_DATA/saycam"
+  --config-name saycam_default "stream.root_dir=$SAYCAM_ROOT" \
+  "stream.transcript_json=$SAYCAM_TRANSCRIPTS" "tokenizer.vocab_json=$BABYCL_VOCAB" \
+  "run_dir=$EGOLEARN_ARTIFACTS/babycl-example" 'probes=[]'
 ```
 
-Add the transcript and vocabulary overrides required by your config. Set
+This example disables in-training evaluation probes, which require separate
+benchmark inputs. Choose a new run directory for each experiment. Set
 `SBATCH_ACCOUNT` and `SBATCH_PARTITION` in `env.sh` for the training jobs, and
 `EGOLEARN_PREP_SBATCH_ARGS` for the CPU partition and any prep-specific account.
 No site account, partition, credential, or personal path is built into the repo.
+
+### Launcher options
+
 The compatibility command `scripts/slurm/train.sbatch` also submits through this
 launcher. It accepts one YAML path or packaged config name followed by Hydra
 overrides, for example `scripts/slurm/train.sbatch toy_streaming seed=19`;
@@ -42,6 +53,8 @@ entries suppress the whole-GPU default as well.
 Generic `submit` uses site defaults for CPU and memory unless the caller requests
 resources. Runtime OpenMP threads follow CPUs per task, falling back to the batch
 step's allocated CPUs, unless `OMP_NUM_THREADS` was explicitly set.
+
+### Environment preparation
 
 A stamp covers `uv.lock`, `pyproject.toml`, `.python-version`, sync arguments,
 the image digest and the submitted commit. Environments are reused under
@@ -64,11 +77,9 @@ are whitespace-separated arguments without shell evaluation.
 ## Image
 
 `containers/IMAGE` pins the lab's public `jepa-agent-base` CUDA 13.0 image by digest.
-It supplies FFmpeg 7.1.3, jemalloc and uv 0.12.21. This pin comes from
-[jepa-agent PR #94](https://github.com/agentic-learning-ai-lab/jepa-agent/pull/94),
-which reports an Apptainer pull and uv check on a compute node. The image build
-also exercises FFmpeg under Docker and Apptainer. This change's launcher tests
-use fake Slurm and Apptainer; a live site smoke run is still required.
+It supplies FFmpeg 7.1.3, jemalloc and uv 0.12.21. Before submitting a long run,
+use the [diagnostic job](#diagnostics) to check the image and CUDA on your cluster.
+Your site supplies its own account, partition, and storage settings.
 
 The first prep pulls a SIF into `$SIF_DIR`; image unpacking uses node-local `/tmp`,
 where Apptainer extraction works independently of shared-filesystem semantics.
@@ -133,7 +144,9 @@ queue lookup cannot exclude a job that has already finished.
 ```bash
 scripts/slurm/submit --sweep --max-parallel 4 --gres=gpu:1 --cpus-per-task=8 --mem=64G -- \
   python -m egolearn.train --config-dir projects/babycl/configs \
-  --config-name saycam_default seed=0,1,2 driver.rate.steps_per_admit=1,4
+  --config-name saycam_default seed=0,1,2 driver.rate.steps_per_admit=1,4 \
+  "stream.root_dir=$SAYCAM_ROOT" "stream.transcript_json=$SAYCAM_TRANSCRIPTS" \
+  "tokenizer.vocab_json=$BABYCL_VOCAB" 'probes=[]'
 scripts/slurm/submit --commands /path/to/commands.txt --gres=gpu:1
 scripts/slurm/submit --dry-run -- python -m egolearn.train --help
 ```

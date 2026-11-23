@@ -75,7 +75,7 @@ Directory-based evaluations can supply recorded class ordering and counts
 through their native metadata. Neither source establishes a digest of the underlying
 image collection; the published protocol states that limit.
 
-The default columns cover Labeled-S and BabyView 4AFC, VTWT, Baby Winoground group
+The default columns cover Labeled-S, BabyView and Konkle 4AFC, VTWT, Baby Winoground group
 accuracy, shape preference, and Labeled-S, BabyView and ImageNet linear decoding.
 To publish another metric, provide a `columns` array in the manifest. Each column
 needs `id`, `benchmark`, `metric`, `label`, `description`, `unit` and `direction`.

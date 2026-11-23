@@ -123,9 +123,27 @@ these repeated draws; group IDs alone are not a sufficient leakage check.
 
 ## Preparing and checking data
 
-Use an installed egolearn environment (`uv sync --extra train`). Set
-`SPATIAL_GENERATOR_ROOT` to the external `simple-relational-reasoning` checkout
-and `SPATIAL_RENDER_ROOT` to the existing `complex-relational-reasoning` directory.
+Use an installed EgoLearn environment (`uv sync --extra train`). The 2D generator
+is available from [guydav/simple-relational-reasoning](https://github.com/guydav/simple-relational-reasoning).
+Clone it outside this repository and set `SPATIAL_GENERATOR_ROOT` to that checkout.
+The upstream revision below contains the required `stimuli` and `triplets` modules:
+
+```bash
+git clone https://github.com/guydav/simple-relational-reasoning.git
+git -C simple-relational-reasoning checkout 08385fe7e15c664a18cb4bf174fe9dda28e42d64
+export SPATIAL_GENERATOR_ROOT="$PWD/simple-relational-reasoning"
+```
+
+The 3D inputs are pre-rendered PNGs, not a second generator invoked by EgoLearn.
+Obtain the Experiment 3 renders from the study's authors using the contact in the
+[published paper](https://www.cs.princeton.edu/~bl8144/papers/DavidsonEtAlCognition2024.pdf).
+Set `SPATIAL_RENDER_ROOT` to the directory containing `quinn_above_below/` and
+`quinn_between/`. Both contain the original `*_habituation.png`, `*_same.png`, and
+`*_different.png` files. Obtain both the 2D generator and 3D renders before
+preparing inputs for the packaged spatial-relations benchmark.
+
+A generator revision alone does not establish pixel equivalence with a prepared
+release. Match its manifest's generator hashes and rendering environment for comparisons.
 The external renderer is imported in a subprocess whose working directory is the
 supplied checkout; no source files are vendored or modified. Its old torchvision
 `functional_tensor` import is mapped to the maintained internal implementation
@@ -142,9 +160,8 @@ uv run egl data prepare spatial-relations \
   --output-dir data/spatial_relations/v1 --validate-only
 ```
 
-Use `--experiment exp1` or `--experiment exp3` to prepare independently. Use a
-separate output directory and `--n-per-condition 2` for an Exp. 1 smoke export.
-The default full export has 1,024 trials per Exp. 1 condition. Preparation-only
+The default full export prepares both experiments, with 1,024 trials per
+Exp. 1 condition. Preparation-only
 renderer dependencies are supplied through `uv --with`; loading the prepared
 PNGs does not require the historical generator or those dependencies. Recreating
 identical pixels also requires matching the recorded source hashes, package
