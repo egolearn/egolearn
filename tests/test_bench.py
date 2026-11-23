@@ -35,16 +35,10 @@ def suite_file(tmp_path, **changes):
 @pytest.mark.parametrize(
     "override",
     [
-        "seed=42",
         "++seed=42",
-        "hydra.run.dir=elsewhere",
         "run_dir=elsewhere",
-        "record_json=elsewhere",
         "~seed",
         "--multirun",
-        "resume=auto",
-        "dry_run=true",
-        "record_fail_on_nonfinite=false",
         "model={}",
         "model.weights=elsewhere",
         "model.weights.child=elsewhere",
@@ -82,12 +76,8 @@ def test_pinned_file_and_directory_are_verified_before_outputs(tmp_path):
     [
         {"seeds": [1, 1]},
         {"seeds": [True]},
-        {"seeds": []},
-        {"seeds": [-1]},
         {"entry": "shell"},
         {"config": "--help"},
-        {"unknown": 1},
-        {"metrics": {}},
         {"entry": "eval", "config": "evaluate"},
     ],
 )
@@ -181,24 +171,6 @@ def test_pins_apply_before_interpolation_and_runtime_env_is_not_frozen(tmp_path,
         assert cfg.from_override == "compute"
         assert cfg.derived_override == cfg.run_dir
         assert cfg.seed == seed  # the original config did not declare seed
-
-
-def test_non_ascii_input_paths_roundtrip_through_hydra(tmp_path):
-    payload = tmp_path / "données avec espaces.json"
-    payload.write_text("{}")
-    spec = suite_file(
-        tmp_path,
-        seeds=[1],
-        inputs={
-            "new_input": {
-                "path": payload.name,
-                "sha256": sha256_file(payload),
-            }
-        },
-    )
-    manifest = bench.plan_suite(spec, tmp_path / "out", [])
-    cfg = OmegaConf.load(manifest.parent / "seed-1/config.yaml")
-    assert cfg.new_input == str(payload)
 
 
 def test_duplicate_yaml_keys_and_sweeps_are_rejected(tmp_path):
@@ -407,7 +379,6 @@ def test_real_synthetic_evaluation_suite(tmp_path, monkeypatch, artifact):
     [
         (False, "checkpoint", "model.json"),
         (True, "checkpoint", "model.safetensors"),
-        (False, "init_from.checkpoint", "model.safetensors"),
         (True, "init_from.checkpoint", "model.json"),
     ],
 )

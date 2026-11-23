@@ -31,7 +31,7 @@ test("the Python-generated schema-1 feed validates with all nine default metrics
   }
 });
 
-test("mixed schema feeds render an imported reference and explain N/A cells", () => {
+test("mixed schema feeds separate modalities and render unknown-seed references", () => {
   const mixed = JSON.parse(readFileSync(new URL("../fixtures/publication-v2.json", import.meta.url), "utf8"));
   const data = validateTable(mixed.table);
   const reference = data.rows.find(row => row.expected_seeds[0] === null);
@@ -45,12 +45,17 @@ test("mixed schema feeds render an imported reference and explain N/A cells", ()
   try {
     const container = document.getElementById("table");
     renderTable(data, container);
-    assert.match(container.textContent, /1 reference checkpoint/);
-    assert.match(container.textContent, /Training seed unknown/);
-    assert.doesNotMatch(container.textContent, /Seed null/);
-    assert.match(container.textContent, /N\/A/);
+    assert.equal(container.querySelectorAll("details, summary").length, 0);
+    assert.doesNotMatch(container.textContent, /sources|Training seed unknown|Seed null/);
+    const multimodal = container.querySelector('table[data-modality="multimodal"]');
+    const visual = container.querySelector('table[data-modality="visual-only"]');
+    assert.equal(container.querySelectorAll("table").length, 2);
+    assert.equal(multimodal.querySelectorAll("thead th").length, 3);
+    assert.equal(visual.querySelectorAll("thead th").length, 2);
+    assert.equal(multimodal.querySelector(".meth").textContent, "Toy");
+    assert.equal(visual.querySelector(".meth").textContent, reference.condition.label);
+    assert.doesNotMatch(container.textContent, /N\/A/);
     const cells = [...container.querySelectorAll("td")];
-    assert.ok(cells.some(cell => cell.textContent === "N/A" && cell.title.includes("image-text head")));
     assert.ok(cells.some(cell => cell.title.includes("112 px")));
   } finally {
     delete globalThis.document;
@@ -66,6 +71,160 @@ test("mixed schema feeds render an imported reference and explain N/A cells", ()
     const changed = structuredClone(data);
     mutate(changed.rows.find(row => row.expected_seeds[0] === null));
     assert.throws(() => validateTable(changed));
+  }
+});
+
+test("visual-only tables omit image-text benchmarks, including ones published after the run", () => {
+  const konkle = cells => structuredClone(cells.labeled_s_4afc);
+  const render = data => {
+    const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
+    globalThis.document = document;
+    try {
+      const container = document.getElementById("table");
+      renderTable(data, container);
+      return Object.fromEntries([...container.querySelectorAll("table")].map(table => [table.dataset.modality, {
+        rows: [...table.querySelectorAll("tbody tr")].map(row => row.dataset.resultId).sort(),
+        headings: [...table.querySelectorAll("thead th")].map(cell => cell.textContent),
+      }]));
+    } finally {
+      delete globalThis.document;
+    }
+  };
+  const load = () => JSON.parse(readFileSync(new URL("../fixtures/publication-v2.json", import.meta.url), "utf8")).table;
+
+  // Konkle 4AFC was published after the visual-only reference, so the feed records it
+  // as missing for that run. A text model with one inapplicable image-text benchmark
+  // remains multimodal.
+  const data = load();
+  data.columns.splice(1, 0, {...data.columns[0], id: "konkle_4afc", benchmark: "konkle_4afc",
+    label: "Konkle 4AFC"});
+  const visual = data.rows.find(row => row.id === "reference");
+  const multimodal = data.rows.find(row => row.id === "toy");
+  visual.cells.konkle_4afc = {mean: null, sd: null, n: 0, expected_n: 1, status: "incomplete", protocols: []};
+  multimodal.cells.konkle_4afc = konkle(multimodal.cells);
+  const partial = structuredClone(multimodal);
+  partial.id = "partial-text";
+  partial.cells.labeled_s_4afc = structuredClone(visual.cells.labeled_s_4afc);
+  data.rows.push(partial);
+  assert.deepEqual(render(data), {
+    "multimodal": {rows: ["partial-text", "toy"],
+      headings: ["method", "Labeled-S 4AFC (%)", "Konkle 4AFC (%)", "Labeled-S linear (%)"]},
+    "visual-only": {rows: ["reference"], headings: ["method", "Labeled-S linear (%)"]},
+  });
+
+  // Konkle 4AFC as the only image-text benchmark still separates the modalities.
+  const only = load();
+  only.columns[0] = {...only.columns[0], id: "konkle_4afc", benchmark: "konkle_4afc", label: "Konkle 4AFC"};
+  for (const row of only.rows) {
+    row.cells.konkle_4afc = konkle(row.cells);
+    delete row.cells.labeled_s_4afc;
+  }
+  assert.deepEqual(render(only), {
+    "multimodal": {rows: ["toy"], headings: ["method", "Konkle 4AFC (%)", "Labeled-S linear (%)"]},
+    "visual-only": {rows: ["reference"], headings: ["method", "Labeled-S linear (%)"]},
+  });
+});
+
+test("dataset tables group rows and keep scores aligned with reordered columns", () => {
+  const mixed = JSON.parse(readFileSync(new URL("../fixtures/publication-v2.json", import.meta.url), "utf8"));
+  const data = mixed.table;
+  const visual = data.rows.find(row => row.id === "reference");
+  const multimodal = data.rows.find(row => row.id === "toy");
+  visual.condition.label = "BabyCL (visual-only)";
+  data.columns.splice(1, 0, {...data.columns[1], id: "shape_preference",
+    benchmark: "shape_bias", label: "Shape preference"});
+  // Column aliases must not change modality classification.
+  data.columns[0].id = "word_matching";
+  for (const row of data.rows) {
+    row.condition.dataset = "BabyView";
+    row.cells.word_matching = row.cells.labeled_s_4afc;
+    delete row.cells.labeled_s_4afc;
+    row.cells.shape_preference = {...structuredClone(visual.cells.labeled_s_linear), mean: 0.75};
+  }
+  for (const original of [...data.rows]) {
+    const row = structuredClone(original);
+    row.id += "-second-dataset";
+    row.condition.dataset = "SAYCam-S";
+    data.rows.push(row);
+  }
+  const incomplete = data.rows.find(row => row.id === `${multimodal.id}-second-dataset`);
+  incomplete.cells.word_matching = {mean: null, sd: null, n: 0, expected_n: 1,
+    status: "incomplete", protocols: []};
+  const imagenet = structuredClone(visual);
+  imagenet.id = "imagenet-supervised-reference";
+  imagenet.condition.dataset = "ImageNet";
+  imagenet.condition.label = "ImageNet supervised";
+  data.rows.push(imagenet);
+  const before = structuredClone(data);
+  const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
+  globalThis.document = document;
+  try {
+    const container = document.getElementById("table");
+    renderTable(data, container);
+    assert.deepEqual(data, before);
+    assert.equal(container.querySelectorAll(".result-dataset").length, 3);
+    assert.deepEqual([...container.querySelectorAll(".result-dataset h3")].map(node => node.textContent),
+      ["trained on SAYCam-S", "trained on BabyView", "Others"]);
+    const rendered = [...container.querySelectorAll("tbody tr")];
+    assert.deepEqual(rendered.map(row => row.dataset.resultId).sort(),
+      data.rows.map(row => row.id).sort());
+    for (const section of container.querySelectorAll(".result-dataset")) {
+      const others = section.querySelector("h3").textContent === "Others";
+      assert.equal(section.querySelectorAll("table").length, others ? 1 : 2);
+      for (const table of section.querySelectorAll("table")) {
+        assert.equal(table.querySelectorAll("tbody tr").length, 1);
+        const isVisual = table.dataset.modality === "visual-only";
+        const row = table.querySelector("tbody tr");
+        const source = data.rows.find(source => source.id === row.dataset.resultId);
+        assert.equal(section.querySelector("h3").textContent,
+          source.condition.dataset === "ImageNet" ? "Others" : `trained on ${source.condition.dataset}`);
+        assert.equal(row.querySelector(".meth").textContent, source.condition.label);
+        assert.equal(table.querySelector("caption").textContent, isVisual ? "visual-only models" : "multimodal models");
+        for (const id of table.getAttribute("aria-labelledby").split(" ")) {
+          assert.ok(document.getElementById(id));
+        }
+        const columns = isVisual ? [data.columns[2], data.columns[1]]
+          : [data.columns[0], data.columns[2], data.columns[1]];
+        assert.deepEqual([...table.querySelectorAll("thead th")].map(cell => cell.textContent),
+          ["method", ...columns.map(column => `${column.label} (%)`)]);
+        const actual = [...row.querySelectorAll("td")].slice(1).map(cell => cell.textContent);
+        const expected = columns.map(column => {
+          const {value, sd} = formatMetric(source.cells[column.id], column);
+          return value + sd;
+        });
+        assert.deepEqual(actual, expected);
+        assert.equal(row.querySelectorAll("details, summary, a").length, 0);
+      }
+    }
+    assert.equal(container.querySelectorAll("[id]").length,
+      new Set([...container.querySelectorAll("[id]")].map(node => node.id)).size);
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test("every published multimodal result appears under its published label", () => {
+  const {table: data} = JSON.parse(readFileSync(new URL("../fixtures/publication-v2.json", import.meta.url), "utf8"));
+  const current = data.rows.find(row => row.id === "toy");
+  current.id = current.condition.id = "babycl-supcon-babyview";
+  current.condition.label = "BabyCL";
+  const visual = data.rows.find(row => row.id === "reference");
+  for (const row of data.rows) row.condition.dataset = "BabyView";
+  const second = structuredClone(current);
+  second.id = second.condition.id = "babycl-babyview-legacy-offline-refined-seed1337";
+  second.condition.label = "BabyCL (legacy offline-refined, 60,000 steps)";
+  data.rows.unshift(second);
+  const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
+  globalThis.document = document;
+  try {
+    const container = document.getElementById("table");
+    renderTable(data, container);
+    const rows = [...container.querySelectorAll('table[data-modality="multimodal"] tbody tr')];
+    assert.deepEqual(rows.map(row => [row.dataset.resultId, row.querySelector(".meth").textContent]),
+      [[second.id, second.condition.label], [current.id, current.condition.label]]);
+    assert.equal(container.querySelector('table[data-modality="visual-only"] tbody tr').dataset.resultId, visual.id);
+  } finally {
+    delete globalThis.document;
   }
 });
 
@@ -95,7 +254,7 @@ test("the feed rejects malformed, incomplete and nonfinite aggregates", () => {
   }
 });
 
-test("the browser reads the public Hub feed without credentials and pins evidence to its revision", async () => {
+test("the browser reads the public Hub feed without credentials and records its revision", async () => {
   const data = await fetchBenchmarks("test/results", async (url, options) => {
     assert.equal(url, "https://huggingface.co/datasets/test/results/resolve/main/benchmarks.json");
     assert.equal(options.credentials, "omit");
@@ -105,16 +264,6 @@ test("the browser reads the public Hub feed without credentials and pins evidenc
     return new Response(JSON.stringify(fixture()), {headers: {"x-repo-commit": "d".repeat(40)}});
   });
   assert.equal(data.revision, "d".repeat(40));
-  const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
-  globalThis.document = document;
-  try {
-    const container = document.getElementById("table");
-    renderTable(data, container);
-    const record = [...container.querySelectorAll("a")].find(a => a.textContent === "evaluation record");
-    assert.equal(record.href, `https://huggingface.co/datasets/test/results/blob/${data.revision}/runs/${"a".repeat(64)}.json`);
-  } finally {
-    delete globalThis.document;
-  }
 });
 
 test("the browser rejects invalid sources, upstream failures and mismatched feeds", async () => {
@@ -168,24 +317,25 @@ test("rendering keeps the last successful table during failures and safely adds 
     await new Promise(resolve => setImmediate(resolve));
     assert.match(container.textContent, /43\.3/);
     assert.equal(container.querySelectorAll(".meth").length, 1);
-    const details = container.querySelector("details");
-    details.setAttribute("open", "");
+    assert.equal(status.textContent, "");
+    assert.equal(status.hidden, true);
+    const table = container.querySelector("table");
     await controller.refresh();
-    assert.equal(container.querySelector("details"), details);
-    assert.ok(details.hasAttribute("open"));
+    assert.equal(container.querySelector("table"), table);
     const original = container.innerHTML;
     available = false;
     await controller.refresh();
     assert.equal(container.innerHTML, original);
     assert.match(status.textContent, /Live refresh is unavailable/);
+    assert.equal(status.hidden, false);
     const failureText = status.firstChild;
     await controller.refresh();
     assert.equal(status.firstChild, failureText);
     available = true;
     await controller.refresh();
-    assert.equal(container.querySelector("details"), details);
-    assert.ok(details.hasAttribute("open"));
-    assert.match(status.textContent, /Refreshes every minute/);
+    assert.equal(container.querySelector("table"), table);
+    assert.equal(status.textContent, "");
+    assert.equal(status.hidden, true);
     data = {...fixture(), schema_version: 99};
     await controller.refresh();
     assert.equal(container.innerHTML, original);
@@ -198,15 +348,16 @@ test("rendering keeps the last successful table during failures and safely adds 
     assert.equal(container.querySelectorAll(".meth").length, 2);
     assert.ok(container.textContent.includes(row.condition.label));
     assert.equal(container.querySelectorAll("img").length, 0);
-    assert.equal(container.querySelectorAll("details a").length, 4);
-    assert.match(status.textContent, /Refreshes every minute/);
+    assert.equal(container.querySelectorAll("details, summary").length, 0);
+    assert.equal(status.textContent, "");
+    assert.equal(status.hidden, true);
   } finally {
     controller.stop();
     delete globalThis.document;
   }
 });
 
-test("results-only records display their evidence without inventing a model link", () => {
+test("results-only records display scores without source controls", () => {
   const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
   globalThis.document = document;
   try {
@@ -218,9 +369,7 @@ test("results-only records display their evidence without inventing a model link
     const container = document.getElementById("table");
     renderTable(data, container);
     assert.match(container.textContent, /43\.3/);
-    assert.match(container.textContent, /checkpoint not uploaded/);
-    assert.equal(container.querySelectorAll("details a").length, 1);
-    assert.equal(container.querySelector("details a").textContent, "evaluation record");
+    assert.equal(container.querySelectorAll("details, summary, a").length, 0);
     checkpoint.revision = "b".repeat(40);
     assert.throws(() => validateTable(data));
   } finally {

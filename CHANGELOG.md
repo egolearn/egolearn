@@ -130,6 +130,10 @@ patch releases for fixes during 0.x development.
 - Memory Storyboard defaults to SimCLR plus supervised contrastive learning over global segment labels in replay.
 - BabyCL replaces batch-local temporal classification with supervised contrastive learning from global segment IDs in streaming and offline recipes.
 - BabyCL and Memory Storyboard snapshots with a temporal classifier cannot resume under the new recipes; `init_from` reuses their encoders.
+- The packaged config leaves `wandb.entity` unset, so online W&B runs log to your default entity.
+- The website benchmark groups live published results by training dataset and modality, omitting columns that are inapplicable to every model in a table. Visual-only tables omit image-text benchmarks, including Konkle 4AFC.
+- The benchmark page places SAYCam-S before BabyView and removes update notices and expandable source details.
+- The benchmark page labels ImageNet references as Others and places shape preference last.
 - Model and CLI guides connect checkpoint access, compatible evaluations, and complete training commands.
 - User guides describe current capabilities, dataset access, released checkpoints,
   and publication to personal Hub repositories.
@@ -180,6 +184,8 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
+- `probe:four_afc` (protocol version 2) splits credit among images tied for the highest similarity and rejects non-finite similarities and out-of-range answers, instead of counting ties and NaN as correct when the target is the first image.
+- The landing page provides runnable synthetic training commands and identifies available dataset and physics benchmarks.
 - The spatial-relations guide states that both scene domains are required for the packaged evaluation.
 - Training guides describe exact step limits, working PyAV decoding, and opt-in mixed precision.
 

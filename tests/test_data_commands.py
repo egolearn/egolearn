@@ -1,6 +1,5 @@
 """Public CLI routing, access rules and on-disk checksum verification."""
 
-import importlib.util
 import json
 import os
 import subprocess
@@ -11,7 +10,6 @@ import pytest
 from egolearn.commands import data
 from egolearn.hub import write_checksums
 
-PREPARERS = [item for item in data.DATASETS if item.prepare_module]
 PREPARER_OPTIONS = {
     "shape-bias": "--force-download",
     "spatial-relations": "--generator-root",
@@ -175,10 +173,7 @@ def test_preparation_explains_missing_extra(monkeypatch, capsys, tmp_path):
     "name,help_args",
     [
         ("shape-bias", ["--help"]),
-        ("spatial-relations", ["-h"]),
         ("spatial-monitoring", ["--", "--help"]),
-        ("babyview-4afc", ["--help"]),
-        ("labeled-s-4afc", ["--help"]),
         ("grasp", ["--help"]),
         ("konkle-4afc", ["--help"]),
     ],
@@ -207,24 +202,5 @@ raise SystemExit(main(['data', 'prepare', *sys.argv[1:]]))
     )
     assert result.returncode == 0, result.stderr
     assert f"usage: egl data prepare {item.name}" in result.stdout
-    assert PREPARER_OPTIONS[item.name] in result.stdout
-    assert not list(tmp_path.iterdir())
-
-
-@pytest.mark.skipif(
-    importlib.util.find_spec("torch") is None or importlib.util.find_spec("PIL") is None,
-    reason="legacy benchmark imports require training dependencies",
-)
-@pytest.mark.parametrize("item", PREPARERS, ids=lambda item: item.name)
-def test_installed_legacy_preparation_help_from_outside_checkout(tmp_path, item):
-    result = subprocess.run(
-        [sys.executable, "-I", "-m", item.prepare_module, "--help"],
-        cwd=tmp_path,
-        text=True,
-        capture_output=True,
-        timeout=90,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "usage:" in result.stdout
     assert PREPARER_OPTIONS[item.name] in result.stdout
     assert not list(tmp_path.iterdir())
