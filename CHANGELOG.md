@@ -127,6 +127,7 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- The packaged config leaves `wandb.entity` unset, so online W&B runs log to your default entity.
 - The website benchmark groups live published results by training dataset and modality, omitting columns that are inapplicable to every model in a table. Visual-only tables omit image-text benchmarks, including Konkle 4AFC.
 - The benchmark page places SAYCam-S before BabyView and removes update notices and expandable source details.
 - The benchmark page labels ImageNet references as Others and places shape preference last.

@@ -49,10 +49,9 @@ The existing `python -m egolearn.train` and `python -m egolearn.evaluate` entry
 points remain supported.
 
 Shared training configs disable W&B by default. To log online, authenticate with
-W&B and set your own destination, for example
-`wandb.mode=online wandb.entity=YOUR_ENTITY wandb.project=YOUR_PROJECT` after the
-training command. Override both destination fields because the shared entity
-default belongs to the lab. Use `wandb.mode=offline` for local logs or
+W&B and add `wandb.mode=online wandb.project=YOUR_PROJECT` after the training
+command. Runs go to your default W&B entity unless you set `wandb.entity` or
+`WANDB_ENTITY`. Use `wandb.mode=offline` for local logs or
 `wandb.mode=disabled` for no W&B logging. V-JEPA 2 uses environment variables as
 shown in its [method guide](../projects/vjepa2/README.md#run).
 
