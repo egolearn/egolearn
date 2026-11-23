@@ -113,81 +113,96 @@ function element(tag, text, className) {
   return node;
 }
 
-function link(text, url) {
-  const node = element("a", text);
-  node.href = url;
-  return node;
-}
-
-export function renderTable(data, container) {
-  validateTable(data);
+function modelTable(rows, columns, title) {
   const table = element("table", undefined, "bench");
   table.setAttribute("aria-describedby", "benchmark-note");
-  const caption = element("caption", "EgoLearn benchmark results", "visually-hidden");
+  const caption = element("caption", title);
   table.append(caption);
   const head = element("thead");
   const headings = element("tr");
-  for (const label of ["method", ...data.columns.map(column => `${column.label}${column.unit === "fraction" ? " (%)" : ""}`)]) {
+  for (const label of ["method", ...columns.map(column => `${column.label}${column.unit === "fraction" ? " (%)" : ""}`)]) {
     const heading = element("th", label);
     heading.scope = "col";
     headings.append(heading);
   }
   head.append(headings);
   table.append(head);
-  for (const dataset of [...new Set(data.rows.map(row => row.condition.dataset))]) {
-    const body = element("tbody");
-    const group = element("tr", undefined, "group");
-    const heading = element("th", `trained on ${dataset}`);
-    heading.colSpan = data.columns.length + 1;
-    heading.scope = "rowgroup";
-    group.append(heading);
-    body.append(group);
-    for (const row of data.rows.filter(row => row.condition.dataset === dataset)) {
-      const tr = element("tr");
-      const method = element("td");
-      method.append(element("span", row.condition.label, "meth"));
-      method.append(element("span", `${row.condition.regime} · ${row.condition.architecture}`, "kind"));
-      const details = element("details", undefined, "benchmark-details");
-      const reference = row.expected_seeds[0] === null;
-      details.append(element("summary", reference ? "1 reference checkpoint · sources"
-        : `${row.runs.length} of ${row.expected_seeds.length} seeds · sources`));
-      details.append(element("p", row.condition.description));
-      if (row.runs.some(run => run.provenance?.legacy_evaluation || !run.provenance?.training_code_commit)) {
-        details.append(element("p", "Some source revisions were not recorded. See each evaluation record for provenance limits."));
-      }
-      for (const run of row.runs) {
-        const p = element("p");
-        const identity = run.seed === null ? "Training seed unknown" : `Seed ${run.seed}`;
-        const record = `https://huggingface.co/datasets/${data.results_repo}/blob/${data.revision || "main"}/runs/${run.id}.json`;
-        if (run.checkpoint.repo_id === null) {
-          p.append(document.createTextNode(`${identity} · checkpoint not uploaded`));
-        } else {
-          const model = `https://huggingface.co/${run.checkpoint.repo_id}/tree/${run.checkpoint.revision}`;
-          p.append(link(`${identity} · weights${run.checkpoint.private ? " (restricted)" : ""}`, model));
-        }
-        p.append(document.createTextNode(" · "), link("evaluation record", record));
-        details.append(p);
-      }
-      method.append(details);
-      tr.append(method);
-      for (const column of data.columns) {
-        const cell = row.cells[column.id];
-        const formatted = formatMetric(cell, column);
-        const td = element("td", formatted.value);
-        if (formatted.sd) td.append(element("span", formatted.sd, "sd"));
-        const sizes = [...new Set(cell.protocols.map(p => p.settings.size).filter(Number.isFinite))];
-        const resolution = sizes.length ? ` Evaluation resolution: ${sizes.join(", ")} px.` : "";
-        td.title = cell.status === "not_applicable" ? cell.reason
-          : `${column.description} ${cell.n}/${cell.expected_n} ${reference ? "checkpoints" : "seeds"}; ${cell.status}.${resolution}`;
-        tr.append(td);
-      }
-      body.append(tr);
+  const body = element("tbody");
+  for (const row of rows) {
+    const tr = element("tr");
+    tr.dataset.resultId = row.id;
+    const method = element("td");
+    method.append(element("span", row.condition.label, "meth"));
+    method.append(element("span", `${row.condition.regime} · ${row.condition.architecture}`, "kind"));
+    const reference = row.expected_seeds[0] === null;
+    tr.append(method);
+    for (const column of columns) {
+      const cell = row.cells[column.id];
+      const formatted = formatMetric(cell, column);
+      const td = element("td", formatted.value);
+      if (formatted.sd) td.append(element("span", formatted.sd, "sd"));
+      const sizes = [...new Set(cell.protocols.map(p => p.settings.size).filter(Number.isFinite))];
+      const resolution = sizes.length ? ` Evaluation resolution: ${sizes.join(", ")} px.` : "";
+      td.title = cell.status === "not_applicable" ? cell.reason
+        : `${column.description} ${cell.n}/${cell.expected_n} ${reference ? "checkpoints" : "seeds"}; ${cell.status}.${resolution}`;
+      tr.append(td);
     }
-    table.append(body);
+    body.append(tr);
   }
+  table.append(body);
+  return table;
+}
+
+const imageTextBenchmarks = new Set([
+  "labeled_s_4afc", "babyview_4afc", "konkle_4afc", "vtwt", "baby_winoground",
+]);
+const datasetOrder = new Map([["SAYCam-S", 0], ["BabyView", 1]]);
+
+export function renderTable(data, container) {
+  validateTable(data);
+  const imageTextColumns = data.columns.filter(column => imageTextBenchmarks.has(column.benchmark));
+  // Missing evaluations do not establish a visual-only model. Require an explicitly
+  // inapplicable image-text benchmark and no image-text evaluations. An image-text
+  // column added after a visual-only run was published is missing for that run,
+  // not inapplicable, and must not move the run to the multimodal table.
+  const visualOnly = row => {
+    const cells = imageTextColumns.map(column => row.cells[column.id]);
+    return cells.some(cell => cell.status === "not_applicable") && cells.every(cell => cell.n === 0);
+  };
   const fragment = document.createDocumentFragment();
-  fragment.append(table);
-  if (!data.rows.length) fragment.append(element("p", "No evaluated runs have been published yet."));
+  const datasets = [...new Set(data.rows.map(row => row.condition.dataset))]
+    .sort((a, b) => (datasetOrder.get(a) ?? 2) - (datasetOrder.get(b) ?? 2));
+  for (const [index, dataset] of datasets.entries()) {
+    const section = element("section", undefined, "result-dataset");
+    const heading = element("h3", dataset === "ImageNet" ? "Others" : `trained on ${dataset}`);
+    heading.id = `benchmark-dataset-${index}`;
+    section.setAttribute("aria-labelledby", heading.id);
+    section.append(heading);
+    const datasetRows = data.rows.filter(row => row.condition.dataset === dataset);
+    for (const [modality, title, isVisual] of [
+      ["multimodal", "multimodal models", false],
+      ["visual-only", "visual-only models", true],
+    ]) {
+      const rows = datasetRows.filter(row => visualOnly(row) === isVisual);
+      if (!rows.length) continue;
+      // Visual-only models take no image-text benchmarks, including ones the feed
+      // records as missing rather than inapplicable.
+      const columns = data.columns.filter(column =>
+        !(isVisual && imageTextBenchmarks.has(column.benchmark)) &&
+        rows.some(row => row.cells[column.id].status !== "not_applicable"))
+        .sort((a, b) => Number(a.benchmark === "shape_bias") - Number(b.benchmark === "shape_bias"));
+      const table = modelTable(rows, columns, title);
+      table.dataset.modality = modality;
+      const caption = table.querySelector("caption");
+      caption.id = `${heading.id}-${modality}`;
+      table.setAttribute("aria-labelledby", `${heading.id} ${caption.id}`);
+      const wrapper = element("div", undefined, "table-box");
+      wrapper.append(table);
+      section.append(wrapper);
+    }
+    fragment.append(section);
+  }
+  if (!data.rows.length) fragment.append(element("p", "No benchmark results to display."));
   container.replaceChildren(fragment);
 }
 
@@ -240,13 +255,14 @@ export function startBenchmarks({container, status, repository = container.datas
         lastData = serialized;
         lastUpdated = new Date(data.updated_at).toLocaleString();
       }
-      const message = `Results updated ${lastUpdated}. Refreshes every minute.`;
-      if (status.textContent !== message) status.textContent = message;
+      status.textContent = "";
+      status.hidden = true;
     } catch {
       const message = lastUpdated
         ? `Showing results from ${lastUpdated}. Live refresh is unavailable; retrying every minute.`
         : "Published results are temporarily unavailable. Retrying every minute.";
       if (status.textContent !== message) status.textContent = message;
+      status.hidden = false;
     } finally {
       busy = false;
     }
