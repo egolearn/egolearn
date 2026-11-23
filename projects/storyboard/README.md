@@ -1,19 +1,18 @@
 # Memory Storyboard
 
-Memory Storyboard learns visual representations from a chronological stream using
-temporal segmentation and two memory tiers. This project provides the
-[Memory Storyboard](https://arxiv.org/abs/2501.12254) method and its SAYCam training
+Memory Storyboard learns visual representations from a chronological stream by
+grouping frames into temporal segments and replaying them from two memory tiers.
+This project implements the method from the
+[Memory Storyboard paper](https://arxiv.org/abs/2501.12254) with a SAYCam
 configuration.
 
 ## Training
 
-Use the [SAYCam config](configs/saycam.yaml) with your frame-directory root configured
-under `stream.root_dir`. The recipe expects raw, upside-down 5 fps SAYCam frames
-and flips them during loading; BabyCL instead expects upright input frames.
-See [dataset access](../../docs/evaluation/data.md#saycam-access)
-for the source data requirements.
-
-Set `SAYCAM_ROOT` to that prepared frame directory and choose a new run directory:
+You need [SAYCam access](../../docs/evaluation/data.md#saycam-access) and raw
+5 fps frames in the [BabyCL frame layout](../babycl/docs/training_data.md#frames).
+Unlike BabyCL, the recipe expects the raw upside-down frames and flips them
+during loading. Install the training dependencies with `uv sync --extra train`,
+then validate the config before you train on a GPU:
 
 ```bash
 export SAYCAM_ROOT=/path/to/saycam_5fps
@@ -23,50 +22,43 @@ uv run egl train projects/storyboard/configs/saycam.yaml \
   "stream.root_dir=$SAYCAM_ROOT" run_dir=runs/storyboard-example
 ```
 
-Each batch draws 64 frames from the short memory and 448 from the long memory.
-Instance discrimination uses both slots together, while temporal classification
-uses the long-memory slot. The default schedule performs one training update after
-each advance of 64 stream frames.
+## Method and configuration
 
-The configuration is a code-level port, without a numerical-parity claim.
-The packaged recipe uses float32 arithmetic in one process. The shared trainer
-supports opt-in mixed precision through `driver.amp`; numerical parity with the
-original mixed-precision recipe has not been established.
+The learner's own backbone segments the stream. Each time the short memory
+turns over, the method reclusters its frames, revises their labels and merges
+classes with close prototypes.
 
-## Memory and segmentation
-
-The short FIFO tier retains every eighth frame, while the long weighted reservoir
-receives every frame. Both tiers admit directly from the stream, so the long memory
-does not depend on short-tier eviction.
-
-Segmentation uses the learner's current backbone. When the short window has fully
-turned over, the method reclusters its frames and revises their class labels.
-Prototype merging samples up to 32 frames per class from the long memory and uses
-a dynamic quantile threshold to decide which classes to merge.
-
-You can change memory capacities and training rate in the config. The default
-`driver.rate.resample: false` makes additional updates reuse the batch, matching the
-original method's repeated-gradient setting. No Memory Storyboard-specific KrishnaCam
-recipe is packaged. The [KrishnaCam guide](../krishnacam/README.md) covers general
-video training; adapting this method also requires matching timing and preprocessing.
+| Setting | Default |
+| --- | --- |
+| Short memory | 5,000-frame FIFO, admitting every eighth frame |
+| Long memory | 45,000-frame weighted reservoir, admitting every frame |
+| Batch | 64 short-memory and 448 long-memory frames |
+| Objectives | Instance discrimination on the batch, and a temporal objective grouping long-memory frames by segment |
+| Updates | One per 64 stream frames, reusing the batch for extra updates |
+| Optimizer | SGD, constant learning rate 0.05 |
+| Input | 112-pixel crops |
 
 ## Evaluation
 
-Evaluate saved checkpoints with the [standalone evaluator](../../docs/evaluation.md).
-The released Memory Storyboard ImageNet evaluation uses 112-pixel inputs, while the
-packaged ImageNet evaluation defaults to 224 pixels. Set `benchmarks.0.size=112`
-when you need that resolution, and match the remaining protocol settings before
-comparing scores.
+The released Memory Storyboard ImageNet evaluation uses 112-pixel inputs, so set
+the size when you evaluate a checkpoint with the
+[standalone evaluator](../../docs/evaluation.md):
 
-## Implementation
+```bash
+uv run egl eval imagenet_linear_eval \
+  checkpoint=runs/storyboard-example/final.pth data_root=/path/to/imagenet \
+  benchmarks.0.size=112
+```
 
-The [method package](../../src/egolearn/methods/storyboard/) contains the original
-greedy hierarchical clustering algorithm, reclustering and prototype merging, and
-the learner-backed embedding component. Component docstrings document the preserved
-clustering behavior and adaptations to the framework.
+## Differences from the original code
 
-Labels are resolved through a shared label store when batches are assembled.
-The recluster trigger is checked per frame rather than per training update,
-preserving the original threshold crossing within a stream advance. The
-[architecture guide](../../docs/design/architecture.md#method-differences) compares
-this design with BabyCL.
+- The config is a code-level port. Numerical parity with the original code has
+  not been established, so match the full evaluation protocol before you
+  compare scores with the paper.
+- Training runs in float32, while the original used mixed precision. Add
+  `+driver.amp.dtype=float16` to train in mixed precision.
+- The recluster trigger is checked after every frame rather than every update.
+  It fires at the same threshold crossing, up to 64 frames earlier.
+
+The [architecture page](../../docs/design/architecture.md#method-differences)
+compares Memory Storyboard with BabyCL.

@@ -1,289 +1,154 @@
 # Benchmark suites
 
-`egl bench` runs a declared set of seeds and generates tables from their local
-records. A suite is a versioned YAML file; [the toy suite](../benchmarks/toy.yaml)
-is a runnable CPU example. It reports the last training step's loss and step count,
-not an evaluation score or an average over training. Final configured probe results
-are recorded separately.
+A benchmark suite runs one training or evaluation config over a fixed set of
+seeds and summarizes the results as a table of means and standard deviations.
+Use a suite when you want a comparison you can rerun later. It pins the config,
+the seeds and the SHA-256 of each input, and it refuses to build a table from
+incomplete runs.
 
-Records retain counts of skipped and nonfinite steps. Ordinary streaming training
-skips nonfinite losses and marks the final record `nonfinite`. Ordinary offline
-training raises on the first nonfinite or empty loss and records `failed`, without
-writing a final checkpoint. Suites set the managed `record_fail_on_nonfinite=true`
-option, which stops immediately on nonfinite losses and records `nonfinite` in
-either mode. Failed and nonfinite records cannot enter a normal table.
+Suites run with `egl bench`, which needs the `train` extra
+(`uv sync --extra train`).
+
+## Quickstart
+
+[`benchmarks/toy.yaml`](../benchmarks/toy.yaml) trains the synthetic
+`toy_streaming` config for two steps with each of two seeds, on CPU:
 
 ```yaml
 version: 1
-name: my-evaluation
-entry: eval
-config: ../projects/example/configs/evaluate.yaml
-seeds: [0, 1, 2]
+name: toy
+entry: train
+config: toy_streaming
+seeds: [7, 8]
 overrides:
-  - device=cpu
+  - ++driver.max_steps=2
+inputs: {}
+metrics:
+  train/last_step/loss: min
+  train/steps: max
+```
+
+Run it twice, the second time with a lower learning rate, and compare the two
+runs:
+
+```bash
+uv run egl bench run benchmarks/toy.yaml --output runs/toy-first
+uv run egl bench run benchmarks/toy.yaml --output runs/toy-second \
+  --override solver.groups.0.lr=0.0005
+uv run egl bench table runs/toy-second/manifest.json --baseline runs/toy-first/manifest.json
+```
+
+Each output directory holds a `manifest.json` and one `seed-<seed>/` directory
+per seed with its frozen config, log and `record.json`. The output must be a
+new directory, outside the checkout or in an ignored path such as `runs/`, so
+retry a failed suite in a new directory. The table prints one row per metric
+with its mean, standard deviation, baseline mean and change.
+
+## Suite file
+
+| Field | Meaning |
+| --- | --- |
+| `version` | Always `1` |
+| `name` | Suite name; a baseline must have the same name |
+| `entry` | `train` or `eval` |
+| `config` | A packaged config name, such as `toy_streaming`, or a `.yaml` path relative to the suite file |
+| `seeds` | Seeds to run, one run each |
+| `overrides` | Hydra `key=value` overrides applied to every seed |
+| `inputs` | Pinned input files, keyed by the config key they set |
+| `metrics` | Metric keys to report, each with direction `min` or `max` |
+
+Metric keys depend on the entry. Evaluation metrics are
+`<benchmark name>/<metric>`, such as `intphys2/voe_acc`. Training metrics are
+`train/last_step/<log key>` for the last training step, `train/steps`, and
+`probe/<probe name>/<metric>` for the last result of each training probe.
+
+Overrides cannot change the seed, a pinned key, output paths, resume or dry-run
+mode, because every suite run starts fresh from its pinned inputs.
+
+### Pinned inputs
+
+Each entry under `inputs` sets a config key to a path and pins its content.
+An evaluation suite must pin `checkpoint`:
+
+```yaml
 inputs:
   checkpoint:
-    path: /path/to/model.pth
-    sha256: <64-character-sha256>
-  benchmarks.0.manifest:
-    path: /path/to/trials.json
-    sha256: <64-character-sha256>
-metrics:
-  objects/accuracy: max
+    path: /path/to/final.pth
+    sha256: <sha256 of final.pth>
+  benchmarks.0.data_root:
+    path: /path/to/intphys2/Main
+    sha256: <sha256 of Main/checksums.sha256>
 ```
 
-Replace the example paths and hashes with your own artifacts. Metric keys are
-`<benchmark name>/<metric name>` for evaluation and `train/last_step/<log key>` for the last training update and
-`probe/<name>/<metric>` for final training probes;
-declare each metric's direction as `min` or `max`. A model checkpoint is mandatory
-and checksum-pinned for evaluation. `entry: train` accepts a training configuration
-and may pin initialization checkpoints or data inputs the same way.
+Paths may be absolute, relative to the suite file, or `hf://` references.
+Compute the digest that matches the kind of input:
 
-Config files and local input paths resolve relative to the suite file. Packaged
-config names, such as `toy_streaming`, also work. Each `inputs` key is a dotted
-Hydra config key; the runner sets it to the verified input path. For a directory,
-pin the SHA-256 of its `checksums.sha256`; every listed file and the collection's
-completeness are then checked. Hub references are resolved before verifying the
-pinned content. Hub exported checkpoints also download `model.json` at the
-weights' immutable commit before freezing local paths. Input files must remain
-accessible on the compute node. Pin all
-external data/manifests needed for the comparison; the runner cannot infer the
-meaning of arbitrary component configuration fields.
+- A file: `sha256sum FILE`.
+- A directory: write an inventory with
+  `uv run python -m egolearn.hub checksum DIR`, then pin
+  `sha256sum DIR/checksums.sha256`. Every listed file is then verified.
+- An exported `model.safetensors`: the checkpoint `sha256` that `egl eval`
+  records for it, which covers the weights and `model.json` together.
 
-For `checkpoint` and `init_from.checkpoint` inputs ending in `model.safetensors`,
-`sha256` pins the exported pair: SHA-256 of the concatenated hexadecimal file
-digests, weights first. This matches the evaluator's artifact `sha256` and covers
-changes to construction metadata as well as weights. Compute it locally with:
-
-```bash
-python - <<'PYTHON'
-from pathlib import Path
-from egolearn.utils.model_artifact import export_sha256, file_digest
-
-p = Path("exports/example")
-print(export_sha256(file_digest(p / "model.safetensors"), file_digest(p / "model.json")))
-PYTHON
-```
-
-Use that digest with either a local `model.safetensors` path or a Hub reference
-ending in `/model.safetensors`. Export directories remain supported using a
-`checksums.sha256` generated by `python -m egolearn.hub checksum exports/example`.
-Legacy `.pth` inputs continue to use the file's own SHA-256.
-
-## Running
-
-Run these commands on a workstation or compute node. All `egl` commands run
-Python; on the cluster, first enter a CPU allocation as described below.
-
-```bash
-egl bench run benchmarks/toy.yaml --output runs/toy-first
-egl bench run benchmarks/toy.yaml --output runs/toy-second \
-  --override solver.groups.0.lr=0.0005
-egl bench table runs/toy-second/manifest.json --baseline runs/toy-first/manifest.json
-```
-
-Output must be a new directory outside the running source checkout or ignored by
-Git (for example, `runs/`). This keeps output creation from changing the recorded
-source identity. Before creating it, the runner verifies inputs and
-composes a complete configuration for every seed. It writes one
-`seed-<seed>/config.yaml`, an expected-run `manifest.json`, and eventually a log and
-`record.json` per seed. Configuration defaults are composed at planning time. Interpolations are
-preserved and resolve inside each run, after its seed and output paths are set;
-worker environment values therefore do not get frozen during planning. Each run
-uses its frozen config and isolated working directory; use pinned input paths
-rather than relying on relative data paths.
-
-Overrides accept single Hydra `key=value` expressions, including additions with
-`+` or `++`. They cannot replace pins or their parent/child keys, seeds, output
-locations, Hydra settings, resume, or dry-run mode. Suite execution always starts
-fresh. Normal `egl train`/`eval` retain their unrestricted Hydra interface.
-
-The worker rechecks inputs, config and manifest hashes before execution and checks
-the code/environment identity against the plan. Changed or missing inputs fail;
-completed seeds remain on disk when another fails. Full input verification runs
-before and after each task, which adds I/O proportional to the pinned data size. A claimed seed cannot be run
-twice into the same directory. Create a new output directory for retries.
-
-### Cluster planning in a CPU job
-
-`egl bench run --submit` composes configurations and hashes every pinned input
-before it submits the array. Run that planning in a CPU job, never on the login
-node. It requires an editable installation of the clean submitting checkout so
-configuration defaults come from the code that will execute. Keep the checkout on
-shared scratch. From its root on the login node, source the
-[cluster environment](cluster.md#setup-and-submission) and request a compute shell
-(replace `CPU_PARTITION` and `ACCOUNT` with your site's settings):
-
-```bash
-source env.sh
-srun --partition=CPU_PARTITION --account=ACCOUNT --nodes=1 --ntasks=1 \
-  --cpus-per-task=2 --mem=8G --time=00:30:00 --pty bash
-```
-
-Once `srun` has started the shell **on the compute node**, run from that same
-checkout root:
-
-```bash
-uv sync --locked --extra train
-uv run --no-sync egl doctor --submit --skip-cuda && \
-  uv run --no-sync egl bench run benchmarks/toy.yaml \
-  --output "$EGOLEARN_ARTIFACTS/toy-suite" --submit \
-  --sbatch=--partition=CPU_PARTITION --sbatch=--cpus-per-task=2 \
-  --sbatch=--mem=8G --sbatch=--time=00:10:00
-exit
-```
-
-`doctor --submit` checks cluster storage and the planning host's Bash, Git,
-`sbatch`, `iconv`, `tar`, and uv executables. Load any required site modules in
-this compute shell before running it. The `&&` prevents planning from creating
-output files when a check fails.
-
-Choose planning time and memory for the input size; hashing a large collection
-can take longer than this toy example. The `--sbatch` settings select resources
-for the eventual workers independently of the planning job; request GPU resources
-there for GPU suites. Submission finishes once the array is queued, so the
-planning allocation can exit. Run table generation in an allocation too.
-
-Planning uses the compute host's editable environment and `sbatch`, rather than
-the launcher's archived wheel environment, which has no editable Git checkout.
-It delegates to the existing clean-checkout cluster launcher with one array
-task per seed; repeat `--sbatch=OPTION` for Slurm settings. Commands use the compute
-environment's Python. The archived commit and pinned image identify the queued
-code. Put output on shared scratch outside `$HOME`, accessible to every task. The
-output directory must be outside the checkout or ignored by Git. Inputs and output
-must be under configured storage binds or explicit `APPTAINER_BIND` destinations;
-unbound and read-only output paths fail before planning creates files. Arrays
-disable automatic requeue because each seed is claimed once; retry with a new
-output directory. Interrupted tasks remain incomplete, never successful.
+The runner checks every pin before planning and again before and after each
+seed, and a changed or missing input fails the run. Pin every data file and
+manifest that your comparison depends on, since the runner cannot tell which
+other config values point at data.
 
 ## Tables
 
-`egl bench table MANIFEST --format md|csv|json` reports mean and sample standard
-deviation. A singleton has an unavailable SD. A metric is averaged only when every
-expected seed supplies a finite value from a completed matching run. Missing,
-failed, malformed, nonfinite and mismatched records are listed; incomplete metrics
-have no mean or SD. A baseline must use the same suite name, entry, metric names
-and directions, seed set, and input pins (config keys and SHA-256 checksums).
-Seed order and local input paths may differ; identical content at a new location
-is still comparable. Changed, added or removed pins or seeds fail before any
-table or delta is printed, including with `--allow-unverified`. Code revisions
-and unpinned configuration choices may differ for experiments. JSON output includes
-the seed set and input hashes without exposing local input paths.
-Deltas are current minus baseline, and regressions follow the declared
-direction. Any worsening is flagged; this is not a statistical significance test.
-Incomplete results and regressions return exit status 1.
+`egl bench table MANIFEST` prints a Markdown table, and `--format csv` or
+`--format json` gives other formats. A metric has a mean only when every seed
+completed with a finite value, and the seeds that did not are listed under
+the table.
 
-Tables reject dirty or unavailable source revisions by default. Use
-`--allow-unverified` for explicitly marked exploratory summaries. Tables contain
-metrics and seed-level diagnostics, not local config paths. The underlying configs,
-logs and records are local run artifacts; do not publish them without reviewing
-their contents for private paths and settings.
+With `--baseline OTHER_MANIFEST`, the table adds the baseline mean and the
+change, and flags every change in the worse direction. This is not a
+significance test. A baseline must have the same suite name, seeds and pinned
+inputs, so use it to compare code revisions or overrides on the same data.
+The command exits with status 1 when a seed is missing or a metric regresses.
 
-## Run records and scope
+Tables accept only runs from a clean, committed checkout. If you need an
+exploratory table from uncommitted code or a wheel install, add
+`--allow-unverified`, which marks the table as exploratory.
 
-Suites always request an atomic `record.json`. Ordinary `egl train` and `egl eval`
-now default to `record_json=auto`. Each attempt gets its own
-`<run_dir>/records/<id>/record.json` (training) or
-`runs/eval/records/<id>/record.json` (evaluation). Resume and repeated calls retain
-the earlier attempt. An explicit `record_json=/path/to/record.json` must name a new
-file; `record_json=null` disables recording. Defaults apply to configs without a
-`record_json` key as well.
-Automatic destinations must be writable; recording errors are reported rather
-than silently dropping a run. Choose an explicit writable path or disable records
-when evaluating in a read-only working directory. With no `run_dir`, training uses
-`runs/default`, matching the checkpoint directory.
+## Cluster runs
 
-The same behavior applies to `egolearn.build(config).driver.fit()` and to
-`evaluate()` / `evaluate_checkpoint()`. The evaluation APIs accept the keyword
-`record_json="auto"`, an explicit file, or `None` to disable recording. CLI calls
-and their underlying APIs share one record. Manually assembled low-level drivers
-without a construction config can use the `record_run(config, "train")` context
-manager and append its recorder to their hooks.
+With `--submit`, `egl bench run` plans the suite and submits one Slurm array
+task per seed through the cluster launcher. Planning composes every config and
+hashes every pinned input, so run it in a CPU allocation, not on a login node,
+from a clean checkout set up as in [Cluster jobs](cluster.md). Pass Slurm
+options for the array tasks with `--sbatch=OPTION`:
 
-Records contain status, seed, resolved config, wall time, metrics, package version,
-code revision/dirty state, lockfile hash and container image when available.
-The runner adds verified input identities and hashes tying records to the suite
-and frozen config. Missing provenance is recorded as `unavailable`, never guessed
-from an unrelated checkout in the caller's working directory.
+```bash
+uv run egl bench run benchmarks/babycl_saycam.yaml \
+  --output "$EGOLEARN_ARTIFACTS/babycl-suite" --submit --sbatch=--gres=gpu:1
+```
 
-`input_provenance` captures known input arguments in streams, tokenizers, probes,
-benchmarks, initialization and resume. Local files carry their SHA-256; this
-identifies the file, not every image referenced by a manifest. Ordinary records
-hash a directory's inventory only: `inventory_sha256` identifies `checksums.sha256`,
-while the collection's `sha256` remains `unavailable` with reason
-`inventory_not_verified`. Invalid inventories also remain unavailable and do not
-abort ordinary runs. Automatic capture does not enumerate or hash the collection.
-Suites fully verify their pinned collections once during planning, then before
-and after each task, and
-retain those verified pins in `inputs`; this costs reads proportional to data size.
-Dry-run provenance capture skips input hashing and Hub resolution. Custom component
-inputs with unknown argument names remain in the config without inferred hashes.
-
-Hub inputs retain the requested reference and resolved immutable commit. The run
-uses that resolved local artifact for config-driven inputs, so a moving tag cannot
-select different bytes between capture and loading. Preconstructed benchmark
-instances may already have cached data; their configuration is descriptive, and
-automatic input identities remain unavailable instead of resolving their inputs
-again. Benchmarks can report actual consumed-data provenance in `metadata()`.
-Evaluation records also retain benchmark
-settings, versions and metadata. A later benchmark failure keeps earlier scores
-in a record marked `failed`, which cannot enter a normal suite table.
-
-Training checkpoints and snapshots include their producing run's code/environment
-identity, record ID, seed and input provenance. Resume and initialization retain
-the parent checkpoint's embedded training provenance, including across code revisions.
-Snapshots preserve skipped/nonfinite-step counters so resume retains the run's
-nonfinite status. A later unrelated exception is recorded as `failed` with its
-error type.
-Evaluation of those checkpoints preserves
-that training identity separately from the evaluation run's identity. Older
-checkpoints report unavailable training provenance. In-memory model evaluations
-do not claim a checkpoint digest.
-
-Records are written before execution and finalized atomically on success or a
-Python exception. A forcibly killed process leaves a `running` record, never a
-completed result. Checkpoint/snapshot output hashes are persisted immediately,
-separately from input identities, so interrupted attempts can be linked to saved
-weights by digest and record ID. Records contain local resolved configuration;
-generated tables contain metrics and diagnostics suitable for a README after review.
+Keep the output directory and every pinned input on storage that the compute
+nodes can read.
 
 ## BabyCL SAYCam suite
 
-[`benchmarks/babycl_saycam.yaml`](../benchmarks/babycl_saycam.yaml) plans fresh
-training with seeds 1337, 1338 and 1339. It uses the default BabyCL training config
-with `+benchmark=labeled_s` to select Labeled-S 4AFC plus canonical 26-class
-fixed-feature linear decoding. Tables use final-model probe scores as fractions,
-with mean and sample SD. The linear protocol differs from the paper's split of
-all 26-class Labeled-S images and its embedding, which
-`probe:labeled_s_stratified_linear` follows; this suite does not assert
-numerical parity.
+[`benchmarks/babycl_saycam.yaml`](../benchmarks/babycl_saycam.yaml) trains
+BabyCL on SAYCam with three seeds and reports the final Labeled-S 4AFC and
+linear decoding accuracies. Its linear probe uses the canonical 26-class split,
+not the BabyCL paper's per-category split, so its scores are not the paper's
+numbers. Get the data as described in [dataset access](evaluation/data.md),
+and set the path and digest variables that the suite file lists, such as
+`SAYCAM_ROOT` and `SAYCAM_SHA256`.
 
-Set these artifact paths and digests in your local environment:
+## Run records
 
-| Input | Path variable | SHA-256 variable |
-| --- | --- | --- |
-| SAYCam frame collection | `SAYCAM_ROOT` | `SAYCAM_SHA256` |
-| Transcripts | `SAYCAM_TRANSCRIPTS` | `SAYCAM_TRANSCRIPTS_SHA256` |
-| Training vocabulary | `BABYCL_VOCAB` | `BABYCL_VOCAB_SHA256` |
-| Prepared 4AFC manifest | `LABELED_S_MANIFEST` | `LABELED_S_MANIFEST_SHA256` |
-| Labeled-S image collection | `LABELED_S_ROOT` | `LABELED_S_SHA256` |
-| Canonical linear split metadata | `LABELED_S_SPLIT` | Pinned in the suite |
+Training and evaluation write a `record.json` for every attempt, inside or
+outside a suite. With the default `record_json=auto`, training writes
+`<run_dir>/records/<id>/record.json`, and evaluation writes
+`runs/eval/records/<id>/record.json` in the working directory. Set
+`record_json=/path/to/new.json` for a specific file, which must not exist yet,
+or `record_json=null` to turn records off.
 
-Directory digests identify `checksums.sha256`; create and verify inventories with
-`python -m egolearn.hub checksum DIR` and `egl data verify DIR`. The 4AFC manifest
-must reference images in the pinned Labeled-S collection. Keep all restricted
-data and local environment files outside Git. Missing variables or mismatched
-digests fail before jobs are launched. No data or reference scores ship with this
-suite; its first real run requires the approved artifacts and compute allocation.
-
-```bash
-egl bench run benchmarks/babycl_saycam.yaml --output runs/babycl-reproduction --submit
-egl bench table runs/babycl-reproduction/manifest.json --format md
-```
-
-Keep that manifest and its per-seed records as the baseline for later
-`egl bench table --baseline ...` comparisons. Dirty/unknown code remains excluded
-from normal tables; `--allow-unverified` is for explicitly exploratory summaries.
-
-`egl bench` measures declared training/evaluation metrics. The separate scripts
-under `scripts/bench/` remain throughput and data-loading tools.
+A record holds the run's status, seed, resolved config and metrics, the code
+version and Git state, and the SHA-256 of each known input file. Checkpoints
+carry the identity of the training run that produced them, and an evaluation
+record keeps it next to its own. The status stays `running` if the process is
+killed. Records contain local paths, so review them before you share them.

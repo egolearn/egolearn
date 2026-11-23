@@ -7,7 +7,7 @@ protocol.  The eval images ship pre-squared at 224x224, so the `view`
 choice (center_crop vs resize) is vacuous here -- unlike BabyView.
 
 Data sources, manifest conversion, and model vocabulary:
-docs/evaluation.md#labeled-s-4afc-data
+docs/evaluation/data.md#labeled-s-4afc-data
 
 Config::
 

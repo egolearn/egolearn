@@ -1,34 +1,39 @@
-# Initialize from another run
+# Initialization from a checkpoint
 
-Set `init_from` to copy model weights into a fresh run. For example, keep a trained
-vision encoder while initializing new heads from the new run's seed:
+`init_from` copies model weights from an earlier run into a new one. Use it
+when you want to start from a trained encoder while the optimizer, the stream
+and any weights you do not copy start fresh. If you want to continue an
+interrupted run instead, use `resume`, as described in
+[cluster jobs](cluster.md#resuming-a-run).
+
+## Example
+
+This command starts a new toy run from the vision encoder exported by the
+[toy model export](cli.md#toy-model-export) example:
 
 ```bash
-uv run python -m egolearn.train --config-name toy_streaming \
-  '+init_from.checkpoint=runs/previous/final.pth' \
-  '+init_from.include=[encoders.vision.]'
+uv run egl train toy_streaming run_dir=runs/toy-init \
+  +init_from.checkpoint=exports/toy '+init_from.include=[encoders.vision.]'
 ```
 
-Exported model directories, checkpoints, and full snapshots are accepted.
-`include` and `exclude` select tensor
-name prefixes; omitting `include` selects all tensors. Strict loading is the default:
-selected components must be complete and shapes must match. Explicitly setting
-`strict: false` skips unmatched tensors, but selecting no tensors always fails.
-Parameters and buffers are copied; optimizer, stream, and RNG state start fresh.
-Use `resume` to continue a complete run instead. `init_from` and `resume` are mutually
-exclusive; set `init_from=null` when resuming a config that specifies initialization.
-Legacy checkpoints use restricted unpickling. Full snapshots require
-`+init_from.trusted_snapshot=true` and must come from a source you trust.
-Exported safetensors weights require no pickle opt-in; see [model export](cli.md#exporting-weights).
-The source checkpoint file name and hash, selected prefixes, and tensor count are recorded in the
-pipeline summary and subsequent checkpoints' model metadata.
+The pipeline summary printed at start-up has an `init_from` line with the
+number of tensors copied and the source file's step and hash. Add
+`dry_run=true` to check a selection without training.
 
-`init_from.checkpoint` also accepts a model Hub reference such as
-`hf://org/model@v1/model.safetensors`. Model references must name a file; a bare
-repository reference fails before downloading. The exported metadata file is
-downloaded at the weights' resolved commit. The source
-reference, repository, requested revision, and resolved commit are retained in
-the initialization metadata, including after snapshot resume.
+## Options
 
-V-JEPA initializes its EMA target from the context encoder at step 0, replacing any
-loaded target weights. A resumed snapshot preserves its target state.
+| Key | Meaning |
+| --- | --- |
+| `init_from.checkpoint` | An export directory, a training checkpoint, a full snapshot, or a Hub file such as `hf://models/org/repo@revision/model.safetensors` |
+| `init_from.include` | Tensor name prefixes to copy. Default: every tensor |
+| `init_from.exclude` | Tensor name prefixes to skip |
+| `init_from.strict` | Default `true`: every selected tensor must exist in both models with the same shape. `false` skips mismatches |
+| `init_from.trusted_snapshot` | Set to `true` to load a full snapshot, which is unpickled without restrictions. Use it only for files you trust |
+
+## Caveats
+
+- `init_from` and `resume` cannot be combined. If you resume a run whose
+  config sets `init_from`, add `init_from=null`.
+- The run fails if your selection copies no tensors.
+- V-JEPA 2 copies its context encoder into its target encoder at step 0, so
+  any loaded target-encoder weights are replaced.

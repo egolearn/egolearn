@@ -124,6 +124,8 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- The documentation site is about half its former length, with task-first pages and no site-specific cluster details.
+- The MAE and StreamMAE guides are two pages, BabyCL's offline inputs are part of its SAYCam inputs page, and the data-loading performance page is removed.
 - Model and CLI guides connect checkpoint access, compatible evaluations, and complete training commands.
 - User guides describe current capabilities, dataset access, released checkpoints,
   and publication to personal Hub repositories.
@@ -165,7 +167,7 @@ patch releases for fixes during 0.x development.
 ### Removed
 
 - `probe:imagenet_linear_sgd` is replaced by standalone `benchmark:imagenet_linear_sgd`
-  and the `imagenet_linear_eval` config; see [ImageNet migration](docs/evaluation.md#imagenet-migration).
+  and the `imagenet_linear_eval` config; see [ImageNet migration](docs/evaluation.md#imagenet-linear-decoding).
 - `ImageNetLinearSGDProbe` is replaced by `ImageNetLinearBenchmark`.
 - `scripts/prepare_shape_bias.py`, `scripts/prepare_spatial_relations.py`, and
   `scripts/prepare_spatial_monitoring.py` are replaced by `egl data prepare` and the

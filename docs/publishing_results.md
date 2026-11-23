@@ -1,223 +1,130 @@
 # Publishing benchmark results
 
-Use `egl publish` to publish evaluation results and update the website's benchmark
-table, with optional checkpoint uploads. The publisher stores results in a dataset
-repository and uploaded weights in private model repositories. Your original files remain local.
+This page is for maintainers who add evaluated checkpoints to the results
+table on the egolearn website. To evaluate or compare your own models, you
+need only [checkpoint evaluation](evaluation.md) and
+[benchmark suites](benchmark_suites.md).
 
-Install the `train` extra before preparing exports. On the cluster, run these commands
-inside a compute allocation, following the [cluster guide](cluster.md).
+`egl publish` turns local checkpoints and their evaluation outputs into
+per-run records in the Hugging Face dataset `egolearn/egolearn-results`. The
+website reads its table from that dataset, so a new publication appears without
+a website rebuild. Weights either stay local or go to private model
+repositories.
+
+Before you start, install the `train` extra and collect, for each checkpoint:
+
+- the checkpoint file and the saved Hydra config of its training run
+- the JSON files that `egl eval` wrote for it (`output_json`)
+- the run records of those evaluations, which hold their input hashes
 
 ## Publication manifest
 
-Create a local JSON manifest with the training condition, expected seeds, and source
-files. Paths in this manifest are local inputs and are not uploaded. Keep it under
-the ignored `exports/` directory.
+Write a JSON manifest that describes one training condition and its seeds.
+Keep it under the ignored `exports/` directory, since its paths are local and
+are never uploaded:
 
 ```json
 {
   "schema_version": 1,
   "condition": {
-    "id": "example-condition",
-    "label": "Example model",
-    "dataset": "Example dataset",
+    "id": "babycl-saycam",
+    "label": "BabyCL",
+    "dataset": "SAYCam",
     "regime": "continual",
     "architecture": "ResNeXt-50",
-    "description": "Final checkpoint from the declared training configuration."
+    "description": "Final checkpoint of the default BabyCL SAYCam configuration."
   },
-  "expected_seeds": [1337],
+  "expected_seeds": [1337, 1338, 1339],
   "runs": [{
     "training_seed": 1337,
-    "checkpoint": "runs/example/final.pth",
-    "training_config": "runs/example/.hydra/config.yaml",
-    "repo_id": "your-org/egolearn-example-seed1337",
-    "input_hashes": "runs/example/input_hashes.json",
-    "evaluations": ["runs/example/evaluation.json"]
+    "checkpoint": "runs/babycl-seed1337/final.pth",
+    "training_config": "outputs/<date>/<time>/.hydra/config.yaml",
+    "repo_id": "your-org/egolearn-babycl-seed1337",
+    "input_hashes": "exports/babycl-seed1337-input-hashes.json",
+    "evaluations": ["runs/babycl-seed1337/evaluation.json"]
   }]
 }
 ```
 
-Use the same condition ID and expected seed set when publishing additional seeds,
-and give different configurations distinct condition IDs. The publisher checks the
-saved training seed, but you must identify which experiments share a training condition.
+The `condition` fields are the text the website shows, and they cannot change
+after the first publication. To add seeds later, reuse the same `condition.id`
+and `expected_seeds`. The table shows a mean only once every expected seed is
+published. Each run's `training_seed` must match the seed in its
+`training_config`, the `.hydra/config.yaml` that Hydra saved for the training
+run. `repo_id` names the model repository that receives the weights if you
+upload them.
 
-### Evaluation records
+A score fills a website column when its benchmark name and metric match the
+column, so name the benchmarks in your evaluation configs after the default
+columns: `labeled_s_4afc`, `babyview_4afc`, `vtwt`, `baby_winoground`,
+`shape_bias`, `labeled_s_linear`, `babyview_linear` and `imagenet_linear`.
 
-Evaluation files use the native `EvaluationResult` format. Each file must identify
-the checkpoint digest and step, benchmark version, evaluation seed, configuration,
-and completed metrics. Failed evaluations cannot enter a publication bundle.
-VTWT and Baby Winoground results must record a positive evaluated count (`vtwt_n`
-or `bw_n`) and zero skipped items (`vtwt_skipped` or `bw_skipped`). Missing counts,
-empty evaluations, and partial image collections are rejected, including legacy imports.
+### Input hashes
 
-The input-hash file records the identities consumed by the evaluation:
+The input-hash file lists the SHA-256 of each file input, such as a manifest or
+vocabulary, that an evaluation read:
 
 ```json
 [
-  {
-    "benchmark": "labeled_s_4afc",
-    "kind": "manifest",
-    "sha256": "<SHA-256 recorded when the evaluation ran>"
-  },
-  {
-    "benchmark": "labeled_s_4afc",
-    "kind": "vocab_json",
-    "sha256": "<SHA-256 recorded when the evaluation ran>"
-  }
+  {"benchmark": "labeled_s_4afc", "kind": "manifest", "sha256": "<recorded sha256>"},
+  {"benchmark": "labeled_s_4afc", "kind": "vocab_json", "sha256": "<recorded sha256>"}
 ]
 ```
 
-Provide recorded hashes for file inputs such as manifests, split files, CSVs and
-vocabularies. Do not substitute a hash of today's data for missing historical
-evidence. Copy hashes from the evaluation's run record when available. Preparation
-checks their format and required keys, but does not independently verify the supplied
-hashes against a run record or read the original inputs.
-Directory-based evaluations can supply recorded class ordering and counts
-through their native metadata. Neither source establishes a digest of the underlying
-image collection; the published protocol states that limit.
+`kind` is the benchmark's config key. Copy each digest from the
+`input_provenance` of the evaluation's run record, where it appears under
+`benchmarks.<index>.<kind>`. If the record is missing, rerun the evaluation
+rather than hashing today's files.
 
-The default columns cover Labeled-S and BabyView 4AFC, VTWT, Baby Winoground group
-accuracy, shape preference, and Labeled-S, BabyView and ImageNet linear decoding.
-To publish another metric, provide a `columns` array in the manifest. Each column
-needs `id`, `benchmark`, `metric`, `label`, `description`, `unit` and `direction`.
-Supported units are `fraction` and `number`, with directions of `min` and `max`.
-Column IDs must retain the same definition, including display text, across publications.
+### Optional fields
 
-Condition metadata is also immutable. Keep the original manifest when adding seeds;
-pushes that change a condition's label or description are refused.
-
-### Imported reference checkpoints
-
-For a reference whose training seed and configuration are unavailable, set
-`reference: true` and `expected_seeds: [null]` in the manifest. Include one run with
-`training_seed: null` and `training_config: null`. Keep the checkpoint, evaluation,
-input-hash, and destination fields from the example above.
-
-Use a separate condition ID for each reference checkpoint. The table reports one
-checkpoint with an unknown training seed and no standard deviation. Preparation
-rejects a null seed when the checkpoint records a known seed. If you have the
-original training configuration and seed, use the ordinary manifest instead.
-
-Describe the reference's known training data, architecture, and checkpoint selection
-in the condition fields. A filename alone does not establish initialization history.
-Model construction metadata remains part of the verified export even when the
-training configuration is unavailable.
-
-### Inapplicable benchmarks
-
-For a model without a trained image-text head, add this top-level manifest field:
-
-```json
-{
-  "not_applicable": {
-    "labeled_s_4afc": "No trained image-text head.",
-    "babyview_4afc": "No trained image-text head.",
-    "vtwt": "No trained image-text head.",
-    "baby_winoground": "No trained image-text head."
-  }
-}
-```
-
-The keys are column IDs, and each reason must be a nonempty string. These cells
-display N/A with the supplied explanation. Leave unfinished evaluations undeclared,
-which displays a dash in existing table columns. The publisher rejects scores for
-a metric declared N/A and requires the same declarations across seeds of a condition.
-
-Keep different evaluation resolutions and protocols explicit in each condition's
-description. The table also includes recorded resolutions in metric tooltips.
-Comparisons across architectures or training budgets do not isolate a method's effect.
+- `"reference": true` with `"expected_seeds": [null]` publishes an imported
+  checkpoint whose training seed and config are unknown. Give its single run
+  `"training_seed": null` and `"training_config": null`, and use a separate
+  condition ID for each such checkpoint.
+- `not_applicable` maps a column ID to a reason, such as
+  `{"vtwt": "No trained image-text head."}`. The website shows N/A with that
+  reason. Leave a column out to show a dash for an evaluation that has not run.
+- `columns` replaces the default columns. Each entry needs `id`, `benchmark`,
+  `metric`, `label`, `description`, `unit` (`fraction` or `number`) and
+  `direction` (`min` or `max`). A column ID must keep its definition across
+  publications.
 
 ## Preparation
 
-Export and validate the batch into a new directory:
+Export the checkpoints and check the evaluations into a new directory:
 
 ```bash
-egl publish prepare exports/manifest.json --output exports/publication
+uv run egl publish prepare exports/manifest.json --output exports/publication
 ```
 
-Preparation exports `model.safetensors` and `model.json`, checks the evaluation's
-checkpoint identity, and reconstructs each exported model with strict weight loading.
-It writes a sanitized `bundle.json` beside the model directories. Existing destinations
-are refused, and preparation does not contact the Hub.
-
-Historical schema-1 evaluations have no completion field. After checking their exit
-records, pass `--allow-legacy-evaluations` to import them. Their records retain the
-legacy designation. Missing training and evaluation code commits remain null rather
-than inheriting the exporter's current revision.
-Imported references and N/A declarations retain the same input-hash requirements.
-Recover missing historical records or rerun the affected evaluations before publishing.
-
-Inspect the bundle and exported metadata before uploading. The publisher omits local
-paths and rejects unexpected publication fields, nonfinite metrics, and incomplete
-model exports. It does not upload optimizer state, replay buffers, frames or transcripts.
+Preparation writes `model.safetensors` and `model.json` for each run, reloads
+each export, checks that every evaluation scored that exact checkpoint, and
+writes `bundle.json`. It does not contact the Hub, so you can read
+`bundle.json` before anything is uploaded. Evaluation files from before
+evaluations recorded a status need `--allow-legacy-evaluations`.
 
 ## Upload
 
-Set `HF_TOKEN` through your environment, or use `--prompt-token` for a hidden prompt.
-The token needs write access to the destination organization.
+Set `HF_TOKEN` in your environment to a token with write access to the
+destination organization, or pass `--prompt-token` to type it. Then publish
+the results and keep the weights local:
 
 ```bash
-egl publish push exports/publication \
+uv run egl publish push exports/publication \
   --results-repo egolearn/egolearn-results \
   --public-results --results-only
 ```
 
-To add results to a collection, pass `--collection` with the slug from its Hugging Face
-URL. With `--results-only`, the command uploads evaluation records and their generated
-table while keeping weights local. Records retain the verified checkpoint and export hashes,
-with null repository, revision and visibility fields. The website labels these checkpoints
-as not uploaded and links to their evaluation evidence.
+The website needs `--public-results`, which makes the results dataset public
+while weights stay private. Without `--results-only`, the command also uploads
+each model to a private repository named by `repo_id`. To attach weights after
+a results-only upload, rerun `push` on the same bundle rather than preparing a
+new one, because a new export does not match the published records. Read the
+[checkpoint publication rules](evaluation/hub.md) before you upload
+SAYCam-trained weights.
 
-Omit `--results-only` to upload private model repositories before publishing the results.
-Both modes commit per-run records, the index, and `benchmarks.json` together. The returned
-receipt names the results revision and any uploaded models, and is saved as `publication.json`.
-
-Both models and results default to private. The website requires the `--public-results`
-flag shown above, which makes its results and evidence publicly readable without making
-weights public. Existing visibility is preserved, and a mismatch fails. If you need
-private results, use a separate repository and omit the flag.
-Follow the [checkpoint publication rules](evaluation/hub.md) before
-redistributing SAYCam-trained weights. Private model cards grant no redistribution license.
-
-Keep the prepared bundle, including `model.json` and `model.safetensors`, after a
-results-only upload. Rerun `push` on that same bundle without `--results-only` to attach
-weights later. Preparing again can change the export metadata hash because it records
-the exporter's code revision. Such a bundle cannot replace the published evidence.
-
-Retries reuse identical models and records. The publisher checks existing results for
-conflicts before uploading weights, then checks again when committing the results.
-A concurrent conflicting publication can still leave uploaded weights without a results
-link. Concurrent updates to distinct runs are merged. Adding a seed extends the existing
-condition; repeated evaluations of one checkpoint do not count as independent seeds.
-
-## Website deployment
-
-The website reads the [public benchmark feed](https://huggingface.co/datasets/egolearn/egolearn-results/resolve/main/benchmarks.json)
-directly from Hugging Face. Its browser requests omit credentials. Cloudflare needs no
-results environment variables, secrets or Functions. Keep the existing Cloudflare Access
-policy on the staging site; the results repository itself is public.
-
-To change the source, edit `data-results-repo` on the benchmark table container in
-`landing/index.html` and redeploy. Use a public, ungated dataset repository containing
-the publisher's `benchmarks.json`, index and per-run evidence.
-
-The build remains `bash scripts/docs/build.sh`, with `dist` as the output directory.
-The landing page and documentation are static assets. Deploy this reader once to switch
-to the public source; subsequent result uploads need no website deployment.
-
-An open, visible page checks for new results every minute. Each successful publication
-updates the feed without rebuilding the website. Failed refreshes retain the last
-successful table and show its timestamp. A first visit without a working source shows
-an unavailable message instead of placeholder scores. Requests bypass the browser cache.
-
-Aggregate values require all declared seeds and identical protocols. Missing results
-and protocol mismatches display a dash. The table uses sample standard deviation,
-and a single-checkpoint result has no standard deviation. Method details link to the model
-revision and per-run evidence. Evidence links use the feed's commit revision when Hugging
-Face supplies it. Public evidence needs no login; private weights still require Hub access.
-
-Reference checkpoints and N/A declarations produce schema-2 run records and feeds.
-The publisher and website also read schema-1 records without rewriting their evidence.
-Deploy the schema-2 website reader before publishing these new records.
-
-For this publication path, upload through `egl publish push`. Uploading checkpoint
-weights alone does not run evaluations or update the results index.
+`--collection SLUG` also adds the results and any uploaded models to a Hugging
+Face collection. The command saves its receipt as `publication.json` in the
+bundle, and you can rerun it safely, since identical models and records are
+reused.

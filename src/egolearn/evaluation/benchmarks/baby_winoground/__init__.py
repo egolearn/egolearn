@@ -5,7 +5,7 @@ Labels: https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/baby_wino
 Synthetic negatives: https://nyu.databrary.org/volume/564/folder/77120
 Task attribution: BabyVLM / babylmms-eval, Apache-2.0:
 https://github.com/ShawnKing98/babylmms-eval/blob/main/LICENSE
-Data access and preparation: docs/evaluation.md#babyvlm-benchmark-data
+Data access and preparation: docs/evaluation/data.md#babyvlm-benchmark-data
 
 Each instance pairs (pos_image, positive_phrase) with a
 synthetically perturbed (neg_image, negative_phrase).  All four image-phrase
