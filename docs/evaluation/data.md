@@ -145,6 +145,57 @@ For an image-only model, keep only the `probe:linear` entry. The crops have
 varying aspect ratios, so keep the default `view: center_crop` and `size: 224`
 when you compare results.
 
+## Konkle 4AFC data
+
+Konkle 4AFC tests word–object matching on studio photographs that appear in no
+training corpus. It follows the protocol of
+[Scaling cross-situational word learning on children's naturalistic experiences](https://arxiv.org/abs/2610.31842)
+and uses 60 categories of the [Konkle et al. (2010)](https://konklab.fas.harvard.edu/)
+object set, with 17 photographs each. Each trial shows a category word with one
+photograph of that category and three photographs of other categories.
+
+Download the object set from the Konkle lab, extract it, and draw the trials for
+the model's training vocabulary:
+
+```bash
+uv run egl data prepare konkle-4afc --data_root /path/to/17-objects \
+  --vocab_json /path/to/training_vocab.json
+```
+
+The command writes the trials to `data/konkle-4afc/trials.json`. A category
+whose label is missing from the vocabulary gets no trials and scores chance
+(0.25). The preparer prints these categories, and two models see the same trials
+only when their vocabularies cover the same categories. Save this config as
+`konkle_eval.yaml` and run it with
+`uv run egl eval konkle_eval.yaml checkpoint=run/final.pth`:
+
+```yaml
+defaults:
+  - /evaluate
+  - _self_
+
+_imports_:
+  - egolearn.evaluation.benchmarks.konkle_4afc
+benchmarks:
+  - _target_: "probe:four_afc"
+    name: konkle_4afc
+    manifest: data/konkle-4afc/trials.json
+    vocab_json: /path/to/training_vocab.json
+    vision_head: embed512
+    view: resize
+    size: 224
+```
+
+`four_afc_acc` averages over all 60 categories, with out-of-vocabulary categories
+at 0.25. When some categories are out of vocabulary, `four_afc_acc_scored` also
+reports the accuracy over the rest.
+
+Scores are not directly comparable with the paper's. The paper's models score a
+word against 17 region vectors per image and keep the best match, while
+`probe:four_afc` scores one pooled image representation. The original download
+also names files differently from the paper's copy, so the same seed selects
+different photographs.
+
 ## BabyVLM benchmark data
 
 The Visual Two-Word Test (VTWT) and Baby Winoground come from

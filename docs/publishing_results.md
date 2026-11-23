@@ -56,8 +56,9 @@ upload them.
 
 A score fills a website column when its benchmark name and metric match the
 column, so name the benchmarks in your evaluation configs after the default
-columns: `labeled_s_4afc`, `babyview_4afc`, `vtwt`, `baby_winoground`,
-`shape_bias`, `labeled_s_linear`, `babyview_linear` and `imagenet_linear`.
+columns: `labeled_s_4afc`, `babyview_4afc`, `konkle_4afc`, `vtwt`,
+`baby_winoground`, `shape_bias`, `labeled_s_linear`, `babyview_linear` and
+`imagenet_linear`.
 
 ### Input hashes
 

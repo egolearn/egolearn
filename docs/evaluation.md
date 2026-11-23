@@ -45,6 +45,7 @@ Names ending in `_eval` are packaged configs. The `probe:` targets go in a
 | mini-ImageNet linear decoding | `probe:mini_imagenet_linear` | 100-class `train/` and `val/` folders | `top1` (0.01) |
 | BabyView 4AFC | `probe:four_afc` | [BabyView object crops](evaluation/data.md#babyview-object-crops) | `four_afc_acc` (0.25) |
 | BabyView linear decoding | `probe:linear` | [BabyView object crops](evaluation/data.md#babyview-object-crops) | `top1` (1/72) |
+| Konkle 4AFC | `probe:four_afc` | [Konkle object photographs](evaluation/data.md#konkle-4afc-data) | `four_afc_acc` (0.25) |
 | VTWT | `probe:vtwt` | [SAYCam frames and labels](evaluation/data.md#babyvlm-benchmark-data) | `vtwt_acc` (0.5) |
 | Baby Winoground | `probe:baby_winoground` | [SAYCam frames and labels](evaluation/data.md#babyvlm-benchmark-data) | `bw_group_acc` (0.25) |
 | IntPhys 2 | `probe:intphys2` | [Main split videos](evaluation/intphys2.md) | `voe_acc`, `voe_auroc` (0.5) |

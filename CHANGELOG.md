@@ -9,6 +9,9 @@ patch releases for fixes during 0.x development.
 
 ### Added
 
+- Konkle 4AFC scores word–object matching on studio photographs and has a column in the results table.
+- `egl data prepare konkle-4afc` draws Konkle 4AFC trials for a model's vocabulary.
+- `probe:four_afc` manifests accept `chance_trials`, a count of unshowable trials scored at 0.25.
 - The first-evaluation tutorial runs a public checkpoint on locally prepared stimuli and explains its output.
 - The CLI guide includes a dataset-free CPU example that saves, exports, and reloads a toy model.
 

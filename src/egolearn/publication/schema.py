@@ -15,6 +15,12 @@ SCHEMA_VERSIONS = (1, 2)
 METRICS = [
     ("labeled_s_4afc", "four_afc_acc", "Labeled-S 4AFC", "Four-alternative image-word matching."),
     ("babyview_4afc", "four_afc_acc", "BabyView 4AFC", "Four-alternative image-word matching."),
+    (
+        "konkle_4afc",
+        "four_afc_acc",
+        "Konkle 4AFC",
+        "Four-alternative word-object matching on Konkle object photographs.",
+    ),
     ("vtwt", "vtwt_acc", "VTWT", "Visual word-text matching accuracy."),
     ("baby_winoground", "bw_group_acc", "Baby Winoground", "Group accuracy."),
     (

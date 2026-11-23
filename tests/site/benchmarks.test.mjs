@@ -21,10 +21,10 @@ function fixture() {
   };
 }
 
-test("the Python-generated schema-1 feed validates with all eight default metrics", () => {
+test("the Python-generated schema-1 feed validates with all nine default metrics", () => {
   const historical = JSON.parse(readFileSync(new URL("../fixtures/publication-v1.json", import.meta.url), "utf8"));
   const data = validateTable(historical.table);
-  assert.equal(data.columns.length, 8);
+  assert.equal(data.columns.length, 9);
   assert.equal(data.rows[0].runs.length, 3);
   for (const column of data.columns) {
     assert.deepEqual(formatMetric(data.rows[0].cells[column.id], column), {value: "20.0", sd: "±10.0"});
