@@ -74,6 +74,57 @@ test("mixed schema feeds separate modalities and render unknown-seed references"
   }
 });
 
+test("visual-only tables omit image-text benchmarks, including ones published after the run", () => {
+  const konkle = cells => structuredClone(cells.labeled_s_4afc);
+  const render = data => {
+    const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
+    globalThis.document = document;
+    try {
+      const container = document.getElementById("table");
+      renderTable(data, container);
+      return Object.fromEntries([...container.querySelectorAll("table")].map(table => [table.dataset.modality, {
+        rows: [...table.querySelectorAll("tbody tr")].map(row => row.dataset.resultId).sort(),
+        headings: [...table.querySelectorAll("thead th")].map(cell => cell.textContent),
+      }]));
+    } finally {
+      delete globalThis.document;
+    }
+  };
+  const load = () => JSON.parse(readFileSync(new URL("../fixtures/publication-v2.json", import.meta.url), "utf8")).table;
+
+  // Konkle 4AFC was published after the visual-only reference, so the feed records it
+  // as missing for that run. A text model with one inapplicable image-text benchmark
+  // remains multimodal.
+  const data = load();
+  data.columns.splice(1, 0, {...data.columns[0], id: "konkle_4afc", benchmark: "konkle_4afc",
+    label: "Konkle 4AFC"});
+  const visual = data.rows.find(row => row.id === "reference");
+  const multimodal = data.rows.find(row => row.id === "toy");
+  visual.cells.konkle_4afc = {mean: null, sd: null, n: 0, expected_n: 1, status: "incomplete", protocols: []};
+  multimodal.cells.konkle_4afc = konkle(multimodal.cells);
+  const partial = structuredClone(multimodal);
+  partial.id = "partial-text";
+  partial.cells.labeled_s_4afc = structuredClone(visual.cells.labeled_s_4afc);
+  data.rows.push(partial);
+  assert.deepEqual(render(data), {
+    "multimodal": {rows: ["partial-text", "toy"],
+      headings: ["method", "Labeled-S 4AFC (%)", "Konkle 4AFC (%)", "Labeled-S linear (%)"]},
+    "visual-only": {rows: ["reference"], headings: ["method", "Labeled-S linear (%)"]},
+  });
+
+  // Konkle 4AFC as the only image-text benchmark still separates the modalities.
+  const only = load();
+  only.columns[0] = {...only.columns[0], id: "konkle_4afc", benchmark: "konkle_4afc", label: "Konkle 4AFC"};
+  for (const row of only.rows) {
+    row.cells.konkle_4afc = konkle(row.cells);
+    delete row.cells.labeled_s_4afc;
+  }
+  assert.deepEqual(render(only), {
+    "multimodal": {rows: ["toy"], headings: ["method", "Konkle 4AFC (%)", "Labeled-S linear (%)"]},
+    "visual-only": {rows: ["reference"], headings: ["method", "Labeled-S linear (%)"]},
+  });
+});
+
 test("dataset tables select BabyView results and keep scores aligned with reordered columns", () => {
   const mixed = JSON.parse(readFileSync(new URL("../fixtures/publication-v2.json", import.meta.url), "utf8"));
   const data = mixed.table;

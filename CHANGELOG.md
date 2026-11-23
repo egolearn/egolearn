@@ -124,7 +124,7 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
-- The website benchmark groups live published results by training dataset and modality, omitting columns that are inapplicable to every model in a table.
+- The website benchmark groups live published results by training dataset and modality, omitting columns that are inapplicable to every model in a table. Visual-only tables omit image-text benchmarks, including Konkle 4AFC.
 - The benchmark page places SAYCam-S before BabyView and removes update notices and expandable source details.
 - The benchmark page shows one multimodal BabyCL result for BabyView, labels ImageNet references as Others, and places shape preference last.
 - Model and CLI guides connect checkpoint access, compatible evaluations, and complete training commands.

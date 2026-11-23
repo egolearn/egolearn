@@ -155,7 +155,7 @@ function modelTable(rows, columns, title) {
 }
 
 const imageTextBenchmarks = new Set([
-  "labeled_s_4afc", "babyview_4afc", "vtwt", "baby_winoground",
+  "labeled_s_4afc", "babyview_4afc", "konkle_4afc", "vtwt", "baby_winoground",
 ]);
 const datasetOrder = new Map([["SAYCam-S", 0], ["BabyView", 1]]);
 const babyviewMultimodalResults = [
@@ -166,10 +166,14 @@ const babyviewMultimodalResults = [
 export function renderTable(data, container) {
   validateTable(data);
   const imageTextColumns = data.columns.filter(column => imageTextBenchmarks.has(column.benchmark));
-  // Missing evaluations do not establish a visual-only model. Require explicit
-  // inapplicability for every image-text benchmark, including for BabyCL variants.
-  const visualOnly = row => imageTextColumns.length > 0 &&
-    imageTextColumns.every(column => row.cells[column.id].status === "not_applicable");
+  // Missing evaluations do not establish a visual-only model. Require an explicitly
+  // inapplicable image-text benchmark and no image-text evaluations. An image-text
+  // column added after a visual-only run was published is missing for that run,
+  // not inapplicable, and must not move the run to the multimodal table.
+  const visualOnly = row => {
+    const cells = imageTextColumns.map(column => row.cells[column.id]);
+    return cells.some(cell => cell.status === "not_applicable") && cells.every(cell => cell.n === 0);
+  };
   // Prefer the current BabyCL result while preserving the selected legacy row
   // for older feeds. Show only one multimodal BabyView result.
   const babyviewMultimodalResult = babyviewMultimodalResults.find(id =>
@@ -192,7 +196,10 @@ export function renderTable(data, container) {
     ]) {
       const rows = datasetRows.filter(row => visualOnly(row) === isVisual);
       if (!rows.length) continue;
+      // Visual-only models take no image-text benchmarks, including ones the feed
+      // records as missing rather than inapplicable.
       const columns = data.columns.filter(column =>
+        !(isVisual && imageTextBenchmarks.has(column.benchmark)) &&
         rows.some(row => row.cells[column.id].status !== "not_applicable"))
         .sort((a, b) => Number(a.benchmark === "shape_bias") - Number(b.benchmark === "shape_bias"));
       const table = modelTable(rows, columns, title);
