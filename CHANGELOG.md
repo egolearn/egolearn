@@ -126,7 +126,7 @@ patch releases for fixes during 0.x development.
 
 - The website benchmark groups live published results by training dataset and modality, omitting columns that are inapplicable to every model in a table. Visual-only tables omit image-text benchmarks, including Konkle 4AFC.
 - The benchmark page places SAYCam-S before BabyView and removes update notices and expandable source details.
-- The benchmark page shows one multimodal BabyCL result for BabyView, labels ImageNet references as Others, and places shape preference last.
+- The benchmark page labels ImageNet references as Others and places shape preference last.
 - Model and CLI guides connect checkpoint access, compatible evaluations, and complete training commands.
 - User guides describe current capabilities, dataset access, released checkpoints,
   and publication to personal Hub repositories.
@@ -176,10 +176,7 @@ patch releases for fixes during 0.x development.
 
 ### Fixed
 
-- The benchmark page displays the current BabyCL BabyView results, retaining the selected legacy row for older feeds.
-
 - The landing page provides runnable synthetic training commands and identifies available dataset and physics benchmarks.
-
 - The spatial-relations guide states that both scene domains are required for the packaged evaluation.
 - Training guides describe exact step limits, working PyAV decoding, and opt-in mixed precision.
 

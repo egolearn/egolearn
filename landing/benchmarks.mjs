@@ -132,8 +132,7 @@ function modelTable(rows, columns, title) {
     const tr = element("tr");
     tr.dataset.resultId = row.id;
     const method = element("td");
-    const label = babyviewMultimodalResults.includes(row.id) ? "BabyCL" : row.condition.label;
-    method.append(element("span", label, "meth"));
+    method.append(element("span", row.condition.label, "meth"));
     method.append(element("span", `${row.condition.regime} · ${row.condition.architecture}`, "kind"));
     const reference = row.expected_seeds[0] === null;
     tr.append(method);
@@ -158,10 +157,6 @@ const imageTextBenchmarks = new Set([
   "labeled_s_4afc", "babyview_4afc", "konkle_4afc", "vtwt", "baby_winoground",
 ]);
 const datasetOrder = new Map([["SAYCam-S", 0], ["BabyView", 1]]);
-const babyviewMultimodalResults = [
-  "babycl-supcon-babyview",
-  "babycl-babyview-legacy-offline-refined-seed1337",
-];
 
 export function renderTable(data, container) {
   validateTable(data);
@@ -174,14 +169,8 @@ export function renderTable(data, container) {
     const cells = imageTextColumns.map(column => row.cells[column.id]);
     return cells.some(cell => cell.status === "not_applicable") && cells.every(cell => cell.n === 0);
   };
-  // Prefer the current BabyCL result while preserving the selected legacy row
-  // for older feeds. Show only one multimodal BabyView result.
-  const babyviewMultimodalResult = babyviewMultimodalResults.find(id =>
-    data.rows.some(row => row.id === id));
-  const displayRows = data.rows.filter(row => row.condition.dataset !== "BabyView" ||
-    visualOnly(row) || row.id === babyviewMultimodalResult);
   const fragment = document.createDocumentFragment();
-  const datasets = [...new Set(displayRows.map(row => row.condition.dataset))]
+  const datasets = [...new Set(data.rows.map(row => row.condition.dataset))]
     .sort((a, b) => (datasetOrder.get(a) ?? 2) - (datasetOrder.get(b) ?? 2));
   for (const [index, dataset] of datasets.entries()) {
     const section = element("section", undefined, "result-dataset");
@@ -189,7 +178,7 @@ export function renderTable(data, container) {
     heading.id = `benchmark-dataset-${index}`;
     section.setAttribute("aria-labelledby", heading.id);
     section.append(heading);
-    const datasetRows = displayRows.filter(row => row.condition.dataset === dataset);
+    const datasetRows = data.rows.filter(row => row.condition.dataset === dataset);
     for (const [modality, title, isVisual] of [
       ["multimodal", "multimodal models", false],
       ["visual-only", "visual-only models", true],
@@ -213,7 +202,7 @@ export function renderTable(data, container) {
     }
     fragment.append(section);
   }
-  if (!displayRows.length) fragment.append(element("p", "No benchmark results to display."));
+  if (!data.rows.length) fragment.append(element("p", "No benchmark results to display."));
   container.replaceChildren(fragment);
 }
 

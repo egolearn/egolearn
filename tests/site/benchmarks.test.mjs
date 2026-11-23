@@ -125,15 +125,12 @@ test("visual-only tables omit image-text benchmarks, including ones published af
   });
 });
 
-test("dataset tables select BabyView results and keep scores aligned with reordered columns", () => {
+test("dataset tables group rows and keep scores aligned with reordered columns", () => {
   const mixed = JSON.parse(readFileSync(new URL("../fixtures/publication-v2.json", import.meta.url), "utf8"));
   const data = mixed.table;
   const visual = data.rows.find(row => row.id === "reference");
   const multimodal = data.rows.find(row => row.id === "toy");
-  const selectedId = "babycl-babyview-legacy-offline-refined-seed1337";
   visual.condition.label = "BabyCL (visual-only)";
-  multimodal.id = selectedId;
-  multimodal.condition.label = "BabyCL (legacy offline-refined, 60,000 steps)";
   data.columns.splice(1, 0, {...data.columns[1], id: "shape_preference",
     benchmark: "shape_bias", label: "Shape preference"});
   // Column aliases must not change modality classification.
@@ -150,17 +147,14 @@ test("dataset tables select BabyView results and keep scores aligned with reorde
     row.condition.dataset = "SAYCam-S";
     data.rows.push(row);
   }
-  const incomplete = data.rows.find(row => row.id === `${selectedId}-second-dataset`);
+  const incomplete = data.rows.find(row => row.id === `${multimodal.id}-second-dataset`);
   incomplete.cells.word_matching = {mean: null, sd: null, n: 0, expected_n: 1,
     status: "incomplete", protocols: []};
-  const excluded = structuredClone(multimodal);
-  excluded.id = "babycl-babyview-legacy-offline-raw-seed1337";
-  excluded.condition.label = "BabyCL (legacy offline-raw, 58,500 steps)";
   const imagenet = structuredClone(visual);
   imagenet.id = "imagenet-supervised-reference";
   imagenet.condition.dataset = "ImageNet";
   imagenet.condition.label = "ImageNet supervised";
-  data.rows.push(excluded, imagenet);
+  data.rows.push(imagenet);
   const before = structuredClone(data);
   const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
   globalThis.document = document;
@@ -173,7 +167,7 @@ test("dataset tables select BabyView results and keep scores aligned with reorde
       ["trained on SAYCam-S", "trained on BabyView", "Others"]);
     const rendered = [...container.querySelectorAll("tbody tr")];
     assert.deepEqual(rendered.map(row => row.dataset.resultId).sort(),
-      data.rows.filter(row => row.id !== excluded.id).map(row => row.id).sort());
+      data.rows.map(row => row.id).sort());
     for (const section of container.querySelectorAll(".result-dataset")) {
       const others = section.querySelector("h3").textContent === "Others";
       assert.equal(section.querySelectorAll("table").length, others ? 1 : 2);
@@ -184,8 +178,7 @@ test("dataset tables select BabyView results and keep scores aligned with reorde
         const source = data.rows.find(source => source.id === row.dataset.resultId);
         assert.equal(section.querySelector("h3").textContent,
           source.condition.dataset === "ImageNet" ? "Others" : `trained on ${source.condition.dataset}`);
-        assert.equal(row.querySelector(".meth").textContent,
-          source.id === selectedId ? "BabyCL" : source.condition.label);
+        assert.equal(row.querySelector(".meth").textContent, source.condition.label);
         assert.equal(table.querySelector("caption").textContent, isVisual ? "visual-only models" : "multimodal models");
         for (const id of table.getAttribute("aria-labelledby").split(" ")) {
           assert.ok(document.getElementById(id));
@@ -210,35 +203,28 @@ test("dataset tables select BabyView results and keep scores aligned with reorde
   }
 });
 
-test("BabyView displays the current BabyCL result and prefers it over the legacy result", () => {
-  for (const includeLegacy of [false, true]) {
-    const {table: data} = JSON.parse(readFileSync(new URL("../fixtures/publication-v2.json", import.meta.url), "utf8"));
-    const current = data.rows.find(row => row.id === "toy");
-    current.id = current.condition.id = "babycl-supcon-babyview";
-    current.condition.label = "BabyCL";
-    const visual = data.rows.find(row => row.id === "reference");
-    for (const row of data.rows) row.condition.dataset = "BabyView";
-    if (includeLegacy) {
-      const legacy = structuredClone(current);
-      legacy.id = legacy.condition.id = "babycl-babyview-legacy-offline-refined-seed1337";
-      legacy.condition.label = "BabyCL (legacy offline-refined, 60,000 steps)";
-      data.rows.unshift(legacy);
-    }
-    const before = structuredClone(data);
-    const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
-    globalThis.document = document;
-    try {
-      const container = document.getElementById("table");
-      renderTable(data, container);
-      const rows = [...container.querySelectorAll('table[data-modality="multimodal"] tbody tr')];
-      assert.equal(rows.length, 1);
-      assert.equal(rows[0].dataset.resultId, current.id);
-      assert.equal(rows[0].querySelector(".meth").textContent, "BabyCL");
-      assert.equal(container.querySelector('table[data-modality="visual-only"] tbody tr').dataset.resultId, visual.id);
-      assert.deepEqual(data, before);
-    } finally {
-      delete globalThis.document;
-    }
+test("every published multimodal result appears under its published label", () => {
+  const {table: data} = JSON.parse(readFileSync(new URL("../fixtures/publication-v2.json", import.meta.url), "utf8"));
+  const current = data.rows.find(row => row.id === "toy");
+  current.id = current.condition.id = "babycl-supcon-babyview";
+  current.condition.label = "BabyCL";
+  const visual = data.rows.find(row => row.id === "reference");
+  for (const row of data.rows) row.condition.dataset = "BabyView";
+  const second = structuredClone(current);
+  second.id = second.condition.id = "babycl-babyview-legacy-offline-refined-seed1337";
+  second.condition.label = "BabyCL (legacy offline-refined, 60,000 steps)";
+  data.rows.unshift(second);
+  const {document} = parseHTML('<html><body><div id="table"></div></body></html>');
+  globalThis.document = document;
+  try {
+    const container = document.getElementById("table");
+    renderTable(data, container);
+    const rows = [...container.querySelectorAll('table[data-modality="multimodal"] tbody tr')];
+    assert.deepEqual(rows.map(row => [row.dataset.resultId, row.querySelector(".meth").textContent]),
+      [[second.id, second.condition.label], [current.id, current.condition.label]]);
+    assert.equal(container.querySelector('table[data-modality="visual-only"] tbody tr').dataset.resultId, visual.id);
+  } finally {
+    delete globalThis.document;
   }
 });
 
