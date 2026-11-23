@@ -6,7 +6,7 @@ rule.  Each parameter goes to the first rule whose regex matches its fully-quali
 
 The schedule is a function of progress -- the fraction of the stream consumed so far, used
 instead of epochs -- not of a precomputed total step count.  This removes BabyCL's need to
-estimate steps_needed from the offline storyboard segment count.  A reproduction of a
+estimate the step count from the offline storyboard segment count.  A reproduction of a
 step-indexed original can opt back in with `total_steps` (see ProgressCosine).
 """
 
@@ -120,7 +120,7 @@ class ProgressCosine:
     cosine over the remainder.
 
     `warmup_min_steps` is a LOWER bound on warmup length (the original BabyCL:
-    `max(100, int(0.02 * steps_needed))`) -- on very short runs warmup stretches to
+    `max(100, int(0.02 * total_steps))`) -- on very short runs warmup stretches to
     at least this many gradient steps.
 
     When the stream announces no total length (open-ended), progress is None and the
@@ -128,7 +128,7 @@ class ProgressCosine:
     sane open-ended default; smarter open-ended schedules are a deferred question.
 
     `total_steps` switches to a STEP-indexed schedule, for reproducing an original
-    that fixes its step budget up front (the original BabyCL: `steps_needed` from the offline
+    that fixes its step budget up front (the original BabyCL: the step count from the offline
     storyboard, with `driver.max_steps` set to the same value).  Gradient step `s`
     (0-based, `clock.step`) gets exactly the original's LambdaLR factor: with
     `warm = max(warmup_min_steps, int(warmup_frac * total_steps))`, `(s + 1) / warm`

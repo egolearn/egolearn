@@ -1,8 +1,8 @@
 """BabyCL project components -- the pieces that are specific to the BabyCL method.
 Importing this module registers:
 
-admission : babycl_online_segmenter (1:1 port of the original OnlineSegmenter),
-            an_chunk_emitter (1:1 port of the feeder's AN-chunk path)
+admission : babycl_online_segmenter (1:1 port of the original online segmenter),
+            an_chunk_emitter (1:1 port of the original AN-chunk path)
 embedder  : frozen_resnext50
 encoder   : text_bow
 view      : cvcl_aug, babycl_ms_aug

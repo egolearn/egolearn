@@ -13,7 +13,7 @@ stream, then run k training steps, repeat.  One cycle:
   2. TRAIN    -- run `rate.steps_per_admit` gradient steps.  This setting controls how many
      training steps run per unit of new stream data, which turns "compute-matched baseline"
      into a config flag.  With `rate.resample=true` each step draws a fresh batch from memory
-     (BabyCL's repeats_per_push); with false the same batch is reused (Memory Storyboard's
+     (as in BabyCL); with false the same batch is reused (Memory Storyboard's
      num_grads).
   3. Repeat until the stream runs out.  Training ends when the stream ends, never at a
      precomputed step count.

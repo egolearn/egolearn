@@ -16,7 +16,7 @@
 #   * SupCon uses global segment ids resolved through the events LabelStore;
 #   * the pairs slot mixes 25% short / 75% long inside one memory;
 #   * fallback recipe: when pairs are starved, an all-visual batch of 4 segments is
-#     used instead (the explicit form of ms_dataloader's use_annot gating).
+#     used instead (the original data loader switches the same way).
 #
 # Capacity notes: capacities are ABSOLUTE counts (what capacity should mean for an
 # open-ended stream is a deliberately deferred question).  Values below derive from
@@ -82,7 +82,7 @@ embedders:
   cluster: {_target_: "embedder:frozen_resnext50", pretrained: true, view: eval}
 
 admission:
-  # 1:1 port of OnlineSegmenter (utils/online_ms_refine.py): chunks anchored on
+  # 1:1 port of the original online segmenter: chunks anchored on
   # utterances and grown by similarity (2-12 s) + gap cutting, packed into ~3 min big
   # segments; a segment is finalized only once the stream is far enough past its end
   # to be safe (watermark, safety margin = seg_extend_max_sec); global-id merge at
@@ -94,10 +94,10 @@ admission:
      seg_extend_min_sec: 2.0, seg_extend_max_sec: 12.0,
      global_merge_cos: 0.85,
      label_store: events, embedder: cluster}
-  # 1:1 port of the feeder's AN-chunk path: chunks are raw timestamp runs (contiguous
+  # 1:1 port of the original AN-chunk path: chunks are raw timestamp runs (contiguous
   # 5fps steps), each emitted in one piece only after all of its frames have streamed
-  # past, with duplicates dropped -- NO similarity expansion (the original feeder
-  # discards the segmenter's expanded chunks)
+  # past, with duplicates dropped -- NO similarity expansion (the original training
+  # loop discards the segmenter's expanded chunks)
   - {_target_: "admission:an_chunk_emitter", fps: 5.0}
 
 memories:
@@ -171,12 +171,12 @@ solver:
   # anchored to training start (the default): the LR warmup starts counting from the
   # first training step, not from the start of buffer filling, so warmup = 2% of the
   # run AFTER buffer warmup and cosine spans the remainder -- matching the original's
-  # step-indexed max(100, 2%*steps_needed) warmup + cosine-to-0
+  # step-indexed max(100, 2% of steps) warmup + cosine-to-0
   schedule: {warmup_frac: 0.02, warmup_min_steps: 100, floor: 0.0}
 
 driver:
   advance: {kind: events, schema: VisualSegment, n: 1}  # 1 new segment per push
-  rate: {steps_per_admit: 8, resample: true}            # repeats_per_push=8
+  rate: {steps_per_admit: 8, resample: true}            # 8 fresh batches per segment
   warmup: {tier_full: segments.short}                   # fill 10% before training
 
 hooks:

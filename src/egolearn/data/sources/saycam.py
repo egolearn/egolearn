@@ -82,8 +82,8 @@ class SaycamStream(S.Stream):
 
         By default a frame surfaces before an utterance ending at the same
         instant.  `transcript_first` reverses that tie, so the utterance is
-        already visible when its last frame arrives -- BabyCL's original
-        feeder did this (an utterance counts as seen at `max(ts) <= t`)."""
+        already visible when its last frame arrives -- the original BabyCL
+        code did this (an utterance counts as seen at `max(ts) <= t`)."""
         self.root = Path(root_dir)
         self.fps = float(fps)
         if not math.isfinite(self.fps) or self.fps <= 0:

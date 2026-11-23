@@ -27,7 +27,7 @@ from egolearn.utils.snapshot import load_snapshot, save_snapshot
 
 @pytest.mark.parametrize("total", [26568, 1000, 150])
 def test_step_indexed_schedule_matches_original_lambda_lr(total):
-    # the original: warmup max(100, int(0.02 * steps_needed)), linear (step + 1) / warm,
+    # the original: warmup max(100, int(0.02 * total)), linear (step + 1) / warm,
     # then cosine to 0; LambdaLR evaluates lambda(k) for the (k + 1)-th update
     warm = max(100, int(0.02 * total))
 
