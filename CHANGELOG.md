@@ -146,6 +146,8 @@ patch releases for fixes during 0.x development.
 - The gated `egolearn/labeled-s-splits` and `egolearn/babyview-4afc` collections hold the Labeled-S 4AFC trials and linear split, and the BabyView manifests behind the published results; both need Databrary access.
 - The model catalog lists one released checkpoint per method and dataset, named without seed or objective suffixes, such as `egolearn/babycl-resnext50-krishnacam`.
 
+- Package metadata, citation information, README links, and generated documentation
+  target the public repository and website.
 - SAYCam and BabyView checkpoint access instructions require evidence of access
   to the corresponding Databrary dataset.
 - The README starts with dataset-free CPU training and links to a model export and loading example.

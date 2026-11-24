@@ -16,7 +16,7 @@ assert spec is not None and spec.loader is not None
 hooks = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(hooks)
 
-GITHUB = "https://github.com/agentic-learning-ai-lab/egolearn/blob/main/"
+GITHUB = "https://github.com/egolearn/egolearn/blob/main/"
 SITE = {
     "docs/cli.md": ("cli.md", "cli/"),
     "docs/assets/icon-light.svg": ("assets/icon-light.svg", "assets/icon-light.svg"),

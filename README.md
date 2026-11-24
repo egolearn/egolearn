@@ -5,7 +5,7 @@
 
 # egolearn
 
-[![ci](https://github.com/agentic-learning-ai-lab/egolearn/actions/workflows/ci.yml/badge.svg)](https://github.com/agentic-learning-ai-lab/egolearn/actions/workflows/ci.yml)
+[![ci](https://github.com/egolearn/egolearn/actions/workflows/ci.yml/badge.svg)](https://github.com/egolearn/egolearn/actions/workflows/ci.yml)
 
 egolearn is a Python library for training and evaluating visual and image–text
 models on first-person video. Streaming runs read the video once in
@@ -20,7 +20,7 @@ dependencies. The toy configuration trains a small convolutional network on
 synthetic colored blocks, on the CPU, without any dataset or pretrained weights.
 
 ```bash
-git clone https://github.com/agentic-learning-ai-lab/egolearn.git
+git clone https://github.com/egolearn/egolearn.git
 cd egolearn
 uv sync --extra train
 uv run egl train toy_streaming dry_run=true

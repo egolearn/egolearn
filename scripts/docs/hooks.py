@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[2]
-GITHUB = "https://github.com/agentic-learning-ai-lab/egolearn"
+GITHUB = "https://github.com/egolearn/egolearn"
 
 # Repository file -> page path on the site.
 EXTRA_PAGES = {

@@ -22,10 +22,10 @@ egolearn = "egolearn.cli:main"
 egl = "egolearn.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/agentic-learning-ai-lab/egolearn"
-Documentation = "https://github.com/agentic-learning-ai-lab/egolearn/tree/main/docs"
-Repository = "https://github.com/agentic-learning-ai-lab/egolearn"
-Issues = "https://github.com/agentic-learning-ai-lab/egolearn/issues"
+Homepage = "https://egolearn.org"
+Documentation = "https://egolearn.org/docs/"
+Repository = "https://github.com/egolearn/egolearn"
+Issues = "https://github.com/egolearn/egolearn/issues"
 
 # Optional extras are added together with the code that needs them (see docs/status.md).
 # Still planned:
