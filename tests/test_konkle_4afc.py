@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from types import SimpleNamespace
 
 import numpy as np
@@ -174,3 +175,21 @@ def test_four_afc_splits_credit_among_tied_images(tmp_path, monkeypatch):
         manifest.write_text(json.dumps({"trials": [{**trials[0], "answer": bad}]}))
         with pytest.raises(ValueError, match="answer must index"):
             FourAFCProbe("p", str(manifest), str(vocab), "embed")
+
+
+def test_four_afc_resolves_relative_images_against_the_manifest(tmp_path, monkeypatch):
+    paths, vocab, text = _colour_images(tmp_path, monkeypatch)
+    manifests = tmp_path / "manifests"
+    manifests.mkdir()
+    relative = [os.path.relpath(path, manifests) for path in paths]
+    trials = [
+        {"text": name, "images": [relative[i], *relative[:i], *relative[i + 1 :]], "answer": 0}
+        for i, name in enumerate(NAMES)
+    ]
+    manifest = manifests / "trials.json"
+    manifest.write_text(json.dumps({"trials": trials}))
+    monkeypatch.chdir(tmp_path.parent)
+    probe = FourAFCProbe("p", str(manifest), str(vocab), "embed")
+    assert probe.trials[0]["images"][0] == str(manifests / relative[0])
+    ctx = SimpleNamespace(device=torch.device("cpu"))
+    assert probe.run(_Model(text), ctx) == {"four_afc_acc": 1.0}

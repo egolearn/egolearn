@@ -74,6 +74,25 @@ set. Put `--root DIR` before `fetch` to choose another location, and add
 catalog, and its `FETCH` column means only that a collection can be fetched, not
 that your account has access.
 
+## Gated collections
+
+Two collections hold evaluation metadata without images and need the same
+Databrary access as the matching models. Request access on each dataset page
+as in [checkpoint access](#checkpoint-access); approval for a model does not
+cover them.
+
+| Repository | Contents | Used by |
+| --- | --- | --- |
+| [egolearn/labeled-s-splits](https://huggingface.co/datasets/egolearn/labeled-s-splits/tree/v1) | Labeled-S 4AFC trials and the linear split, as image identifiers | [Labeled-S data](data.md#labeled-s-4afc-data) |
+| [egolearn/babyview-4afc](https://huggingface.co/datasets/egolearn/babyview-4afc/tree/v1) | BabyView 4AFC trials for the SAYCam vocabulary and the linear split | [BabyView data](data.md#babyview-object-crops) |
+
+With access and `HF_TOKEN` set, fetch them like the public collections:
+
+```bash
+uv run egl data fetch labeled-s-splits --revision v1
+uv run egl data fetch babyview-4afc --revision v1
+```
+
 ## Hub paths in configs
 
 Any input path in a config can name a file in a Hub repository at a tag or
@@ -88,7 +107,8 @@ repositories, while `checkpoint` and `model_config` read model repositories. A
 model reference names one file, and evaluation fetches the matching
 `model.json` from the same commit. Dataset references download the whole
 repository into the Hugging Face cache under `HF_HOME`, without checking the
-collection checksums.
+collection checksums. A manifest whose relative paths leave its repository,
+such as those in `babyview-4afc`, needs a fetched copy instead.
 
 ## Access tiers
 
@@ -99,8 +119,8 @@ whether a hosted copy exists or who can download it.
 | --- | --- | --- |
 | Prepared shape-bias stimuli | Upstream terms | Source-derived stimuli only with redistribution permission; otherwise prepare locally |
 | Spatial-relations trials and monitoring subsets | Public | Licensed stimuli, fixed trials and manifests |
-| BabyView 4AFC and linear evaluation manifests | Public | Split and trial metadata without pixels or restricted captions |
-| Labeled-S split metadata | Public | Split identifiers without source frames |
+| BabyView 4AFC and linear evaluation manifests | Gated | Split and trial metadata without pixels or restricted captions, with relative image paths |
+| Labeled-S split metadata | Gated | Split and trial identifiers without source frames |
 | ImageNet | Upstream-licensed | Manifests without images |
 | IntPhys 2 Main split | Upstream-licensed | No hosted copy; obtain videos from the upstream release |
 | GRASP Level 2 | Upstream-licensed | Pair manifest with hashes and frame counts, without pixels |

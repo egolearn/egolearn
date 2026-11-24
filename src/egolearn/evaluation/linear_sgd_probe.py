@@ -47,7 +47,7 @@ class LinearSGDProbe(LinearSGDEvaluator, Probe):
             assert manifest is not None
             raw = Path(manifest).read_bytes()
             self.manifest_sha256 = hashlib.sha256(raw).hexdigest()
-            split = ClassificationSplit.from_mapping(json.loads(raw))
+            split = ClassificationSplit.from_mapping(json.loads(raw), root=Path(manifest).parent)
         super().__init__(
             name=name,
             encoder=encoder,
