@@ -158,6 +158,10 @@ def test_prepare_preserves_default_fetched_collection(tmp_path, monkeypatch, nam
     if name == "spatial-relations":
         data.main(["--root", str(tmp_path), "prepare", name, "--validate-only"])
         assert len(calls) == 1
+    if name == "babyview-4afc":
+        # Downloading only the crops leaves the fetched manifests alone.
+        data.main(["--root", str(tmp_path), "prepare", name, "--download_only"])
+        assert calls[-1][1][-1] == "--download_only"
     flag = "--out_dir" if name == "babyview-4afc" else "--output-dir"
     data.main(["--root", str(tmp_path), "prepare", name, flag, str(tmp_path / "new")])
     assert calls[-1][1][-1] == str(tmp_path / "new")

@@ -170,10 +170,12 @@ def dataset(name: str) -> Dataset:
 def preparation_command(item: Dataset, root: Path, arguments: list[str]) -> list[str]:
     if item.prepare_module is None:
         raise ValueError(f"{item.name} has no preparer; see {item.source}")
+    # These invocations write nothing to the preparation destination.
     read_only = (
         "--help" in arguments
         or "-h" in arguments
         or (item.name == "spatial-relations" and "--validate-only" in arguments)
+        or (item.name == "babyview-4afc" and "--download_only" in arguments)
     )
     for flag, path in item.prepare_defaults:
         if flag not in {"--output-dir", "--out_dir", "--output"}:
