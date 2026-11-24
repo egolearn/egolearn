@@ -7,6 +7,8 @@ authors:
     website: "https://agenticlearning.ai"
 repository-code: "https://github.com/egolearn/egolearn"
 license: MIT
+version: "0.1.0"
+date-released: "2026-11-24"
 abstract: >-
   EgoLearn provides streaming and offline self-supervised learning, bounded replay
   memory, temporal segmentation, and evaluation for first-person video models.
