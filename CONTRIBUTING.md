@@ -15,6 +15,20 @@ uv run pre-commit install
 - Keep long-lived branches fresh with `git merge main`, never rebase.
 - Never force-push a shared branch.
 
+### The private development repository
+
+Lab members can keep unpublished work on branches of the private
+`agentic-learning-ai-lab/egolearn` repository. Its `main` is a copy of public
+`main`, fast-forwarded every night by
+[a workflow](.github/workflows/sync-private-main.yml), and nothing else can
+update it. Never merge a PR in the private repository.
+
+Start a branch from public `main` and keep it current by merging `main`. When
+the work is ready for review, push the branch to `egolearn/egolearn` and open
+the PR there. Every commit on the branch becomes public, so first check the
+whole branch history for restricted data, personal paths and unpublished
+results.
+
 ## Pull requests
 
 - All five CI checks must pass: `lint`, `types`, `test`, `lock`, `gitleaks`.

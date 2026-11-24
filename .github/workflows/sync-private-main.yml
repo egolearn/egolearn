@@ -1,0 +1,45 @@
+# Keeps main in the private development repository identical to public main.
+# Public egolearn/egolearn is canonical. Private main moves only through this
+# job, by fast-forward, pushed with the SYNC_DEPLOY_KEY deploy key, the one actor
+# the private repository's rulesets allow to update main. Nobody merges there.
+name: sync private main
+
+on:
+  schedule:
+    - cron: "23 7 * * *"  # nightly, 07:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-private-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    # The schedule also fires in the public repository, where the job is skipped.
+    if: github.repository == 'agentic-learning-ai-lab/egolearn'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          ssh-key: ${{ secrets.SYNC_DEPLOY_KEY }}
+      - name: Fast-forward main to public main
+        run: |
+          git fetch --no-tags https://github.com/egolearn/egolearn.git main
+          public=$(git rev-parse FETCH_HEAD)
+          private=$(git rev-parse HEAD)
+          if [[ "$public" == "$private" ]]; then
+            echo "main is already at $public."
+            exit 0
+          fi
+          if ! git merge-base --is-ancestor "$private" "$public"; then
+            echo "::error::Private main ($private) has commits that public main ($public) lacks. Move them to a branch and ask a repository admin to restore private main; never force-push from this job."
+            exit 1
+          fi
+          git push origin "$public:refs/heads/main"
+          echo "Fast-forwarded main from $private to $public."

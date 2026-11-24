@@ -10,9 +10,8 @@
 # Review gate: approvals must come from a CODE OWNER (.github/CODEOWNERS), so only
 # code-owner approvals count. enforce_admins=false lets repo admins (org owners)
 # bypass the gate — use only during repo setup, then restore true on that repository.
-# Do not apply this template to private main after configuring its sync exception:
-# it replaces classic protection without PR bypass allowances and can add a second
-# PR requirement on top of a ruleset.
+# Never apply it to the private development repository: rulesets there let only
+# the sync deploy key update main (.github/workflows/sync-private-main.yml).
 #
 # Notes:
 # - required_linear_history stays FALSE: this repo merges with merge commits only
