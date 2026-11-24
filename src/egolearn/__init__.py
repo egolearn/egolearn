@@ -6,7 +6,7 @@ The torch-heavy subsystems load on first use, so a base install (without the
 `train` extra) can still import the package and read its version.
 """
 
-__version__ = "0.1.0.dev0"
+__version__ = "0.1.0"
 
 
 def __getattr__(name: str):
