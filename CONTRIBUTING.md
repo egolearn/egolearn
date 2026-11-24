@@ -136,8 +136,8 @@ and attribution headers with adapted code, and update [third-party notices](THIR
 when a port requires them.
 
 Do not vendor GPL or CC-BY-NC code into the library. Existing permissive ports keep
-their original notices, including Apache-2.0 for mmcv/DINO-derived components and
-BSD notices for RAFT and pytorch-examples-derived utilities. Use permissively
+their original notices: the BSD-3-Clause NVIDIA Apex LARC optimizer, and MIT code
+from V-JEPA 2 and the Ego4D episodic-memory evaluation. Use permissively
 licensed alternatives for MAE-lineage utilities licensed CC-BY-NC.
 
 ## Versions and releases
