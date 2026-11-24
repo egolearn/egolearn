@@ -37,9 +37,9 @@ class PILRadiusBlur:
 
 @VIEWS.register("cvcl_aug")
 def cvcl_aug(size: int = 224):
-    """CVCL/BabyCL multimodal-frame augmentation, 1:1 with
-    ms_dataloader.an_transform: RandomResizedCrop(0.2-1.0) + PIL radius blur
-    p=0.5 + horizontal flip (blur BEFORE flip, as in the original)."""
+    """CVCL/BabyCL multimodal-frame augmentation, 1:1 with the original:
+    RandomResizedCrop(0.2-1.0) + PIL radius blur p=0.5 + horizontal flip
+    (blur BEFORE flip)."""
     return T.Compose(
         [
             T.RandomResizedCrop((size, size), scale=(0.2, 1.0)),
@@ -62,10 +62,9 @@ def babycl_ms_aug(
     """The augmentation BabyCL EFFECTIVELY applies to visual-segment frames, 1:1 with
     the original, which runs in two stages:
 
-      gather:  ms_transform  = Resize(size, BICUBIC) + CenterCrop(size)
-      train:   two_crops     = de-normalize back to a PIL image, then the strong
-               SimCLR pipeline (build_two_view_augment "strong") ON THE ALREADY
-               CENTER-CROPPED image.
+      gather:  Resize(size, BICUBIC) + CenterCrop(size)
+      train:   de-normalize back to a PIL image, then the strong SimCLR
+               pipeline ON THE ALREADY CENTER-CROPPED image.
 
     Here the two stages are fused into one PIL pipeline (the de-normalize/PIL
     round-trip changes nothing beyond uint8 rounding).  This differs from the
@@ -106,7 +105,7 @@ def babycl_ms_aug(
 @EMBEDDERS.register("frozen_resnext50")
 class FrozenResNeXt50Embedder(EmbeddingProvider):
     """Frozen torchvision ResNeXt-50 -- the encoder BabyCL's online segmenter uses to
-    embed frames (matches online_ms_refine.build_backbone: IMAGENET1K_V1 weights,
+    embed frames (matches the original: IMAGENET1K_V1 weights,
     fc=Identity, eval mode, center-crop transform, per-frame L2 normalization).
 
     Note that BabyCL's segmenter depends on ImageNet pretraining; making that

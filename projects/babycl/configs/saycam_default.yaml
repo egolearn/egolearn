@@ -1,7 +1,7 @@
 # Streaming BabyCL defaults; shared components also serve the offline variant.
 #
-# The original (mcl ms_train.py --online) fixed its run length before training:
-# steps_needed = 3321 offline-storyboard segments x 8 repeats = 26568 steps, the
+# The original fixed its run length before training:
+# 3321 offline-storyboard segments x 8 repeats = 26568 steps, with the
 # LR schedule indexed by that count (warmup max(100, 2%) steps, cosine to 0).
 # At that budget it had pushed 3751 segments (incl. the 406 of buffer warmup)
 # and seen about 73% of SAYCam-S; the rest of the stream never trained.  The
@@ -21,6 +21,6 @@ solver:
 
 driver:
   max_steps: 26568
-  # the original's --amp: segment forwards and their losses in float16 with a
-  # loss scaler; the cross-modal branch was forced to float32
+  # Segment forwards use float16 autocast with a loss scaler. SupCon keeps its
+  # similarities/log probabilities in float32, as does the cross-modal branch.
   amp: {dtype: float16, fp32_slots: [pairs]}

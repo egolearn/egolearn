@@ -123,12 +123,6 @@ SEG_ID = register_key(
     "batch-composition time; the stored value may be revised by the admission component "
     "(Memory Storyboard reclusters and merges retroactively).",
 )
-SEG_BATCH_LABEL = register_key(
-    "seg.batch_label",
-    "derived",
-    "Batch-local label (0..S-1) derived by the composer from item grouping. "
-    "BabyCL's TCL uses this instead of global seg.id.",
-)
 
 # weights / annotations
 WEIGHT_SAMPLE = register_key(

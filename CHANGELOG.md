@@ -127,6 +127,9 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- Memory Storyboard defaults to SimCLR plus supervised contrastive learning over global segment labels in replay.
+- BabyCL replaces batch-local temporal classification with supervised contrastive learning from global segment IDs in streaming and offline recipes.
+- BabyCL and Memory Storyboard snapshots with a temporal classifier cannot resume under the new recipes; `init_from` reuses their encoders.
 - The packaged config leaves `wandb.entity` unset, so online W&B runs log to your default entity.
 - The website benchmark groups live published results by training dataset and modality, omitting columns that are inapplicable to every model in a table. Visual-only tables omit image-text benchmarks, including Konkle 4AFC.
 - The benchmark page places SAYCam-S before BabyView and removes update notices and expandable source details.
@@ -171,6 +174,7 @@ patch releases for fixes during 0.x development.
 
 ### Removed
 
+- Batch recipes remove `batch_label` and use `labels_from` for segment targets from a label store.
 - `probe:imagenet_linear_sgd` is replaced by standalone `benchmark:imagenet_linear_sgd`
   and the `imagenet_linear_eval` config; see [ImageNet migration](docs/evaluation.md#imagenet-migration).
 - `ImageNetLinearSGDProbe` is replaced by `ImageNetLinearBenchmark`.

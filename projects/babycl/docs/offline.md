@@ -1,10 +1,10 @@
 # Offline BabyCL inputs
 
 The mixed-batch recipe requires a precomputed storyboard in addition to frames,
-transcripts, and a vocabulary. There is no bundled storyboard exporter yet;
-produce a JSON manifest from your segmentation procedure using this contract.
+transcripts, and a vocabulary. Produce a JSON manifest from your segmentation
+procedure using the contract below.
 The pairs-only driver (`segments_per_batch=0`, with only the image/text loss)
-does not require a storyboard; omit `storyboard_json` and `segment_views` for it.
+does not require a storyboard. Omit `storyboard_json` and `segment_views` for it.
 
 ## Storyboard format
 
@@ -16,7 +16,7 @@ This synthetic example contains two frames and one segment:
   "videos": [{
     "video_dir": "S_0",
     "frames": ["S_0_0.00.jpg", "S_0_0.20.jpg"],
-    "segments": [{"start": 0, "end": 2}]
+    "segments": [{"start": 0, "end": 2, "global_id": 42}]
   }]
 }
 ```
@@ -29,8 +29,11 @@ This synthetic example contains two frames and one segment:
 - Segment bounds are zero-based frame indices with an exclusive `end`. Segments
   must be nonempty, ordered, contiguous, and cover `[0, len(frames))` without gaps
   or overlaps. Utterance timestamps are not segment indices.
-- An optional stored `root_dir` is ignored; `stream.root_dir` owns data paths.
-  The file's SHA-256 is printed when its index is built.
+- `global_id` is an optional nonnegative integer label. Segments with the same
+  ID are positives for the supervised contrastive loss. Give it for every segment
+  or for none. Without it, each segment is its own class.
+- `stream.root_dir` owns data paths, overriding any `root_dir` stored in the
+  manifest. The file's SHA-256 is printed when its index is built.
 
 Utterance chunks come from `stream.transcript_json` through the same AN-chunk
 emitter as streaming training, including timestamp matching and deduplication.
@@ -44,6 +47,6 @@ uv run python -m egolearn.train --config-dir projects/babycl/configs --config-na
   tokenizer.vocab_json="$VOCAB_JSON" driver.batch.storyboard_json="$STORYBOARD_JSON"
 ```
 
-Each update draws the configured number of storyboard segments with replacement
-and assigns batch-local TCL labels. Each epoch shuffles the full utterance index
-once. Prefetch and resume use the same seed-derived batch sequence.
+Each update draws the configured number of storyboard segments with replacement,
+and each epoch shuffles the full utterance index once. Resuming requires the same
+storyboard file as the saved run.

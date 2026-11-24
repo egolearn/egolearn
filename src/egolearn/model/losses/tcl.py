@@ -7,11 +7,9 @@ against segment labels on BOTH augmented views, summed and divided by 2B;
 `filter_unseen` zeroes the cross-entropy weight of classes beyond the
 largest label seen so far.
 
-The `slots` argument (slots are the named groups of items in the batch)
-expresses what the original code did with tensor slicing: Memory Storyboard
-applies TCL to the replay portion only (slots: [replay]); BabyCL applies it
-to the whole visual batch with batch-local labels (slots: [segments], labels
-derived by the composer).
+The `slots` argument selects the named groups of items to classify. Targets
+are global segment labels supplied by the batch. Streaming recipes use
+`labels_from` to resolve them through a LabelStore.
 """
 
 from __future__ import annotations
@@ -52,7 +50,7 @@ class TemporalClassification(Loss):
             if "labels" not in slot:
                 raise KeyError(
                     f"tcl: slot {s!r} carries no labels -- set labels_from "
-                    "(LabelStore) or batch_label in the recipe"
+                    "(LabelStore) in the recipe"
                 )
             views_list.append(slot[K.SLOT_VIEWS])
             labels_list.append(slot[K.SLOT_LABELS])

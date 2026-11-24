@@ -33,17 +33,19 @@ uv run egl train projects/babycl/configs/saycam_default.yaml \
 Remove `dry_run=true` to train on a GPU. The default frozen segmenter needs
 ImageNet ResNeXt-50 weights, which torchvision downloads if they are not cached.
 
-The recipe combines visual instance discrimination, temporal classification, and
-image–text contrastive learning. Each full batch contains three visual segments
-with 32 sampled frames each, plus 32 utterance–frame pairs. Early batches use an
-all-visual fallback when too few utterance pairs are available.
+The recipe combines visual instance discrimination, segment supervised contrastive
+learning (SupCon), and image–text contrastive learning. Each full batch contains
+three visual segments with 32 sampled frames each, plus 32 utterance–frame pairs.
+Early batches use an all-visual fallback when too few utterance pairs are available.
+
+SupCon treats frames that share a global segment ID as positives, so segments
+that the segmenter merges count as one class.
 
 Visual segments and utterance pairs occupy separate memories, each with a short
 FIFO tier whose overflow enters a long reservoir tier. After a segment is
 admitted, training performs eight updates with freshly sampled batches.
 
-`saycam_default` follows the paper's run, including two choices that are
-artifacts of the original code:
+`saycam_default` retains the paper's run length and precision settings:
 
 - **Run length.** The original fixed 26568 steps before training (3321
   offline-storyboard segments times 8 updates) and indexed the learning-rate
@@ -51,7 +53,7 @@ artifacts of the original code:
   `driver.max_steps` and `solver.schedule.total_steps` reproduce this. Set both
   to `null` to train on the whole stream with the progress-driven schedule.
 - **Precision.** `driver.amp` runs the segment branch in float16 with a loss
-  scaler and keeps the cross-modal branch in float32, as the original did.
+  scaler and keeps the cross-modal branch in float32.
 
 The segment views also use the 2-D Gaussian blur (`blur_impl: torchvision`), an
 utterance that ends on a frame is visible at that frame
@@ -59,21 +61,27 @@ utterance that ends on a frame is visible at that frame
 
 ## SAYCam results
 
-The table records two completed `saycam_default` runs with seeds 1337 and 2002,
-using their final checkpoints. All scores are percentages. The paper column gives
-the authors' reference values for these protocols.
-Check the version of the linked [paper](https://arxiv.org/abs/2606.05115) when
-comparing figures, since its reported Labeled-S 4AFC value can differ.
+The table reports three `saycam_default` runs, with seeds 1337, 2002 and 3003,
+each scored at its final checkpoint with [`paper_evals.yaml`](configs/paper_evals.yaml).
+All scores are percentages, and SD is the sample standard deviation over the
+three seeds.
 
-| Benchmark | Seed 1337 | Seed 2002 | Paper | Differs from the paper |
-| --- | ---: | ---: | ---: | --- |
-| Labeled-S 4AFC | 42.53 | 43.04 | 42.72 ± 1.36 | Paper: end-of-training mean ± approximate 95% CI over five seeds |
-| Labeled-S linear | 45.26 | 44.91 | 44.95 | Paper: end-of-training checkpoint of the best seed |
-| mini-ImageNet linear | 25.52 | 26.12 | 25.60 | Paper: end-of-training checkpoint of the best seed |
-| VTWT | 60.60 | 58.43 | 61.32 | Paper: end-of-training checkpoint of the best seed |
-| Baby Winoground | 15.89 | 12.05 | 14.79 | Paper: end-of-training checkpoint of the best seed |
-| BabyView 4AFC | 30.99 | 30.29 | 32.53 | Paper: end-of-training checkpoint of the best seed |
-| BabyView linear | 49.71 | 52.06 | 49.96 | Paper: end-of-training checkpoint of the best seed |
+The paper column gives the authors' values for their temporal-classification
+recipe. Its Labeled-S 4AFC is an end-of-training mean with an approximate 95%
+interval over five seeds; the other rows come from the end-of-training
+checkpoint of its best seed. Check the version of the linked
+[paper](https://arxiv.org/abs/2606.05115) when comparing figures, since its
+reported Labeled-S 4AFC value can differ.
+
+| Benchmark | Seed 1337 | Seed 2002 | Seed 3003 | Mean ± SD | Paper |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Labeled-S 4AFC | 43.13 | 44.17 | 43.57 | 43.62 ± 0.52 | 42.72 ± 1.36 |
+| Labeled-S linear | 47.09 | 47.56 | 48.04 | 47.56 ± 0.48 | 44.95 |
+| mini-ImageNet linear | 26.74 | 26.80 | 26.90 | 26.81 ± 0.08 | 25.60 |
+| VTWT | 60.08 | 59.15 | 60.50 | 59.91 ± 0.69 | 61.32 |
+| Baby Winoground | 13.70 | 12.05 | 12.05 | 12.60 ± 0.95 | 14.79 |
+| BabyView 4AFC | 32.94 | 30.72 | 33.93 | 32.53 ± 1.64 | 32.53 |
+| BabyView linear | 52.57 | 51.81 | 52.15 | 52.18 ± 0.38 | 49.96 |
 
 Baby Winoground reports the group score, which counts an item only when both
 the original and the edited scene prefer their own caption. Every row uses the
@@ -81,6 +89,10 @@ paper's protocol, so the remaining differences come from training.
 
 ### Differences from the paper
 
+- **Segment objective.** The paper trains a temporal classifier whose targets
+  depend on each segment's position in the batch. These runs use SupCon over
+  the segmenter's global IDs instead. Commit `8f39160` has the earlier
+  temporal-classification recipe.
 - **Randomness.** EgoLearn draws its sampling, augmentation and initialization
   randomness differently, so a seed here is not the paper's seed. The paper's
   code is not run-to-run reproducible either: same-seed reruns of its default
@@ -107,7 +119,7 @@ uv run egl train projects/babycl/configs/saycam_default.yaml seed=1337 \
 uv run egl eval projects/babycl/configs/paper_evals.yaml "checkpoint=$RUN_DIR/final.pth"
 ```
 
-One run takes about 6 hours on an NVIDIA L40S.
+Repeat with `seed=2002` and `seed=3003`, each in its own `RUN_DIR`.
 
 ## Offline BabyCL variant
 
@@ -119,7 +131,7 @@ This differs from the paper's CVCL-only IID baseline:
 
 | Setting | Paper IID baseline | `saycam_iid` |
 | --- | --- | --- |
-| Losses | CVCL only | NT-Xent + TCL + CLIP-InfoNCE |
+| Losses | CVCL only | NT-Xent + SupCon + CLIP-InfoNCE |
 | Batch | 8 image/text pairs | 3 x 32 visual frames + 32 image/text pairs |
 | Epochs | 400 | 1 by default, configurable with `driver.epochs` |
 | AdamW learning rate | 1e-4 | 1e-3 vision/embed head, 1e-4 remaining parameters |
@@ -134,7 +146,7 @@ which documents its format and launch command.
 ## Ablations
 
 The following settings express the paper's ablation choices. For pairs-only runs,
-remove the segment slot, its fallback, and the NT-Xent and TCL losses together.
+remove the segment slot, its fallback, and the NT-Xent and SupCon losses together.
 
 | Paper ablation | Configuration change |
 | --- | --- |
@@ -143,7 +155,7 @@ remove the segment slot, its fallback, and the NT-Xent and TCL losses together.
 | Multimodal fraction | Use segment/pair counts 3/32, 2/64, or 1/96 for fractions 1/4, 1/2, or 3/4 |
 | Clip-importance weighting | Enable `use_sample_weights` on the image–text loss and supply transcript `clip_importance` values |
 | Four or eight resampled updates | Set `driver.rate.steps_per_admit` |
-| CL-CVCL baseline | Use a pairs-only recipe and remove NT-Xent and TCL |
+| CL-CVCL baseline | Use a pairs-only recipe and remove NT-Xent and SupCon |
 | One-pass CVCL | Also set `driver.rate.steps_per_admit: 1` |
 | BabyView | Select `stream:babyview`, normalize text, and supply frames pre-cropped to 9:16 portrait |
 

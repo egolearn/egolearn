@@ -28,9 +28,9 @@ You can choose a different directory with `run_dir`, keeping experiments and see
 ## Recipe
 
 The recipe uses seed 1337 and consumes the complete prepared stream. It trains
-ResNeXt-50 with instance contrast and temporal classification. A frozen ImageNet
-ResNeXt-50 segmenter produces segments of approximately three minutes, with actual
-boundaries determined by visual content.
+ResNeXt-50 with instance contrast and supervised contrastive learning from global
+segment IDs. A frozen ImageNet ResNeXt-50 segmenter produces segments of approximately
+three minutes, with actual boundaries determined by visual content.
 
 | Setting | Value |
 | --- | --- |

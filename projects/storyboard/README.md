@@ -24,14 +24,16 @@ uv run egl train projects/storyboard/configs/saycam.yaml \
 ```
 
 Each batch draws 64 frames from the short memory and 448 from the long memory.
-Instance discrimination uses both slots together, while temporal classification
-uses the long-memory slot. The default schedule performs one training update after
-each advance of 64 stream frames.
+SimCLR instance discrimination uses both slots. Supervised contrastive learning
+(SupCon) uses the long-memory frames and treats frames with the same segment
+label as positives, using the labels current when the batch is drawn. The default
+schedule performs one training update after each advance of 64 stream frames.
 
-The configuration is a code-level port, without a numerical-parity claim.
-The packaged recipe uses float32 arithmetic in one process. The shared trainer
-supports opt-in mixed precision through `driver.amp`; numerical parity with the
-original mixed-precision recipe has not been established.
+The objectives follow the upstream
+[`--method simclr` variant](https://github.com/agentic-learning-ai-lab/memory-storyboard/blob/029cc55d91c5b5b470ab45f2a7a3653aefcc087e/training/train_storyboard_merging.py#L43),
+whereas the upstream README example uses SimSiam. The configuration is a
+code-level port without a numerical-parity claim. It trains in float32 in one
+process, and the shared trainer's `driver.amp` option turns on mixed precision.
 
 ## Memory and segmentation
 
