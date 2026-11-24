@@ -12,17 +12,23 @@ vocabulary-filtered), so the emitted trials match the source repo's frozen
 4150-trial json image for image.  The linear-probe split uses ALL categories (no vocabulary filter)
 and its own seed.
 
+Image paths in both manifests are relative to --out_dir, so the manifests
+stay valid when the output and crop directories move together.
+
 Usage (data already on disk, or --download to fetch the zip first):
 
     python -m egolearn.evaluation.benchmarks.babyview_4afc.prepare \\
         --data_root <dir with manifest.csv + crops/> \\
         --vocab_json <saycam vocab.json> --out_dir <dir> [--download]
+
+--download_only fetches and unpacks the crops without writing manifests.
 """
 
 from __future__ import annotations
 
 import csv
 import json
+import os
 import random
 import urllib.request
 import zipfile
@@ -106,8 +112,13 @@ def main() -> None:
     p = preparation_parser("babyview-4afc", description=__doc__)
     args = p.parse_args()
 
-    if args.download:
+    if args.download or args.download_only:
         download(args.data_root)
+    if args.download_only:
+        print(f"downloaded the public crops to {args.data_root}")
+        return
+    if args.vocab_json is None:
+        p.error("--vocab_json is required unless --download_only is given")
     vocab = json.loads(args.vocab_json.read_text())
     by_cat = load_manifest(args.data_root)
     all_cats = sorted(by_cat)
@@ -120,6 +131,11 @@ def main() -> None:
     split = generate_split(by_cat, args.test_frac, args.split_seed)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    out = args.out_dir.resolve()
+    for trial in trials:
+        trial["images"] = [Path(os.path.relpath(path, out)).as_posix() for path in trial["images"]]
+    for item in (*split["train"], *split["test"]):
+        item["image"] = Path(os.path.relpath(item["image"], out)).as_posix()
     (args.out_dir / "babyview_4afc_trials.json").write_text(
         json.dumps({"trials": trials}, indent=1) + "\n"
     )

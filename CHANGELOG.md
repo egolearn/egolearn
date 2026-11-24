@@ -127,6 +127,7 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- `probe:four_afc` and `probe:linear` resolve relative image paths in a JSON manifest against the manifest's directory. `egl data prepare babyview-4afc` writes relative paths and accepts `--download_only`.
 - Memory Storyboard defaults to SimCLR plus supervised contrastive learning over global segment labels in replay.
 - BabyCL replaces batch-local temporal classification with supervised contrastive learning from global segment IDs in streaming and offline recipes.
 - BabyCL and Memory Storyboard snapshots with a temporal classifier cannot resume under the new recipes; `init_from` reuses their encoders.
@@ -142,6 +143,7 @@ patch releases for fixes during 0.x development.
 - SAYCam and BabyView checkpoint requests collect Databrary proof links directly
   in the Hugging Face form instead of requiring a separate email.
 - Hub fetches and uploads default to `egolearn/<name>`. The shape-bias and spatial-relation collections are public at `egolearn/shape-bias` and `egolearn/spatial-relation-categorization`.
+- The gated `egolearn/labeled-s-splits` and `egolearn/babyview-4afc` collections hold the Labeled-S 4AFC trials and linear split, and the BabyView manifests behind the published results; both need Databrary access.
 - The model catalog lists one released checkpoint per method and dataset, named without seed or objective suffixes, such as `egolearn/babycl-resnext50-krishnacam`.
 
 - SAYCam and BabyView checkpoint access instructions require evidence of access

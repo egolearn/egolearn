@@ -66,7 +66,8 @@ categories. You need three inputs:
 - the Labeled-S images from [SAYCam access](#saycam-access), in their
   `<category>/<filename>` folders
 - the trial file `eval_object_categories_4150.json`, released as supplementary
-  material with the [BabyCL paper](https://arxiv.org/html/2606.05115v1)
+  material with the [BabyCL paper](https://arxiv.org/html/2606.05115v1) and in
+  the gated [`labeled-s-splits`](hub.md#gated-collections) collection
 - the model's [training vocabulary](#training-vocabulary)
 
 New trials would make a different benchmark, so use the released file and
@@ -105,7 +106,8 @@ benchmarks:
 
 `probe:labeled_s_linear` downloads its split file from a pinned commit. Without
 internet access, set `split_file` to a local copy of
-[`labeledS_train_val.txt`](https://github.com/agentic-learning-ai-lab/memory-storyboard/blob/c084d826fdc85a72e78477bb53c88b7353a89563/metas/labeledS_train_val.txt).
+[`labeledS_train_val.txt`](https://github.com/agentic-learning-ai-lab/memory-storyboard/blob/c084d826fdc85a72e78477bb53c88b7353a89563/metas/labeledS_train_val.txt),
+which the [`labeled-s-splits`](hub.md#gated-collections) collection also holds.
 To match the BabyCL paper, use `probe:labeled_s_stratified_linear` with
 `head: embed512`.
 
@@ -122,7 +124,17 @@ uv run egl data prepare babyview-4afc --download \
 ```
 
 The command writes the crops to `data/babyview-public-crops` and the manifests
-to `data/babyview-4afc`. Save this config as `babyview_eval.yaml` and run it with
+to `data/babyview-4afc`. Image paths in the manifests are relative, so move the
+two directories together. The manifests behind the published results, built
+with the SAYCam vocabulary, are in the gated
+[`babyview-4afc`](hub.md#gated-collections) collection; with access, fetch them
+and download only the crops:
+
+```bash
+uv run egl data fetch babyview-4afc --revision v1
+uv run egl data prepare babyview-4afc --download_only
+```
+ Save this config as `babyview_eval.yaml` and run it with
 `uv run egl eval babyview_eval.yaml checkpoint=run/final.pth`:
 
 ```yaml

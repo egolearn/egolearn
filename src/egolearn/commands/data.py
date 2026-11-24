@@ -68,13 +68,13 @@ DATASETS = (
     ),
     Dataset(
         "babyview-4afc",
-        "public",
-        "BabyView trial/split metadata; Hub payload excludes pixels",
+        "gated",
+        "BabyView 4AFC trials and linear split from public crops; Hub payload excludes pixels",
         "https://github.com/babyview-project/ccn-2026-object-variability",
         "babyview-4afc",
         _BENCHMARKS + "babyview_4afc.prepare",
         (("--data_root", "babyview-public-crops"), ("--out_dir", "babyview-4afc")),
-        repo="agentic-learning-ai-lab/egolearn-babyview-4afc",
+        repo="egolearn/babyview-4afc",
     ),
     Dataset(
         "labeled-s-4afc",
@@ -96,11 +96,11 @@ DATASETS = (
     ),
     Dataset(
         "labeled-s-splits",
-        "public",
-        "Split identifiers only; images require separate access",
-        "https://github.com/wkvong/multimodal-baby",
+        "gated",
+        "Labeled-S 4AFC trials and linear split identifiers; images require separate access",
+        "https://arxiv.org/abs/2606.05115",
         "labeled-s-splits",
-        repo="agentic-learning-ai-lab/egolearn-labeled-s-splits",
+        repo="egolearn/labeled-s-splits",
     ),
     Dataset(
         "saycam",

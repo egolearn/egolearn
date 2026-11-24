@@ -4,6 +4,8 @@ import csv
 import hashlib
 import json
 import random
+import sys
+from pathlib import Path
 
 import pytest
 import torch
@@ -39,6 +41,37 @@ def _fake_crops(tmp_path, n_cats=6, per_cat=6, size=32):
         w.writerow(["category", "stem", "jpeg_path"])
         w.writerows(rows)
     return data
+
+
+def test_babyview_prepare_writes_paths_relative_to_the_output(tmp_path, monkeypatch):
+    data = _fake_crops(tmp_path)
+    vocab = tmp_path / "vocab.json"
+    vocab.write_text(json.dumps({"<pad>": 0, "cat0": 1, "cat1": 2, "cat2": 3, "cat3": 4}))
+    out = tmp_path / "out"
+    argv = ["prepare", "--data_root", str(data), "--vocab_json", str(vocab), "--out_dir", str(out)]
+    monkeypatch.setattr(sys, "argv", [*argv, "--n_trials", "8"])
+    prepare.main()
+
+    trials = json.loads((out / "babyview_4afc_trials.json").read_text())["trials"]
+    split = json.loads((out / "babyview_linear.json").read_text())
+    images = [path for trial in trials for path in trial["images"]]
+    images += [item["image"] for item in (*split["train"], *split["test"])]
+    assert all(not Path(path).is_absolute() and (out / path).is_file() for path in images)
+    loaded = ClassificationSplit.from_mapping(split, root=out)
+    assert loaded.train[0].image == str(out / split["train"][0]["image"])
+
+
+def test_babyview_prepare_download_only_needs_no_vocabulary(tmp_path, monkeypatch):
+    fetched: list[Path] = []
+    monkeypatch.setattr(prepare, "download", fetched.append)
+    out = tmp_path / "out"
+    argv = ["prepare", "--data_root", str(tmp_path / "crops"), "--out_dir", str(out)]
+    monkeypatch.setattr(sys, "argv", [*argv, "--download_only"])
+    prepare.main()
+    assert fetched == [tmp_path / "crops"] and not out.exists()
+    monkeypatch.setattr(sys, "argv", argv)
+    with pytest.raises(SystemExit):
+        prepare.main()
 
 
 def test_babyview_prepare_follows_the_frozen_protocol(tmp_path):
