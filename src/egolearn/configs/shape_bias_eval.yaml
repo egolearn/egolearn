@@ -1,5 +1,5 @@
 # Novel-object shape bias (Tartaglini, Vong & Lake, 2022) on hosted stimuli.
-# CC BY 4.0; cite the paper. Private until release: authenticate with HF_TOKEN.
+# CC BY 4.0; cite the paper.
 #   egl eval shape_bias_eval checkpoint=<checkpoint or export>
 defaults:
   - evaluate

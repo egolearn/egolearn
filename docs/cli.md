@@ -99,9 +99,11 @@ uv run egl data fetch shape-bias --revision v1  # or download the hosted copy
 `list` shows each dataset's access tier and whether egolearn can prepare it
 locally or fetch it from the Hub, and [dataset access](evaluation/data.md)
 explains how to obtain each dataset. `prepare NAME --help` lists a preparer's options. Data goes
-under `$EGOLEARN_DATA`, or `./data` when it is unset. `fetch` keeps an existing
-collection unless you pass `--replace`, but preparers such as shape-bias write
-over files in an existing output directory.
+under `$EGOLEARN_DATA`, or `./data` when it is unset. `fetch` stops if the
+collection already exists, unless you pass `--replace`, and `prepare` stops if
+its default destination exists. To prepare into an existing directory, name it
+explicitly, as in `--output-dir data/shape-bias`; the preparer then writes over
+the files already there.
 
 ## Diagnostics
 
