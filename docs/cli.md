@@ -86,19 +86,22 @@ an existing directory.
 ## Data
 
 `egl data` lists the datasets egolearn knows about and runs their preparation
-and download steps:
+and download steps. The shape-bias stimuli, for example, can be rendered
+locally or downloaded from the Hub. Both write `data/shape-bias`, so run only
+one of the last two commands:
 
 ```bash
 uv run egl data list
-uv run egl data prepare shape-bias
-uv run egl data fetch shape-bias --revision v1
+uv run egl data prepare shape-bias              # render locally
+uv run egl data fetch shape-bias --revision v1  # or download the hosted copy
 ```
 
 `list` shows each dataset's access tier and whether egolearn can prepare it
 locally or fetch it from the Hub, and [dataset access](evaluation/data.md)
 explains how to obtain each dataset. `prepare NAME --help` lists a preparer's options. Data goes
-under `$EGOLEARN_DATA`, or `./data` when it is unset, and neither `prepare`
-nor `fetch` writes over an existing collection by default.
+under `$EGOLEARN_DATA`, or `./data` when it is unset. `fetch` keeps an existing
+collection unless you pass `--replace`, but preparers such as shape-bias write
+over files in an existing output directory.
 
 ## Diagnostics
 
