@@ -38,9 +38,12 @@ def preparation_parser(
         parser.add_argument("--exp3-configurations", type=int, default=16)
     elif name == "babyview-4afc":
         parser.add_argument("--data_root", type=Path, required=True)
-        parser.add_argument("--vocab_json", type=Path, required=True)
+        parser.add_argument("--vocab_json", type=Path)
         parser.add_argument("--out_dir", type=Path, required=True)
         parser.add_argument("--download", action="store_true")
+        parser.add_argument(
+            "--download_only", action="store_true", help="fetch the crops; write no manifests"
+        )
         parser.add_argument("--n_trials", type=int, default=4150)
         parser.add_argument("--n_foils", type=int, default=3)
         parser.add_argument("--trials_seed", type=int, default=0)

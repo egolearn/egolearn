@@ -1,91 +1,41 @@
 # IntPhys 2
 
-The IntPhys 2 probe measures violation-of-expectation on synthetic physics
-videos. It reports pairwise accuracy and AUROC, with higher scores better and 50% chance
-performance.
-
-Scores from this probe are not directly comparable to the paper's tables.
-The probe samples each whole video into one window, while the paper's
-[prediction-based protocol](https://arxiv.org/html/2506.09849v1)
-evaluates overlapping windows.
-
-A video model that has learned intuitive physics should find an impossible
-video more surprising than its matched possible twin. Surprise is the model's
-prediction error, without a trained classifier.
+IntPhys 2 tests whether a video prediction model is surprised by physically
+impossible events. Each scene comes as matched possible and impossible videos.
+A pair counts as correct when the model's prediction error, its surprise, is
+higher on the impossible video, so no classifier is trained. The headlines are
+pairwise accuracy `voe_acc` and AUROC `voe_auroc`, both with chance at 0.5.
+Scores are not directly comparable to the paper's tables, because the sampling
+differs (see [differences](#differences-from-the-reference-protocol)).
 
 The benchmark is Bordes et al.,
-[*IntPhys 2: Benchmarking Intuitive Physics Understanding In Complex Synthetic
-Environments*](https://arxiv.org/abs/2506.09849) (2025). We evaluate its Main
-split: 253 scenes covering object permanence, immutability, spatio-temporal
-continuity, and solidity, labeled Easy, Medium, or Hard (172 videos are
-unlabeled) and filmed with fixed or moving cameras. Each scene has four videos,
-forming two matched (possible, impossible) pairs typed `1_Possible`/`1_Impossible`
-and `2_Possible`/`2_Impossible`: 1,012 videos and 506 pairs. The Debug and
-HeldOut splits are not used.
+[*IntPhys 2: Benchmarking Intuitive Physics Understanding In Complex Synthetic Environments*](https://arxiv.org/abs/2506.09849)
+(2025). The probe uses its Main split, 1,012 videos in 506 pairs that cover
+object permanence, immutability, spatio-temporal continuity and solidity.
 
 ## Downloading the data
 
-The videos are released under CC-BY-NC 4.0 for evaluation use only, and EgoLearn
-never downloads them. Download the Main split from Hugging Face at a pinned
-revision (no login needed):
+The videos are released under CC BY-NC 4.0 for evaluation use only, and
+egolearn does not download them. Download the Main split from Hugging Face at
+the pinned revision. You do not need a login:
 
 ```bash
+export EGOLEARN_DATA=/path/to/data
 uvx --from huggingface_hub hf download facebook/IntPhys2 --repo-type dataset \
   --revision a077a2f94e25889016fc6e5983cf21e2ddc25fb2 --include "Main/*" \
-  --local-dir /datasets/intphys2
+  --local-dir "$EGOLEARN_DATA/intphys2"
 ```
 
-Or download the official archive, which contains every split (1.8 GB):
+The [official archive](https://dl.fbaipublicfiles.com/IntPhys2/IntPhys2.zip)
+holds the same Main split. The probe checks `Main/metadata.csv` against its
+pinned SHA-256 and refuses any other copy, so every run scores the same pairs.
 
-```bash
-curl -LO https://dl.fbaipublicfiles.com/IntPhys2/IntPhys2.zip
-unzip IntPhys2.zip 'Main/*' -d /datasets/intphys2
-```
+## Running the evaluation
 
-Both give byte-identical `Main/metadata.csv` and 1,012 `Main/Videos/*.mp4` files.
-Set `data_root` to `/datasets/intphys2/Main`. The probe checks `metadata.csv`
-against its pinned SHA-256 and rejects any other copy, so every run scores the
-same 506 pairs.
-
-## Scoring contract
-
-Each video is decoded with PyAV and sampled to `num_frames` frames spread
-uniformly over its whole duration, first and last frames included. In 61 of the
-506 pairs the two videos differ in length (by at most 5%), so their sampled
-frames are close to, but not exactly, time-aligned. Every frame goes through the
-registered evaluation `view`, which must be a per-image view such as `resize`
-(the default: bicubic resize to `size` and ImageNet normalization) or
-`center_crop`; the `clip_*` views expect clip tensors. The clip is scored as a
-single window.
-
-Each video must contain at least `num_frames` frames (64 by default). A shorter
-video raises an error with its path and frame count before scoring the pair.
-
-For each context length C in `context_frames`, the first C frames are the context
-and the remaining frames the target. The context encoder sees only the context
-tokens, and the predictor fills in the target tokens. Surprise is their mean
-L1 distance to the frozen target encoder's layer-normalized tokens at the same
-positions, matching the V-JEPA training objective. `distance: l2` uses the
-mean squared error instead. Context lengths must be multiples of the encoder's
-tubelet size. All context lengths share one decode and one target-encoder pass
-per video.
-
-A pair is correct when the impossible video is strictly more surprising than
-the possible one. `voe_acc_ctx<C>` scores each context length alone. `voe_acc`
-first averages each video's surprise over all context lengths, then compares
-once per pair. `voe_auroc` ranks every video by that pooled surprise without
-pairing. It measures the probability that an impossible video is more surprising
-than a possible one, counting ties as one half (chance 50%).
-
-## Registered evaluation probe
-
-`probe:intphys2` requires `video_representation` and `prediction`. It uses named
-model components as in a `loss:vjepa` model. These are the context encoder
-(`context`, default `video`), frozen target encoder (`target`, default
-`video_target`), and predictor (`predictor`, default `pred`). It runs during
-training through `probes:` or on a checkpoint through the standalone evaluator.
-
-Save this standalone config as `intphys2_eval.yaml` and set the dataset root:
+The probe needs a model with a video context encoder, a frozen target encoder
+and a predictor, as in a V-JEPA model. It finds them by the component names
+`video`, `video_target` and `pred`, which the `context`, `target` and
+`predictor` options can change. Save this config as `intphys2_eval.yaml`:
 
 ```yaml
 defaults:
@@ -97,32 +47,38 @@ _imports_:
 benchmarks:
   - _target_: "probe:intphys2"
     name: intphys2
-    data_root: /datasets/intphys2/Main
+    data_root: ${oc.env:EGOLEARN_DATA,data}/intphys2/Main
     num_frames: 64
     context_frames: [2, 4, 6, 8, 10, 12, 14, 16]
-    distance: l1
-    view: resize
-    size: 224
 ```
 
-The values shown are the defaults, and `context_frames` also accepts a single
-integer. Compose the config without opening the dataset, then evaluate your
-checkpoint on a compatible GPU:
+Evaluate a checkpoint on a GPU:
 
 ```bash
-uv run egl eval intphys2_eval.yaml checkpoint=run/final.pth --cfg job
-uv run egl eval intphys2_eval.yaml \
-  checkpoint=run/final.pth device=cuda output_json=intphys2_results.json
+uv run egl eval intphys2_eval.yaml checkpoint=run/final.pth device=cuda \
+  output_json=intphys2_results.json
 ```
 
-The evaluator defaults to CPU if you omit `device=cuda`.
+The values shown for `num_frames` and `context_frames` are the defaults. You
+can also put the same entry under `probes` in a training config. There, each
+run decodes all 1,012 videos and pauses training, so schedule it sparingly.
 
-For training, use the same entry under the training config's `probes` list and
-retain its registration module in `_imports_`. Metrics are `voe_acc`, `voe_auroc`, and one
-`voe_acc_ctx<C>` per context length, and the evaluator records the full probe
-configuration, including defaults, with the results. Before scoring, the probe
-checks that all 1,012 videos exist.
+## Metrics
 
-Each run decodes all 1,012 videos one after another, and its duration depends on
-the model, device, and storage. It pauses training when run as a probe, so
-schedule it sparingly there.
+| Metric | Meaning |
+| --- | --- |
+| `voe_acc` | Share of pairs in which the impossible video is more surprising, with surprise averaged over all context lengths |
+| `voe_acc_ctx<C>` | The same, for context length C alone |
+| `voe_auroc` | Probability that an impossible video is more surprising than a possible one, ignoring the pairing. Ties count half |
+
+For a context length C, the model sees the first C sampled frames and predicts
+the rest. Surprise is the mean L1 distance between the predicted tokens and the
+frozen target encoder's layer-normalized tokens, which is the V-JEPA training
+loss.
+
+## Differences from the reference protocol
+
+- Each video is sampled uniformly to `num_frames` frames over its whole length
+  and scored as one window. The paper's prediction-based protocol evaluates
+  overlapping windows instead.
+- Only the Main split is used, not the Debug or HeldOut splits.

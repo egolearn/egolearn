@@ -4,6 +4,8 @@ import csv
 import hashlib
 import json
 import random
+import sys
+from pathlib import Path
 
 import pytest
 import torch
@@ -39,6 +41,62 @@ def _fake_crops(tmp_path, n_cats=6, per_cat=6, size=32):
         w.writerow(["category", "stem", "jpeg_path"])
         w.writerows(rows)
     return data
+
+
+def test_babyview_prepare_writes_paths_relative_to_the_output(tmp_path, monkeypatch):
+    data = _fake_crops(tmp_path)
+    vocab = tmp_path / "vocab.json"
+    vocab.write_text(json.dumps({"<pad>": 0, "cat0": 1, "cat1": 2, "cat2": 3, "cat3": 4}))
+    out = tmp_path / "out"
+    argv = ["prepare", "--data_root", str(data), "--vocab_json", str(vocab), "--out_dir", str(out)]
+    monkeypatch.setattr(sys, "argv", [*argv, "--n_trials", "8"])
+    prepare.main()
+
+    trials = json.loads((out / "babyview_4afc_trials.json").read_text())["trials"]
+    split = json.loads((out / "babyview_linear.json").read_text())
+    images = [path for trial in trials for path in trial["images"]]
+    images += [item["image"] for item in (*split["train"], *split["test"])]
+    assert all(not Path(path).is_absolute() and (out / path).is_file() for path in images)
+    loaded = ClassificationSplit.from_mapping(split, root=out)
+    assert loaded.train[0].image == str(out / split["train"][0]["image"])
+
+
+def test_babyview_prepare_download_only_needs_no_vocabulary(tmp_path, monkeypatch, capsys):
+    data = _fake_crops(tmp_path)
+    fetched: list[Path] = []
+    monkeypatch.setattr(prepare, "download", fetched.append)
+    out = tmp_path / "out"
+    argv = ["prepare", "--data_root", str(data), "--out_dir", str(out)]
+    monkeypatch.setattr(sys, "argv", [*argv, "--download_only"])
+    prepare.main()
+    assert fetched == [data] and not out.exists()
+    assert "36 public crops" in capsys.readouterr().out
+    # A missing vocabulary fails before anything is downloaded.
+    monkeypatch.setattr(sys, "argv", [*argv, "--download"])
+    with pytest.raises(SystemExit):
+        prepare.main()
+    assert fetched == [data]
+    # An extraction that stopped after manifest.csv is reported, not accepted.
+    next((data / "crops" / "cat0").iterdir()).unlink()
+    monkeypatch.setattr(sys, "argv", [*argv, "--download_only"])
+    with pytest.raises(SystemExit, match="missing crop"):
+        prepare.main()
+
+
+def test_linear_sgd_probe_resolves_relative_manifest_paths(tmp_path):
+    manifests = tmp_path / "manifests"
+    manifests.mkdir()
+    images = [f"../images/{index}.png" for index in range(4)]
+    split = {
+        "classes": ["a", "b"],
+        "train": [{"image": images[0], "label": 0}, {"image": images[1], "label": 1}],
+        "test": [{"image": images[2], "label": 0}, {"image": images[3], "label": 1}],
+    }
+    manifest = manifests / "split.json"
+    manifest.write_text(json.dumps(split))
+    probe = linear_sgd_probe.LinearSGDProbe("sgd", manifest=str(manifest), workers=0)
+    assert probe.split.train[0].image == str(manifests / images[0])
+    assert probe.split.test[1].image == str(manifests / images[3])
 
 
 def test_babyview_prepare_follows_the_frozen_protocol(tmp_path):

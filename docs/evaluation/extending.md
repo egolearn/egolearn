@@ -1,93 +1,94 @@
 # Benchmark development
 
-Add a benchmark when you need a new evaluation protocol for an existing model.
-The standalone runner handles model loading, device checks, run records, and
-result serialization.
+Add a benchmark when you need a new evaluation protocol for existing models.
+You write the data loading and scoring, and the evaluation runner handles model
+loading, device placement, seeds, run records and the result file.
 
-Use a `Benchmark` for standalone evaluation, or its `Probe` subclass when the
-same evaluation is also suitable for training hooks.
-Training pipelines accept probes and reject standalone benchmarks.
+## Example probe
 
-## Registration
+A benchmark is a class with a `run()` method that returns a mapping from metric
+names to floats. This probe reports the mean norm of a model's pooled image
+features on a fixed tensor of images:
 
-Implement `egolearn.evaluation.Benchmark` and register the class with
-`BENCHMARKS.register("name")` from `egolearn.config.registry`. Its configuration
-target becomes `benchmark:name`.
+```python
+import torch
 
-Include the module in the evaluation config's `_imports_` list, or the Python
-API's `imports` argument, to register it before the runner constructs the
-benchmark. For a probe, register with `PROBES` and use a
-`probe:name` target.
+from egolearn.config.registry import PROBES
+from egolearn.evaluation import Probe
 
-The [ImageNet benchmark](../../src/egolearn/evaluation/benchmarks/imagenet_linear/benchmark.py)
-provides a complete example with dataset preparation, a shared scorer, and
-provenance. Keep checkpoint loading in the runner so your benchmark can also
-evaluate a model already in memory.
 
-## Preparation and scoring
+@PROBES.register("feature_norm")
+class FeatureNormProbe(Probe):
+    """Mean L2 norm of pooled image features on a saved image tensor."""
 
-Give the benchmark a unique `name`, validate settings in its constructor, and
-defer dataset enumeration to `prepare()`. Make preparation idempotent so
-repeated calls can reuse dataset metadata.
+    requires_capabilities = ("image_representation",)
+    version = "1"
 
-Implement `run(model, ctx)` to return a mapping from metric names to finite
-scalar values. Standalone evaluation passes an `EvaluationContext` with
-`device`, `seed`, and `derive_seed(name)`, without a training clock.
-Its runner calls `prepare()` before `run()` and resets the seed for each
-benchmark independently of suite order.
+    def __init__(self, name: str, images: str, encoder: str = "image"):
+        self.name = name
+        self.images_path = images
+        self.encoder = encoder
+        self.images = None
 
-Leave the evaluated model's weights and buffers unchanged throughout your
-benchmark's execution.
-Train a fresh classifier and recompute model-dependent features on every run,
-even when reusing a prepared benchmark instance. A decoder can enable its own
-gradients within `run()` while leaving the pretrained encoder frozen.
+    def prepare(self) -> None:
+        if self.images is None:
+            self.images = torch.load(self.images_path)
 
-### Training probes
+    def configuration(self) -> dict:
+        return {"images": self.images_path, "encoder": self.encoder}
 
-The training hook calls `probe.run(model, driver.ctx)` directly, without calling
-`prepare()`. If a probe needs preparation, call its idempotent `prepare()` at the
-start of `run()` so it works in both training and standalone evaluation.
+    @torch.no_grad()
+    def run(self, model, ctx) -> dict[str, float]:
+        self.prepare()
+        features = model.encode(self.encoder, self.images.to(ctx.device)).pooled
+        return {"feature_norm": float(features.norm(dim=1).mean())}
+```
 
-During training, `ctx` is the training `Context`, including its clock and RNG.
-The hook enters evaluation mode and disables gradients, but does not apply the
-standalone runner's per-benchmark seed reset or parameter-gradient freezing.
-Keep training RNG state and model state unchanged within your probe.
-Use a protocol-specific seed with isolated RNG state when scoring requires
-random draws.
+Put the class in an importable module, then list that module under `_imports_`
+and use the registered target in a [custom config](../evaluation.md#custom-configs):
 
-## Model requirements
+```yaml
+_imports_:
+  - my_package.feature_norm
+benchmarks:
+  - _target_: "probe:feature_norm"
+    name: feature_norm
+    images: /path/to/images.pt
+```
 
-Declare `requires_capabilities` as a tuple of model capabilities, such as
-`image_representation` or `text_representation`. The runner checks the whole
-suite before preparing any benchmark.
+## Benchmarks and probes
 
-Select encoders and heads through the model's named interfaces, and make their
-names configurable when the protocol applies to different model compositions.
-The benchmark should report incompatible inputs instead of adapting the model's
-weights during evaluation.
+Subclass `Probe` and register with `PROBES` when the evaluation can also run
+inside training. The training loop calls `run()` without `prepare()`, which is
+why the example calls `prepare()` itself. Subclass `Benchmark` and register with
+`BENCHMARKS` for an evaluation that runs only on its own, such as fine-tuning.
+Its target is then `benchmark:<name>`.
 
-## Provenance and versions
+## Benchmark rules
 
-Override `configuration()` to describe constructed instances, including protocol
-settings that affect their scores, while config-driven evaluations also record
-constructor defaults.
+- Validate settings in the constructor, and read the dataset in `prepare()`.
+  Repeated calls to `prepare()` should be cheap.
+- Leave the model's weights and buffers unchanged.
+- Recompute features and fit any classifier again on every call to `run()`,
+  because one benchmark instance can score several models.
+- Return finite floats. A NaN or infinite metric fails the benchmark.
+- Declare the model capabilities you use in `requires_capabilities`, such as
+  `image_representation` or `text_representation`. The runner checks them for
+  the whole suite before any benchmark starts.
+- Reach the model only through its named encoders and heads.
+- Draw random numbers from a generator seeded with `ctx.derive_seed(name)` or
+  a seed setting of your own. Inside training, the global random state belongs
+  to the training run.
+- Return the settings that affect the score from `configuration()`, and the
+  dataset size and identity from `metadata()`.
+- Increase `version` when a change to scoring or preprocessing makes new scores
+  incomparable with old ones.
 
-Override `metadata()` to report dataset sizes, split identity, and other
-protocol-specific provenance, stating what each hash covers. A manifest hash identifies
-the manifest's bytes, while a split hash can identify ordered paths and labels
-without identifying image contents.
-
-Set `version` and increment it when scoring or preprocessing changes the
-protocol. Keep reporting changes separate from protocol changes so results
-remain comparable for a stated version.
+The [ImageNet linear benchmark](../../src/egolearn/evaluation/benchmarks/imagenet_linear/benchmark.py)
+is a complete example with dataset preparation, metadata and a shared scorer.
 
 ## Tests
 
-Test the score on small synthetic inputs with known outcomes. Also test required
-capabilities, invalid inputs, repeat preparation, and unchanged model state where
-those behaviors apply.
-
-Use the existing benchmark tests as examples, marking tests that need GPUs,
-long runs, or paid models with the repository's corresponding pytest markers.
-Data preparation and full benchmark runs must remain separate from tests that
-run without the source dataset.
+Test the score on small synthetic inputs whose answer you know, so the tests
+run without the source dataset. Mark tests that need a GPU, long runs or a paid
+model with the `gpu`, `slow` or `llm` pytest markers.

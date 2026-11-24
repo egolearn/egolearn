@@ -127,9 +127,12 @@ patch releases for fixes during 0.x development.
 
 ### Changed
 
+- `probe:four_afc` and `probe:linear` resolve relative image paths in a JSON manifest against the manifest's directory. `egl data prepare babyview-4afc` writes relative paths and accepts `--download_only`.
 - Memory Storyboard defaults to SimCLR plus supervised contrastive learning over global segment labels in replay.
 - BabyCL replaces batch-local temporal classification with supervised contrastive learning from global segment IDs in streaming and offline recipes.
 - BabyCL and Memory Storyboard snapshots with a temporal classifier cannot resume under the new recipes; `init_from` reuses their encoders.
+- The documentation site is about half its former length, with task-first pages and no site-specific cluster details.
+- The MAE and StreamMAE guides are two pages, BabyCL's offline inputs are part of its SAYCam inputs page, and the data-loading performance page is removed.
 - The packaged config leaves `wandb.entity` unset, so online W&B runs log to your default entity.
 - The website benchmark groups live published results by training dataset and modality, omitting columns that are inapplicable to every model in a table. Visual-only tables omit image-text benchmarks, including Konkle 4AFC.
 - The benchmark page places SAYCam-S before BabyView and removes update notices and expandable source details.
@@ -139,7 +142,9 @@ patch releases for fixes during 0.x development.
   and publication to personal Hub repositories.
 - SAYCam and BabyView checkpoint requests collect Databrary proof links directly
   in the Hugging Face form instead of requiring a separate email.
-- Hub fetches and uploads default to `egolearn/<name>`, while cataloged datasets retain their existing repository IDs.
+- Hub fetches and uploads default to `egolearn/<name>`. The shape-bias and spatial-relation collections are public at `egolearn/shape-bias` and `egolearn/spatial-relation-categorization`.
+- The gated `egolearn/labeled-s-splits` and `egolearn/babyview-4afc` collections hold the Labeled-S 4AFC trials and linear split, and the BabyView manifests behind the published results; both need Databrary access.
+- The model catalog lists one released checkpoint per method and dataset, named without seed or objective suffixes, such as `egolearn/babycl-resnext50-krishnacam`.
 
 - SAYCam and BabyView checkpoint access instructions require evidence of access
   to the corresponding Databrary dataset.
@@ -176,7 +181,7 @@ patch releases for fixes during 0.x development.
 
 - Batch recipes remove `batch_label` and use `labels_from` for segment targets from a label store.
 - `probe:imagenet_linear_sgd` is replaced by standalone `benchmark:imagenet_linear_sgd`
-  and the `imagenet_linear_eval` config; see [ImageNet migration](docs/evaluation.md#imagenet-migration).
+  and the `imagenet_linear_eval` config; see [ImageNet migration](docs/evaluation.md#imagenet-linear-decoding).
 - `ImageNetLinearSGDProbe` is replaced by `ImageNetLinearBenchmark`.
 - `scripts/prepare_shape_bias.py`, `scripts/prepare_spatial_relations.py`, and
   `scripts/prepare_spatial_monitoring.py` are replaced by `egl data prepare` and the

@@ -17,7 +17,7 @@ As a training-time probe::
     _imports_: [egolearn.evaluation.benchmarks.shape_bias]
     probes:
       - {_target_: "probe:shape_bias", name: shape_bias,
-         manifest: "hf://datasets/agentic-learning-ai-lab/egolearn-shape-bias@v1/stimulus_manifest.json",
+         manifest: "hf://datasets/egolearn/shape-bias@v1/stimulus_manifest.json",
          batch_size: 32, view: resize, size: 224,
          output_json: "runs/shape_bias_step_{step}.json"}
 

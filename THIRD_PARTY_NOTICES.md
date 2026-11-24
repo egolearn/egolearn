@@ -82,3 +82,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Provenance notes
+
+`PILRadiusBlur` in `src/egolearn/methods/babycl/data.py` is lab-authored and
+needs no third-party notice. Commits before `d6ece09` describe an earlier
+version as a verbatim port of the SimCLR/MoCo Pillow blur, and MoCo's code is
+licensed CC BY-NC 4.0. Both versions draw a radius uniformly from a range and
+make one call to Pillow's `ImageFilter.GaussianBlur`. That is ordinary use of
+Pillow's public API, not expression copied from MoCo, so the history contains
+no CC BY-NC code. Commit `d6ece09` rewrote the class and its docstring to state
+its numerical contract instead of a derivation.

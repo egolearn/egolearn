@@ -173,9 +173,6 @@ section.block:last-of-type { padding-bottom: 72px; }
 .vs div { display: grid; grid-template-columns: 7.5em 1fr; gap: 12px; align-items: baseline; }
 .vs dt { font-family: var(--mono); font-size: 13px; color: var(--muted); }
 .vs dd { margin: 0; font-size: 17px; line-height: 1.4; }
-.credits { margin-top: 48px; }
-.credit { margin: 0; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
-.credit a { color: inherit; }
 .below { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 0.8fr); gap: 12px; align-items: stretch; margin-top: 6px; }
 .box { background: var(--inset); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .box b { font-family: var(--mono); font-weight: 400; font-size: 13px; }
@@ -355,14 +352,18 @@ footer.lab .links .lab-link { font-size: 0.8125rem; color: var(--muted); }
 <pre class="code"><span class="c"># install from a cloned repository</span>
 <span class="p">$ </span><span class="k">uv sync</span> --extra train
 
-<span class="c"># validate and train on synthetic data, CPU only</span>
-<span class="p">$ </span><span class="k">uv run egl train</span> toy_streaming dry_run=true
-<span class="p">$ </span><span class="k">uv run egl train</span> toy_streaming
+<span class="c"># evaluate a released KrishnaCam model on shape-bias stimuli, CPU only</span>
+<span class="p">$ </span><span class="k">uv run egl data prepare</span> shape-bias
+<span class="p">$ </span><span class="k">uv run egl eval</span> shape_bias_eval \
+    checkpoint=hf://models/egolearn/babycl-resnext50-krishnacam@main/model.safetensors \
+    benchmarks.0.manifest=data/shape-bias/stimulus_manifest.json
 
-<span class="c"># list registered datasets and access tiers</span>
-<span class="p">$ </span><span class="k">uv run egl data list</span></pre>
+<span class="c"># train BabyCL on SAYCam, given dataset access and a GPU</span>
+<span class="p">$ </span><span class="k">uv run egl train</span> projects/babycl/configs/saycam_default.yaml \
+    stream.root_dir=/path/to/saycam_5fps \
+    stream.transcript_json=/path/to/expand_correct_seg.json \
+    tokenizer.vocab_json=/path/to/vocab.json <span class="s">'probes=[]'</span></pre>
   </div>
-  <p class="note">The example needs no dataset access or pretrained weights. Method guides cover additional training sources. For real data, follow the <a href="docs/projects/babycl/">BabyCL training guide</a>, <a href="docs/evaluation/">checkpoint evaluation guide</a>, and <a href="docs/benchmark_suites/">benchmark suite setup</a>.</p>
 </section>
 
 <section class="wrap block" id="streaming">
@@ -527,16 +528,11 @@ footer.lab .links .lab-link { font-size: 0.8125rem; color: var(--muted); }
   <p id="benchmark-status" class="note" role="status">Loading published results…</p>
   <div id="benchmark-table" class="benchmark-tables" data-results-repo="egolearn/egolearn-results"></div>
   <noscript><p class="note">Enable JavaScript to load the published benchmark results.</p></noscript>
-  <p id="benchmark-note" class="note">Accuracy and shape preference are percentages. Values show mean ± sample sd across training seeds. Single checkpoints have no sd; imported references can have an unknown training seed. Shape preference is not classification accuracy. N/A marks an inapplicable benchmark; a dash indicates missing or incompatible evaluations. Architectures, training budgets, and evaluation resolutions can differ.</p>
+  <p id="benchmark-note" class="note">Mean ± sd over training seeds.</p>
 </section>
 </main>
 
-
-<section class="wrap credits" aria-label="Image credits">
-  <p class="credit">Image credits. SAYCam participant from <a href="https://doi.org/10.1162/opmi_a_00039">Sullivan et al., Open Mind (2021)</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>, cropped. BabyView object crops from the <a href="https://github.com/babyview-project/ccn-2026-object-variability">BabyView public release</a>, CC0. Walking Tours: walks in <a href="https://commons.wikimedia.org/wiki/File:Walking_in_VALLETTA_-_Malta_-_4K_60fps_(UHD).webm">Valletta</a>, <a href="https://commons.wikimedia.org/wiki/File:Walking_in_GRANADA_-_Spain_-_4K_60fps_(UHD).webm">Granada</a>, <a href="https://commons.wikimedia.org/wiki/File:Walking_in_ISTANBUL_-_Turkey_-_Galata_Tower,_Taksim,_Dolmabah%C3%A7e_-_4K_60fps_(UHD).webm">Istanbul</a>, <a href="https://commons.wikimedia.org/wiki/File:Walking_in_KAUNAS_-_Lithuania_-_City_Center_in_Winter_-_4K_60fps_(UHD).webm">Kaunas</a> by POPtravel, <a href="https://creativecommons.org/licenses/by/3.0/">CC BY 3.0</a>, via Wikimedia Commons. Ego4D collage from <a href="https://ego4d-data.org/">ego4d-data.org</a>. KrishnaCam frames from the <a href="https://krsingh.cs.ucdavis.edu/krishna_files/papers/krishnacam/krishnacam.html">KrishnaCam project page</a> (Singh et al., 2016).</p>
-</section>
-
-<footer class="lab"><div class="wrap"><div class="foot"><div class="attribution"><img class="logo-light" src="media/icon-light.svg" alt=""><img class="logo-dark" src="media/icon-dark.svg" alt=""><span>egolearn · mit license</span></div><div class="links"><a href="https://github.com/egolearn/egolearn" aria-label="GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.290 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.420-3.58-8-8-8"/></svg></a><a class="lab-link" href="https://agenticlearning.ai/">agentic learning ai lab</a></div></div></div></footer>
+<footer class="lab"><div class="wrap"><div class="foot"><div class="attribution"><img class="logo-light" src="media/icon-light.svg" alt=""><img class="logo-dark" src="media/icon-dark.svg" alt=""><span>egolearn · mit license</span></div><div class="links"><a href="https://github.com/egolearn/egolearn" aria-label="GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.290 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.420-3.58-8-8-8"/></svg></a><a class="lab-link" href="docs/credits/">image credits</a><a class="lab-link" href="https://agenticlearning.ai/">agentic learning ai lab</a></div></div></div></footer>
 
 <script type="module" src="benchmarks.mjs"></script>
 <script>

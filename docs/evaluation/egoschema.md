@@ -1,32 +1,25 @@
 # EgoSchema
 
 EgoSchema asks five-way multiple-choice questions about 3-minute egocentric
-videos, and most of them need the whole clip ("What is the overall goal of C's
-actions?"). EgoLearn scores a generative model that watches the video and names
-the answer's letter, without training anything. The headline is accuracy on
-the 500 questions with public answers, reported with a 95% bootstrap interval.
-Chance is 0.2.
+videos, and most questions need the whole clip, such as "What is the overall
+goal of C's actions?". In egolearn, a generative vision-language model
+watches the video and names the answer's letter, without any training. The
+headline is accuracy on the 500 questions with public answers, reported with
+a 95% bootstrap interval, and chance is 0.2.
 
 The benchmark is Mangalam, Akshulakov and Malik,
-[*EgoSchema: A Diagnostic Benchmark for Very Long-form Video Language
-Understanding*](https://arxiv.org/abs/2308.09126) (NeurIPS 2023 Datasets and
-Benchmarks). It has 5,031 questions, each about one video cut from Ego4D.
-Answers are public for 500 of them, and the authors' servers score the full set.
+[*EgoSchema: A Diagnostic Benchmark for Very Long-form Video Language Understanding*](https://arxiv.org/abs/2308.09126)
+(NeurIPS 2023 Datasets and Benchmarks). It has 5,031 questions about videos cut
+from Ego4D, and the authors' servers score the full set.
 
 ## Downloading the data
 
-Choose a writable data root before running the shell commands:
+Download the questions and public answers from the
+[EgoSchema repository](https://github.com/egoschema/EgoSchema) at the pinned
+commit. The benchmark checks both files against their SHA-256.
 
 ```bash
 export EGOLEARN_DATA=/path/to/data
-```
-
-Questions and public answers come from the
-[EgoSchema repository](https://github.com/egoschema/EgoSchema) at commit
-`505c787376b5e066d0ae406d0e0d41245cebba15`. The loader checks both files against
-their pinned SHA-256:
-
-```bash
 mkdir -p "$EGOLEARN_DATA/egoschema"
 for f in questions.json subset_answers.json; do
   curl -L -o "$EGOLEARN_DATA/egoschema/$f" \
@@ -34,102 +27,72 @@ for f in questions.json subset_answers.json; do
 done
 ```
 
-The authors distribute the videos (about 100 GB) through Kaggle. Accept the
-competition rules and install/configure the [Kaggle CLI](https://github.com/Kaggle/kaggle-api),
-then run `kaggle competitions download -c egoschema-public`.
-Place the videos as `$EGOLEARN_DATA/egoschema/videos/<q_uid>.mp4`.
+The authors distribute the videos, about 100 GB, through Kaggle. Accept the
+competition rules, set up the [Kaggle CLI](https://github.com/Kaggle/kaggle-api)
+and run `kaggle competitions download -c egoschema-public`, then place the
+videos as `$EGOLEARN_DATA/egoschema/videos/<q_uid>.mp4`.
 
 ## Serving the model
 
-The packaged config talks to an OpenAI-compatible server through
-`generative:openai_chat`. Its default model is Qwen2.5-VL-7B-Instruct served by
-vLLM on one GPU. Install vLLM in a separate server environment using its
-[GPU installation instructions](https://docs.vllm.ai/en/latest/getting_started/installation/gpu.html).
-The EgoLearn `qa` extra installs the client, not vLLM or its model weights.
-Start the server in that environment:
+The packaged config sends frames to an OpenAI-compatible server. Its default
+model is Qwen2.5-VL-7B-Instruct served by vLLM. The egolearn `qa` extra
+installs only the client, so install vLLM in its own environment by following
+its [installation guide](https://docs.vllm.ai/en/latest/getting_started/installation/gpu.html),
+then start the server:
 
 ```bash
 vllm serve Qwen/Qwen2.5-VL-7B-Instruct --port 8000 --max-model-len 32768 \
   --limit-mm-per-prompt '{"image": 0, "video": 1}'
 ```
 
-EgoSchema videos are cut from Ego4D, whose license does not allow sending them
-to third-party services. Point the evaluation only at servers you operate
-under the dataset's access terms. The client reads the server's key from
-`EGOLEARN_LLM_API_KEY`. For a server started without `--api-key`, set
-`model_config.model.generative.vlm.api_key_env=null`.
+The Ego4D license does not allow sending its videos to third-party services,
+so use only a server that you operate under the dataset's terms. The client
+reads the server's API key from `EGOLEARN_LLM_API_KEY`. If you started the
+server without `--api-key`, add `model_config.model.generative.vlm.api_key_env=null`
+to the evaluation command.
 
 ## Running the evaluation
 
-Install the `train` and `qa` extras with `uv sync --extra train --extra qa`, then
-give the server's address:
+Install the `train` and `qa` extras, then run the packaged config against your
+server:
 
 ```bash
-uv run egl eval egoschema_eval vlm_url=http://<host>:8000/v1 \
-  output_json=egoschema.json
+uv sync --extra train --extra qa
+uv run egl eval egoschema_eval vlm_url=http://<host>:8000/v1 output_json=egoschema.json
 ```
 
-No checkpoint is needed: the model is built from `model_config`. Set `vlm_model`
-when the server serves the model under another name. To score all 5,031
-questions and write the files the authors' servers accept, add
-`benchmarks.0.subset_only=false benchmarks.0.submission_dir=<dir>`. The directory
-receives `submission.csv` for Kaggle, `submission.json` for the validation
-server and `predictions.jsonl` with every reply. A reply that names no option is
-submitted as option 0.
+No checkpoint is needed, since the model is built from `model_config`. Set
+`vlm_model` if the server uses another model name, and add these overrides for
+other kinds of run:
 
-## Scoring contract
+| Override | Effect |
+| --- | --- |
+| `benchmarks.0.subset_only=false benchmarks.0.submission_dir=<dir>` | Answers all 5,031 questions and writes `submission.csv` for Kaggle, `submission.json` for the validation server and `predictions.jsonl` with every reply |
+| `benchmarks.0.max_questions=<n>` | Scores only the first n questions, for smoke tests |
+| `model_config.model.generative.vlm.video_input=frames` | Sends frames as separate images, for servers without vLLM's video input. Raise the server's image limit to at least `max_frames` |
 
-Each video is sampled at `fps` frames per second (default 1), at most
-`max_frames` frames (default 64), so a 3-minute video gives 64 frames about
-2.8 s apart. Frames start at the first frame of the video, are evenly spaced,
-and are resized so their longer side is at most `max_side` pixels (default 448,
-aspect ratio kept). These settings are recorded with the result. Each prediction
-row also records the frame count and sampling rate the model saw, and the result
-metadata gives their means (`video_frames_mean`, `video_fps_mean`).
+Replies are cached under `reply_cache`, keyed by the full request, so a rerun
+reads the cache and a change to the frames, prompt or model name misses it.
+The key holds the model name but not its weights, so set a new `reply_cache`
+when the server serves other weights under the same name.
 
-With `video_input: video` (the default) the frames reach the model as one video
-together with their true sampling rate, so Qwen2.5-VL's absolute time encoding
-is correct. This form uses vLLM's `video/jpeg` data URLs. With
-`video_input: frames` every frame is sent as an image labelled with its time,
-which any server that accepts images understands. Start vLLM with an image limit of
-at least `max_frames` for this form, such as `--limit-mm-per-prompt '{"image": 64, "video": 1}'`.
-
-The prompt and the reply parser are named in the config, and the result records
-both names. The default prompt, `lettered_options`, shows the question, the five
-options as `A.` to `E.`, and the instruction "Answer with the option's letter
-from the given choices directly." Decoding is greedy. The default parser,
-`option_letter`, reads a reply as the letter it starts with (alone or followed by
-`.`, `:`, `)` or `]`), else the capital letter after "answer" or "answer is", else
-the option whose full text it repeats. To use another, register a function with
-`@PROMPTS.register("name")` or `@PARSERS.register("name")` from
-`egolearn.config.registry` in a module listed in `_imports_`, then set
-`benchmarks.0.prompt` or `benchmarks.0.parser` to its name.
+## Metrics
 
 | Metric | Meaning |
 | --- | --- |
-| `acc` | Accuracy on questions with a public answer |
+| `acc` | Accuracy on the questions with a public answer |
 | `acc_ci_low`, `acc_ci_high` | 95% percentile bootstrap interval of `acc` |
-| `unparsed` | Share of replies that name no option; they count as wrong |
-| `pred_frac_A` … `pred_frac_E` | Share of predictions per letter, which exposes a letter bias |
+| `unparsed` | Share of replies that name no option. They count as wrong |
+| `pred_frac_A` … `pred_frac_E` | Share of predictions for each letter, which exposes a letter bias |
 | `n_scored`, `n_answered` | Questions scored, and those with a public answer |
 
-## Other generative models
+## Differences from the reference protocol
 
-Any generative component that produces text can be scored, since the benchmark
-only builds questions and the scorer only calls `generate(texts, videos)`. A
-component that wraps an EgoLearn encoder with a projector and a language model
-reads the same frames and is scored the same way. Its weights are saved with the
-composed model, so you evaluate it from its checkpoint (`checkpoint=<path>`) like
-any trained model. A component without trained weights goes under
-`model_config.model.generative` in place of `generative:openai_chat`.
-
-## Reply cache
-
-Replies are cached under `reply_cache` (default `runs/vlm_replies`, or
-`$EGOLEARN_ARTIFACTS/vlm_replies` when that variable is set), one JSON file per
-request named by the SHA-256 of the full request. The request includes the model
-name, the prompt, every frame and the decoding settings. A rerun of the same
-evaluation therefore reads the cache, and any change to the frames, the prompt or
-the model name misses it. The cache cannot see the weights behind a name: give
-`reply_cache` a new directory when the server serves other weights under the same
-name. Empty replies are not cached.
+- The headline uses the 500-question public subset. Full-set accuracy comes
+  from the authors' servers, through the submission files.
+- Each video is sampled at 1 frame per second, up to 64 frames, with the
+  longer side at most 448 pixels (`fps`, `max_frames` and `max_side`).
+  Published results for the same model use their own sampling and prompt, so
+  scores can differ from them.
+- A reply that names no option letter or option text is wrong, and the
+  submission files record it as option A.

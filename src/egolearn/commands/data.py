@@ -35,7 +35,7 @@ DATASETS = (
         "shape-bias",
         _BENCHMARKS + "shape_bias.prepare",
         (("--asset-dir", ".sources/shape-bias"), ("--output-dir", "shape-bias")),
-        repo="agentic-learning-ai-lab/egolearn-shape-bias",
+        repo="egolearn/shape-bias",
     ),
     Dataset(
         "spatial-relation-categorization",
@@ -43,7 +43,7 @@ DATASETS = (
         "Hosted spatial relation monitoring subsets (monitoring/)",
         "https://doi.org/10.1016/j.cognition.2023.105690",
         "spatial-relation-categorization",
-        repo="agentic-learning-ai-lab/egolearn-spatial-relation-categorization",
+        repo="egolearn/spatial-relation-categorization",
     ),
     Dataset(
         "spatial-relations",
@@ -68,13 +68,13 @@ DATASETS = (
     ),
     Dataset(
         "babyview-4afc",
-        "public",
-        "BabyView trial/split metadata; Hub payload excludes pixels",
+        "gated",
+        "BabyView 4AFC trials and linear split from public crops; Hub payload excludes pixels",
         "https://github.com/babyview-project/ccn-2026-object-variability",
         "babyview-4afc",
         _BENCHMARKS + "babyview_4afc.prepare",
         (("--data_root", "babyview-public-crops"), ("--out_dir", "babyview-4afc")),
-        repo="agentic-learning-ai-lab/egolearn-babyview-4afc",
+        repo="egolearn/babyview-4afc",
     ),
     Dataset(
         "labeled-s-4afc",
@@ -96,11 +96,11 @@ DATASETS = (
     ),
     Dataset(
         "labeled-s-splits",
-        "public",
-        "Split identifiers only; images require separate access",
-        "https://github.com/wkvong/multimodal-baby",
+        "gated",
+        "Labeled-S 4AFC trials and linear split identifiers; images require separate access",
+        "https://arxiv.org/abs/2606.05115",
         "labeled-s-splits",
-        repo="agentic-learning-ai-lab/egolearn-labeled-s-splits",
+        repo="egolearn/labeled-s-splits",
     ),
     Dataset(
         "saycam",
@@ -170,10 +170,12 @@ def dataset(name: str) -> Dataset:
 def preparation_command(item: Dataset, root: Path, arguments: list[str]) -> list[str]:
     if item.prepare_module is None:
         raise ValueError(f"{item.name} has no preparer; see {item.source}")
+    # These invocations write nothing to the preparation destination.
     read_only = (
         "--help" in arguments
         or "-h" in arguments
         or (item.name == "spatial-relations" and "--validate-only" in arguments)
+        or (item.name == "babyview-4afc" and "--download_only" in arguments)
     )
     for flag, path in item.prepare_defaults:
         if flag not in {"--output-dir", "--out_dir", "--output"}:

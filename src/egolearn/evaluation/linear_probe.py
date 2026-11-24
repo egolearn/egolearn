@@ -108,10 +108,16 @@ class ClassificationSplit:
         }
 
     @classmethod
-    def from_mapping(cls, value: Mapping) -> ClassificationSplit:
+    def from_mapping(cls, value: Mapping, root: Path | None = None) -> ClassificationSplit:
+        """Read a JSON split; relative image paths resolve against ``root`` when given."""
+
         def read_items(items: Sequence[Mapping]) -> tuple[LabeledImage, ...]:
             return tuple(
-                LabeledImage(image=str(item["image"]), label=int(item["label"])) for item in items
+                LabeledImage(
+                    image=str(root / item["image"]) if root is not None else str(item["image"]),
+                    label=int(item["label"]),
+                )
+                for item in items
             )
 
         return cls(
@@ -153,7 +159,7 @@ class LinearProbe(Probe):
             assert manifest is not None
             raw = Path(manifest).read_bytes()
             self.manifest_sha256 = hashlib.sha256(raw).hexdigest()
-            split = ClassificationSplit.from_mapping(json.loads(raw))
+            split = ClassificationSplit.from_mapping(json.loads(raw), root=Path(manifest).parent)
         self.split = split
         self.classes = list(split.classes)
         self.train_set = split.train

@@ -1,5 +1,5 @@
 # Novel-object shape bias (Tartaglini, Vong & Lake, 2022) on hosted stimuli.
-# CC BY 4.0; cite the paper. Private until release: authenticate with HF_TOKEN.
+# CC BY 4.0; cite the paper.
 #   egl eval shape_bias_eval checkpoint=<checkpoint or export>
 defaults:
   - evaluate
@@ -10,7 +10,7 @@ _imports_:
 benchmarks:
   - _target_: "probe:shape_bias"
     name: shape_bias
-    manifest: "hf://datasets/agentic-learning-ai-lab/egolearn-shape-bias@v1/stimulus_manifest.json"
+    manifest: "hf://datasets/egolearn/shape-bias@v1/stimulus_manifest.json"
     batch_size: 32
     view: resize
     size: 224

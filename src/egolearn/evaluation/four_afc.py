@@ -26,7 +26,8 @@ Manifest json format::
                  "answer": 0}, ...],
      "chance_trials": 0}
 
-``answer`` is the target's index in ``images`` and defaults to 0.
+``answer`` is the target's index in ``images`` and defaults to 0. Relative
+image paths resolve against the manifest's directory.
 ``chance_trials`` is optional. It counts trials that cannot be shown to the
 model, such as words outside its vocabulary, and each adds 0.25 of a correct
 answer to ``four_afc_acc``. With it set, ``four_afc_acc_scored`` reports the
@@ -36,6 +37,7 @@ accuracy on the listed trials alone.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F
@@ -67,7 +69,9 @@ class FourAFCProbe(Probe):
         with open(manifest) as f:
             loaded = json.load(f)
         self.trials: list[dict] = loaded["trials"]
+        root = Path(manifest).parent
         for trial in self.trials:
+            trial["images"] = [str(root / path) for path in trial["images"]]
             answer = trial.get("answer", 0)
             if type(answer) is not int or not 0 <= answer < len(trial["images"]):
                 raise ValueError(f"answer must index an image of the {trial['text']!r} trial")

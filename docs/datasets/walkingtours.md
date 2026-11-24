@@ -1,53 +1,35 @@
 # WalkingTours
 
-Prepare the ten original WalkingTours videos as a shared frame dataset for
-[BabyCL](../../projects/babycl/docs/walkingtours.md) and
-[StreamMAE](../../projects/streammae/walkingtours.md). Both recipes use the same
-prepared frames and video order, with different models and training budgets.
+This page explains how to turn the ten original WalkingTours videos into the
+frame dataset that the [BabyCL](../../projects/babycl/docs/walkingtours.md) and
+[StreamMAE](../../projects/streammae/walkingtours.md) WalkingTours recipes train
+on. Both recipes read the same prepared frames in the same video order.
 
-## Source videos
+## Requirements
 
-Download the MP4 files from the [official Figshare release](https://doi.org/10.21942/uva.25189275.v1)
-into `WALKINGTOURS_RAW`. The release contains about 81 GiB of video under CC BY 4.0.
-The packaged [source manifest](../../src/egolearn/data/manifests/walkingtours.json)
-records filenames, download URLs, sizes, and published MD5 checksums.
+- The ten MP4 files from the [official Figshare release](https://doi.org/10.21942/uva.25189275.v1),
+  about 81 GiB under CC BY 4.0, downloaded into one directory
+- EgoLearn installed with `uv sync --extra train`
+- FFmpeg and `ffprobe` with software decoders for H.264, VP9 and AV1, first on
+  your `PATH` (for AV1, use a build with `libdav1d`)
 
-This release includes Wildlife and does not contain the WT++ London stream.
-WT++ is a separate collection. For a supplied WT++ source, follow the
-[StreamMAE WT++ preparation guide](../../projects/streammae/wtpp.md).
-
-## Preparation requirements
-
-Install EgoLearn with the `train` extra and run preparation on CPUs. From a
-repository checkout, use `uv sync --extra train` and prefix the Python command
-below with `uv run`. With an activated installation, you can run the command
-outside the checkout using the bundled source manifest.
-
-Install FFmpeg and `ffprobe` before extracting frames. The videos include H.264,
-AV1, and VP9, so FFmpeg needs software decoders for all three. For AV1, use a
-build with `libdav1d`. Put the chosen `ffmpeg` and `ffprobe` binaries first on
-`PATH`, and set `WALKINGTOURS_ROOT` to a new directory for the prepared frames.
+This release includes Wildlife but not the WT++ London stream, which the
+[StreamMAE WalkingTours guide](../../projects/streammae/walkingtours.md) covers.
 
 ## Frame preparation
 
-Run the preparer after downloading all ten source videos:
+Set `WALKINGTOURS_RAW` to the download directory and `WALKINGTOURS_ROOT` to a
+new output directory, then run the preparer on CPUs:
 
 ```bash
-python -m egolearn.data.prepare_walkingtours \
+uv run python -m egolearn.data.prepare_walkingtours \
     --source-root "$WALKINGTOURS_RAW" \
     --output-root "$WALKINGTOURS_ROOT"
 ```
 
-The preparer verifies each source checksum, resamples to 3.75 fps, and writes
-1280×720 JPEGs. Since the videos have different frame rates, it uses timestamps
-to select frames at a consistent rate. The stream adapter's `fps` setting only
-supplies timestamps and does not resample files during training.
-
-Each completed session contains consecutive filenames beginning with
-`frame_00000001.jpg` and a `preparation.json` record. The preparer checks frame
-counts against video duration and writes `inventory.json` after all ten sessions
-finish. Rerunning the command reuses completed sessions whose source identity,
-preparation settings, and frame counts match.
+The preparer checks each video against the MD5 checksums in the packaged
+[source manifest](../../src/egolearn/data/manifests/walkingtours.json). It then
+writes 1280×720 JPEG frames at 3.75 frames per second, one directory per video:
 
 ```text
 $WALKINGTOURS_ROOT/
@@ -55,32 +37,20 @@ $WALKINGTOURS_ROOT/
   venice/
     preparation.json
     frame_00000001.jpg
-    frame_00000002.jpg
     ...
   amsterdam/
-    ...
   ...
 ```
 
-Pass `--source-manifest /path/to/manifest.json` to use a custom manifest with the
-same format as the packaged one. Keep the prepared files and inventory unchanged
-throughout training and resume.
+The preparer writes `inventory.json` after all ten videos finish. If a run
+stops, rerunning the same command reuses the videos that finished. Keep the
+prepared frames unchanged while you train or resume.
 
-## Video order and source issue
+## Video order
 
-The shared order is Venice, Amsterdam, Singapore, Istanbul, Bangkok, Stockholm,
-Kuala Lumpur, Zurich, Chiang Mai, and Wildlife. The manifest, output inventory,
-and packaged stream configuration use this order.
+The recipes stream the videos in this order: Venice, Amsterdam, Singapore,
+Istanbul, Bangkok, Stockholm, Kuala Lumpur, Zurich, Chiang Mai and Wildlife.
 
-The published Zurich file ends after about 26.5 minutes despite a 65-minute
-container duration. Its size and MD5 match the release, and the final complete
-video packet ends at 1589.283 seconds. The manifest records this usable duration
-for that exact file, and both recipes use its available frames. Preparation
-checks the shorter duration and retains both durations in its output metadata.
-
-## Training guides
-
-Use the [BabyCL experiment guide](../../projects/babycl/docs/walkingtours.md) or
-the [StreamMAE experiment guide](../../projects/streammae/walkingtours.md) after
-preparation finishes. Their architectures, objectives, and update budgets differ,
-so sharing the input dataset does not make their training compute equal.
+The published Zurich file stops after about 26.5 minutes, although its header
+claims 65 minutes. The file matches the release's MD5, so the preparer and both
+recipes use the 26.5 minutes that exist.

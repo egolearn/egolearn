@@ -537,7 +537,7 @@ def test_packaged_eval_config_uses_hosted_monitoring_subsets(tmp_path, monkeypat
         cfg = OmegaConf.to_container(compose(config_name="spatial_relations_eval"), resolve=True)
     assert isinstance(cfg, dict)
     spec = cfg["benchmarks"][0]
-    prefix = "hf://datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization@v1/"
+    prefix = "hf://datasets/egolearn/spatial-relation-categorization@v1/"
     hosted = {
         prefix + "monitoring/2d-stimuli/manifest.json": subset / "exp1/manifest.json",
         prefix + "monitoring/3d-stimuli/manifest.json": subset / "exp3/manifest.json",
