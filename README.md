@@ -7,16 +7,17 @@
 
 [![ci](https://github.com/agentic-learning-ai-lab/egolearn/actions/workflows/ci.yml/badge.svg)](https://github.com/agentic-learning-ai-lab/egolearn/actions/workflows/ci.yml)
 
-EgoLearn is a Python library for training and evaluating models on first-person
-video. It supports streaming and offline self-supervised learning, bounded replay
-memory, temporal segmentation, and image–text learning.
-[Agentic Learning AI Lab](https://agenticlearning.ai), New York University.
+egolearn is a Python library for training and evaluating visual and image–text
+models on first-person video. Streaming runs read the video once in
+chronological order and replay past frames from bounded memory, while offline
+runs shuffle the whole dataset across epochs. It is developed by the
+[Agentic Learning AI Lab](https://agenticlearning.ai) at New York University.
 
 ## Quickstart
 
-You need [uv](https://docs.astral.sh/uv/) and a workstation or compute node.
-uv installs Python 3.12 and the training dependencies. On cluster login nodes,
-use the [shell launcher](docs/cluster.md) to request a compute allocation first.
+You need [uv](https://docs.astral.sh/uv/), which installs Python 3.12 and the
+dependencies. The toy configuration trains a small convolutional network on
+synthetic colored blocks, on the CPU, without any dataset or pretrained weights.
 
 ```bash
 git clone https://github.com/agentic-learning-ai-lab/egolearn.git
@@ -26,103 +27,48 @@ uv run egl train toy_streaming dry_run=true
 uv run egl train toy_streaming
 ```
 
-The toy configuration trains a small convolutional model on synthetic colored
-blocks using the CPU. It needs no dataset access, pretrained weights, or API keys.
-The dry run validates the pipeline. The training run prints losses and writes its
-run record under `runs/toy/records/`; the toy configuration does not save weights.
-To save and reload a model, follow the [CPU export example](docs/cli.md#toy-model-export).
+The dry run builds and checks the whole pipeline, then exits. The training run
+prints a loss line every five steps and writes a run record under
+`runs/toy/records/`, but it saves no weights. To train, export and reload a
+model, follow the [toy export example](docs/cli.md#toy-model-export).
 
-After installation, use `uv run egl` or activate `.venv` and run `egl` directly.
-`egolearn` is an alias for the same command.
+Run `uv run egl --help` to list the commands, or activate `.venv` and call
+`egl` directly.
 
-```bash
-uv run egl --help
-uv run egl data list
-```
+## Next steps
 
-To evaluate a pretrained model next, follow the
-[first checkpoint evaluation](docs/evaluation/first_evaluation.md). It uses public
-weights and locally prepared stimuli, with no access request. To train on real
-data, choose a method below and prepare its required inputs.
+- [First checkpoint evaluation](docs/evaluation/first_evaluation.md): score a public model on a CPU.
+- [Command line](docs/cli.md): configs, overrides, export and data preparation.
+- [Cluster jobs](docs/cluster.md): submit training to Slurm.
+- [Status and limitations](docs/status.md): what is supported.
 
-The [CLI guide](docs/cli.md) covers configuration files, data preparation,
-model export, cluster submission, and benchmark suites.
+## Methods
 
-<a id="whats-here"></a>
-
-## Training
-
-Streaming training processes observations in chronological order and samples
-previous observations from bounded replay buffers. Offline training shuffles the
-selected dataset across epochs. Configurations select the model, losses, memory
-policies, and batch composition. Both modes support resumable snapshots and run records.
-
-Start with a method's configuration and data instructions:
-
-| Method | Training guide |
+| Method | What it trains |
 | --- | --- |
-| BabyCL | [Streaming and offline image–text learning on SAYCam](projects/babycl/README.md) |
-| Memory Storyboard | [Streaming visual learning with temporal segmentation](projects/storyboard/README.md) |
-| MAE and StreamMAE | [Masked image reconstruction with streaming and offline recipes](projects/streammae/README.md) |
-| V-JEPA 2 | [Video representation learning on SAYCam and BabyView](projects/vjepa2/README.md) |
-| KrishnaCam visual baselines | [Streaming and offline training directly from MP4 videos](projects/krishnacam/README.md) |
+| [BabyCL](projects/babycl/README.md) | Visual and verbal representations from SAYCam in one chronological pass |
+| [Memory Storyboard](projects/storyboard/README.md) | Visual representations from a stream, with temporal segmentation |
+| [MAE and StreamMAE](projects/streammae/README.md) | Image encoders by masked reconstruction, streaming or offline |
+| [V-JEPA 2](projects/vjepa2/README.md) | Video encoders on SAYCam or BabyView |
+| [KrishnaCam](projects/krishnacam/README.md) | Visual baselines trained directly from MP4 recordings |
 
-The SAYCam videos used by BabyCL and Memory Storyboard require
-[Databrary access](docs/evaluation/data.md#saycam-access). Configure dataset roots
-and prepared inputs according to the method's guide before running real-data training.
-V-JEPA 2 also supports BabyView recordings with
-[separate data access](docs/evaluation/data.md#babyview-training-data).
-BabyCL requires prepared aligned transcripts as well as frames; its input guide
-describes how to obtain them. Datasets and checkpoints are not included in this repository.
-
-See the [architecture guide](docs/design/architecture.md) for stream and memory
-contracts, the [data-loading guide](docs/data_loading.md) for storage and worker
-settings, and the [initialization guide](docs/initialization.md) for starting from
-selected checkpoint weights.
-
-## Model checkpoints
-
-Choose pretrained weights and their evaluation recipes from the
-[model catalog](docs/evaluation/hub.md#released-models). KrishnaCam and WalkingTours
-weights are public. SAYCam and BabyView weights require manual approval based
-on access to the corresponding training dataset on Databrary.
-Follow the [access-request instructions](docs/evaluation/hub.md#checkpoint-access)
-and use a read token from the approved Hugging Face account.
+Each method page lists the inputs it needs, and SAYCam and BabyView require
+[Databrary access](docs/evaluation/data.md). The repository itself contains no
+datasets or checkpoints.
 
 ## Evaluation
 
-Evaluate saved checkpoints independently with `egl eval` or the
-`egolearn.evaluation.evaluate_checkpoint` API. The
-[evaluation guide](docs/evaluation.md) lists configuration examples and checkpoint
-formats; the [data guide](docs/evaluation/data.md) covers access and preparation.
-
-Benchmarks include Labeled-S and BabyView object recognition, ImageNet decoding,
-VTWT and Baby Winoground image–text matching, and shape bias. Additional guides cover
-[spatial relations](docs/evaluation/spatial_relations.md),
-[IntPhys 2](docs/evaluation/intphys2.md), and [GRASP](docs/evaluation/grasp.md).
-Generative models can run [EgoSchema](docs/evaluation/egoschema.md) and
-[Ego4D NLQ](docs/evaluation/ego4d_nlq.md) through a served vision-language model.
-
-The [BabyCL results](projects/babycl/README.md#saycam-results) compare two seeds
-with the paper. [Benchmark suites](docs/benchmark_suites.md) pin inputs and seeds,
-retain run records, and generate tables with baseline comparisons.
-The [results-publication guide](docs/publishing_results.md) explains how to publish
-evaluated checkpoints and update the website's benchmark table.
-
-## Repository layout
-
-| Path | Purpose |
-| --- | --- |
-| `src/egolearn/` | Streams, memory, models, training, evaluation, and method implementations |
-| `src/egolearn/configs/` | Packaged Hydra defaults and runnable toy configurations |
-| `projects/` | Method guides and experiment configurations ([conventions](projects/README.md)) |
-| `tests/` | Unit tests and constrained video, slow, GPU, and LLM tiers |
-| `scripts/` | Data preparation, benchmarks, and cluster launchers |
-| `docs/` | User guides, API reference, and [supported workflows](docs/status.md) |
+`egl eval` scores a saved model on Labeled-S, BabyView and ImageNet object
+recognition, VTWT and Baby Winoground image–text matching, shape bias, spatial
+relations, IntPhys 2 and GRASP, while EgoSchema and Ego4D NLQ query a served
+vision-language model. The [evaluation guide](docs/evaluation.md) lists each
+benchmark and the data it needs. The [model catalog](docs/evaluation/hub.md)
+lists the released weights: models trained on KrishnaCam and WalkingTours are
+public, and models trained on SAYCam or BabyView require approval.
 
 ## Citation and contributing
 
-Use [CITATION.cff](CITATION.cff) to cite the software, and cite the relevant method
-papers when using their implementations. See [CONTRIBUTING.md](CONTRIBUTING.md)
-for development and review requirements and [SECURITY.md](SECURITY.md) for
-checkpoint trust and vulnerability reporting.
+Cite the software with [CITATION.cff](CITATION.cff), and cite the method papers
+for the implementations you use. [CONTRIBUTING.md](CONTRIBUTING.md) covers
+development and review, and [SECURITY.md](SECURITY.md) covers checkpoint trust
+and vulnerability reporting.

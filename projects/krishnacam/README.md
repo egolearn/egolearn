@@ -1,101 +1,60 @@
-# KrishnaCam video experiments
+# KrishnaCam video baselines
 
-Use these pilot configs to compare chronological replay with offline shuffled
-training directly from KrishnaCam MP4 recordings. Both train a visual SimCLR
-model with the same ResNet-18 encoder, augmentations, and contrastive loss.
-
-For ResNeXt-50 BabyCL training and video-versus-JPEG loading measurements, use
-the [BabyCL KrishnaCam guide](../babycl/docs/krishnacam.md).
+This project trains a visual SimCLR model directly from the KrishnaCam MP4
+recordings, once as a chronological stream with replay and once offline on
+shuffled frames. The configs are a starting point for video experiments and
+reproduce no published result. For BabyCL on the same videos, see
+[BabyCL on KrishnaCam](../babycl/docs/krishnacam.md).
 
 ## Dataset setup
 
 Download the video archive linked from the
 [KrishnaCam project page](https://krsingh.cs.ucdavis.edu/krishna_files/papers/krishnacam/krishnacam.html)
-and extract it outside the repository, preserving the `kcam/` directory with
-its timestamped MP4 filenames. Keep the videos in their original encoding and
-allow about 172 GB for both the archive and extracted files.
-
-Install the training dependencies and point the config at your extracted videos:
+and extract it outside the repository, keeping the `kcam/` directory, its
+timestamped filenames and the original encoding. Allow about 172 GB for the
+archive and the extracted files, which hold 436 recordings and 69 hours of video
+at about 30 fps. Then install the training dependencies and point the configs at
+the videos:
 
 ```bash
 uv sync --extra train
 export KRISHNACAM_ROOT=/path/to/krishnacam/kcam
 ```
 
-The source sorts filenames to obtain recording order, which you can override
-with `stream.sessions` when you need a subset or a different order. Frame rates
-and frame counts come from each container's metadata. Subsampling by six
-therefore approximates 5 fps without changing timestamps or generating JPEGs.
+The configs read the videos with `stream:video` in filename order, and you can
+set `stream.sessions` to a list of filenames to select a subset or another
+order. The `decoder:pyav` backend decodes frames on demand and requires
+constant-frame-rate video with frame-count metadata.
 
-KrishnaCam has no audio, so these configs use only a visual objective.
-The linked project page does not specify a checkpoint redistribution license;
-confirm the applicable release terms before publishing trained weights.
+The project page states no license for redistributing trained weights, so
+confirm the release terms before you publish a checkpoint.
 
-## Pilot runs
+## Training
 
-Check configuration and video metadata before starting training:
-
-```bash
-uv run python -m egolearn.train --config-dir projects/krishnacam/configs \
-    --config-name streaming dry_run=true
-uv run python -m egolearn.train --config-dir projects/krishnacam/configs \
-    --config-name offline dry_run=true
-```
-
-Both commands require the extracted dataset because the build reads container
-headers to count observations, without decoding video pixels during a dry run.
-
-For a short run on an allocated GPU, use:
+Validate both configs with a dry run, then remove `dry_run=true` to train on a
+GPU:
 
 ```bash
-uv run python -m egolearn.train --config-dir projects/krishnacam/configs \
-    --config-name streaming driver.max_steps=20
-uv run python -m egolearn.train --config-dir projects/krishnacam/configs \
-    --config-name offline driver.max_steps=20
+uv run egl train projects/krishnacam/configs/streaming.yaml dry_run=true
+uv run egl train projects/krishnacam/configs/offline.yaml dry_run=true
 ```
 
-For a CPU smoke test, append `device=cpu loader.workers=0 driver.prefetch=false`.
-Keep editable source unchanged until the run ends. Submit longer cluster runs
-through the repository's [Slurm launcher](../../scripts/slurm/README.md), which
-archives a clean commit.
+For a short check on a CPU, add
+`device=cpu loader.workers=0 driver.prefetch=false driver.max_steps=20`.
 
-The defaults cap each pilot at 1,000 optimizer steps. Streaming admits every
-sixth frame, warms up with 256 admitted frames, and uses equal draws from a
-1,024-frame FIFO and an 8,192-frame reservoir. It performs four optimizer steps
-per 384 source observations. Offline training shuffles every sixth frame for
-one epoch. Both use batches of 64 and initialize the encoder from scratch.
+## Configuration
 
-These initial settings provide a starting point for experiments, without
-downstream evaluation probes or a claim of reproducing BabyCL results.
-Offline training schedules its learning rate over the planned optimizer
-steps, while streaming schedules it over the full source timeline. Preserve
-the step limit and session selection when comparing loading settings.
-Streaming checks the step limit before each training step, including within an
-advance. A step limit does not need to be a multiple of four.
+Both configs train a ResNet-18 from scratch with the same augmentations and
+contrastive loss. They use batches of 64 frames and stop after 1,000 updates,
+which you can change with `driver.max_steps`.
+
+| Setting | `streaming` | `offline` |
+| --- | --- | --- |
+| Frames | Every sixth, in recording order | Every sixth, shuffled for one epoch |
+| Memory | 1,024-frame FIFO and 8,192-frame reservoir | None |
+| Updates | Four per 384 source frames | One per batch |
 
 Streaming subsampling continues across recording boundaries, while offline
-subsampling restarts at the beginning of each recording. They therefore select
-slightly different frame sets when a recording's length is not divisible by six.
-
-## Loading measurements
-
-Compare `loader.workers=0`, `2`, and `4` with identical seeds and session lists.
-Disable `driver.prefetch` when using zero workers. Training reports `data.load`
-and `batch.compose` wall time alongside model stages. Include startup and total
-elapsed time when assessing prefetch, since the stages can overlap.
-
-The loader sends up to 16 frame requests together, allowing the video source
-to sort reads by file and frame index within each group. It restores their
-original order before augmentation, preserving the training batch contents. Clip frames also share a decode window. Requests
-retain their individual augmentation seeds across worker counts.
-
-`stream.decoder.cache_handles` limits open videos per process, with four as the
-default. Nearby forward reads reuse the decoder; backward reads and gaps larger
-than `stream.decoder.seek_gap` seek to a preceding keyframe. Each decoder uses
-one CPU thread by default, avoiding a separate thread pool for every open video.
-
-The PyAV backend requires constant-rate video with frame-count metadata.
-Unsupported timestamps raise an error when encountered. It does not build an
-index for variable-rate recordings. Random replay can still decode many
-intermediate frames between keyframes, so measure throughput on representative
-sessions before choosing worker counts or comparing with extracted JPEGs.
+subsampling restarts in each recording, so the two select slightly different
+frames. Random replay can decode many frames between keyframes, so measure
+throughput before you choose `loader.workers`.

@@ -1,22 +1,16 @@
 # Architecture
 
-EgoLearn separates the data a learner has seen from the data it uses for each
-training update. This lets streaming methods compare memory and sampling policies
-while sharing models, augmentation, optimization, and evaluation.
-
-[BabyCL](../../projects/babycl/README.md) and
-[Memory Storyboard](../../projects/storyboard/README.md) select these components
-through configuration files. Their segmentation algorithms live in method packages,
-while the training framework provides the common machinery. See
-[status and limitations](../status.md) for the supported workflows.
-
-<a id="how-it-fits-together"></a>
+EgoLearn separates the data a learner has seen from the data it trains on in
+each update. Streaming methods can then differ in what they remember and how
+they sample it, while sharing models, augmentation, optimization and evaluation.
+This page explains how a run fits together, for readers who write configs or
+add a method.
 
 ## Training flow
 
-A streaming learner reads observations in time order and retains a bounded subset
-for training. Its memory resembles a reading list: entries identify material to
-revisit, while the underlying frames remain in the dataset.
+A streaming learner reads observations in time order and keeps a bounded subset
+for training. Its memory works like a reading list. An entry says which frames to
+revisit, and the frames themselves stay in the dataset.
 
 ```mermaid
 flowchart LR
@@ -30,246 +24,99 @@ flowchart LR
   MODEL --> EVAL["Evaluation"]
 ```
 
-Each streaming cycle advances through new observations, admits completed items to
-memory, and runs the configured number of training updates. Admission can retain
-individual frames, completed visual segments, or utterance–frame pairs. An utterance
-becomes visible at its end time, so the learner cannot use words it has not heard.
+Each cycle advances the stream, admits completed items to memory and runs a set
+number of updates. For each update, a batch recipe samples entries from memory
+and the loader decodes and augments their frames. Offline training replaces the
+stream and memory with the whole dataset, shuffled every epoch, and shares
+everything else. A fair comparison between the modes still needs matched data,
+objectives and compute.
 
-The batch recipe samples references from memory, and the loader decodes and augments
-the selected frames. Losses read the resulting model representations and contribute
-to the weighted training objective. Admission algorithms that inspect image content
-also use the loader, so segmentation can decode frames before batch sampling.
+Configs select each component by its registered name, such as
+`encoder:resnext50`, and a config's `_imports_` list adds a method's own
+components. Every method therefore uses the same `egl train` entry point.
 
-A streaming run normally ends when its input is exhausted, though `driver.max_steps`
-stops at exactly the configured step, including within a stream advance. A resumed
-snapshot completes any remaining updates in that advance before reading new input.
+## Streams
 
-<a id="streaming-vs-offline-side-by-side"></a>
+A stream presents a dataset as ordered sessions, usually one per recording, with
+channels such as video and text aligned by media time. Frame directories, packed
+frame stores and video files share this interface. An utterance becomes visible
+at its end time, so the learner never trains on words it has not yet heard.
 
-## Streaming and offline training
+## Memory
 
-Offline training makes the selected dataset available from the start and shuffles
-it across epochs, allowing comparisons where the learner can revisit the whole
-dataset without a bounded replay memory.
+Admission turns observations into memory items, such as single frames or
+BabyCL's segments and utterance–frame pairs. Memory stores references to frames
+rather than decoded images, so capacity does not depend on image resolution and
+each replay draws fresh augmentations.
 
-| Property | Streaming | Offline |
-| --- | --- | --- |
-| New data | Chronological observations | Complete selected dataset |
-| Training samples | Current observations and retained memory | Shuffled dataset or method-specific offline index |
-| Memory policy | Bounded buffers and admission rules | No streaming memory or admission |
-| Progress | Fraction of stream consumed | Fraction of planned steps |
-| Repetition | Updates per stream advance | Epochs |
+A memory has one or more tiers, each with a capacity, a sampling policy and an
+update policy such as FIFO or reservoir sampling. Items can enter several tiers
+directly, or spill from one tier into the next when it evicts them.
 
-Set `driver.mode: offline` for the generic IID loop. Its configuration rejects
-streaming memory, admission, routing, and batch-recipe sections. The
-[offline SAYCam config](../../src/egolearn/configs/offline_iid_saycam.yaml) gives a
-complete example. BabyCL also has an
-[offline mixed-objective variant](../../projects/babycl/docs/offline.md), whose
-utterance index and precomputed segments define its batches.
+Labels live in a label store and are looked up when a batch is assembled. A
+method can therefore revise labels, as Memory Storyboard does after
+reclustering, without rewriting its buffers or coordinating the loader processes.
 
-The modes share data loading, model components, losses, and evaluation, but a comparison
-still needs matched datasets, augmentations, objectives, and compute budgets.
-Changing the training mode alone does not establish an equivalent experiment.
+## Batches
 
-<a id="core-vocabulary"></a>
+A batch recipe lists slots. Each slot names its source (a tier, a mix of tiers
+or the newest items), the number and unit of its items, the augmentation views
+and any labels. A fallback recipe covers shortages, such as BabyCL's visual-only
+batches before enough utterance pairs exist.
 
-## References and records
+## Models and losses
 
-Memory stores references and small metadata rather than decoded tensors. This keeps
-buffer capacity independent of image resolution and allows each replay to draw
-fresh augmentations.
+A model is a set of named encoders, heads and predictors chosen in the config.
+Slots reach encoders by modality, so each modality has at most one trainable
+encoder, and extra copies such as an exponential-average target are frozen.
+Each loss names the slots and model parts it reads, so several objectives can
+share one representation. A checkpoint stores the model's construction metadata,
+which lets evaluation rebuild the model without the training pipeline.
 
-An `ItemRef` identifies a time interval on one channel of one session, with equal
-start and end times for a single frame. A batch recipe decides whether to load one
-frame, several sampled frames, or a contiguous clip from that interval.
+## Evaluation
 
-Records carry registered fields such as a video reference, an utterance, or a sample
-weight. Event schemas specify the fields required for items entering memory. Pipeline
-construction checks component contracts, and record validation rejects unknown keys.
+A benchmark scores a saved model independently of training, and small benchmarks
+also run as probes during training with the same scoring code. Each benchmark
+declares the representations it needs, which the evaluator checks before it
+starts. The [evaluation guide](../evaluation.md) lists the benchmarks.
 
-<a id="the-modules"></a>
+## Training and concurrency
 
-## Training components
+A stream advance is the new data the learner reads between rounds of updates,
+counted in observations or in completed items. After each advance, the driver
+runs a set number of updates, and each one draws a fresh batch or reuses the last.
 
-<a id="egolearndata"></a>
-
-### Data and batches
-
-Dataset adapters expose ordered sessions with video and text channels aligned by
-media time rather than frame indices. Frame-directory, packed-frame, and synthetic
-sources use the same stream interface. `stream:video` reads raw videos through
-`decoder:pyav`, which requires constant-rate recordings with frame-count metadata.
-See the [KrishnaCam guide](../../projects/krishnacam/README.md) for a runnable recipe.
-
-A batch recipe declares slots with their sources, sample counts, units, views, and
-label stores. Sources can select a memory tier, mix several tiers, or use newly
-admitted items, with slot availability checked before decoding images.
-A fallback recipe handles temporary shortages, such as BabyCL's early all-visual
-batches before enough utterance pairs become available.
-
-Views define image augmentation or clip augmentation with parameters shared across
-frames, while method-specific views preserve the preprocessing used by that method. See
-[data loading](../data_loading.md) for packed storage and numerical blur controls.
-
-<a id="egolearnmemory"></a>
-
-### Memory and labels
-
-A memory tier combines a capacity, an update policy, and a sampling policy. The
-update policy decides which records survive when new items arrive, while sampling
-chooses which retained records contribute to a training batch.
-
-BabyCL uses spill routing: records enter a short buffer, and evicted records move
-into a long buffer. Memory Storyboard admits records to both tiers independently.
-Available update policies include FIFO, reservoir sampling, weighted reservoir
-sampling, and random replacement.
-
-Labels can change without replacing stored frame references because a `LabelStore`
-resolves them when a batch is assembled. This allows Memory Storyboard to revise classes
-after reclustering. Loader workers decode images without maintaining a shared copy
-of those labels. Emitted event records remain fixed.
-
-<a id="egolearnmodel"></a>
-
-### Models and objectives
-
-A model combines named encoders, heads, and predictors, each selected through its
-configuration. An encoder consumes one modality and returns a pooled representation,
-with optional token or spatial outputs.
-Heads transform encoder representations, while predictors estimate representations
-from their inputs.
-
-Batch slots route by modality, so each modality has at most one trainable encoder.
-Additional copies, such as EMA targets, must be configured with `frozen: true`.
-
-Losses name the batch slots and model components they use, allowing several objectives
-to share representations. Memory Storyboard combines instance discrimination over
-current and replay frames with supervised contrastive learning over replay frames.
-BabyCL combines instance discrimination, supervised contrastive learning from
-global segment IDs, and image–text contrastive learning.
-V-JEPA predicts masked video representations using a context
-encoder, a predictor, and a frozen target encoder updated by an exponential average.
-Its components are `encoder:video_vit`, `predictor:vjepa`, and `loss:vjepa`, with
-`unit: clip` slots and the `clip_rrc` view. The generic V-JEPA components have no
-packaged training recipe. For complete video-training recipes, use the
-[V-JEPA 2 project](../../projects/vjepa2/README.md), which provides its own registrations.
-
-Model capabilities describe the available representations and prediction interfaces,
-which evaluation components check against their declared requirements during construction.
-Checkpoints retain model construction metadata so evaluation
-can rebuild the named components without creating a training pipeline.
-
-<a id="egolearntraining"></a>
-
-### Training and concurrency
-
-`driver.advance` defines an advance as a count of observations or finalized events.
-Storyboard advances by 64 frames, while BabyCL advances by one completed segment.
-`driver.rate.steps_per_admit` sets the number of updates, while
-`driver.rate.resample` chooses fresh batches or reuse within that advance. Buffer
-warmup admits data before training begins.
-
-`loader.workers` enables worker processes for decoding and augmentation, while
-`driver.prefetch` uses a background thread to prepare the next batch during training.
-Prefetch requires `loader.workers >= 1`. In streaming mode, it takes effect only
-with `driver.rate.resample: true` and `driver.rate.steps_per_admit > 1`.
-It overlaps fresh batches within one advance, without crossing a change in stream
-or memory state.
-
-Components that change sampling state between updates declare
-`mutates_sampling_state`, which prevents incompatible prefetch configurations.
-Batch and item seeds preserve sample choices and augmentations across supported
-worker and prefetch settings. Reproducibility tests compare uninterrupted and resumed
-runs under the same configuration and execution environment.
-
-Optimization can use a constant learning rate or a progress-based cosine schedule.
-By default, the latter anchors warmup at the first training update rather than at
-buffer filling. Stage timing reports distinguish stream advancement, batch assembly,
-loading, forward/backward passes, and optimizer steps.
-
-<a id="egolearnevaluation-and-evaluationbenchmarks"></a>
-
-### Evaluation
-
-Benchmarks score a model independently of training, while small evaluations can also
-run as probes at configured training intervals using the same scoring implementation.
-Full ImageNet decoding runs through the standalone evaluator.
-
-The [evaluation guide](../evaluation.md) covers checkpoint loading, commands, and
-benchmark metrics. Dedicated pages describe the spatial-relations, IntPhys 2, and
-[GRASP](../evaluation/grasp.md) protocols and their comparison limits.
-Matching a model's capabilities does not ensure that
-its preprocessing and evaluation protocol match a published result.
-
-## Checkpoints and continuation
-
-A model checkpoint contains weights and construction metadata for evaluation.
-A full snapshot additionally records the optimizer, clocks, random states, memory,
-labels, and schedule state needed to continue training.
-
-Snapshot restoration in streaming mode replays consumed observations to rebuild
-admission state, then uses the saved memory state. Generic offline restoration
-recreates the epoch shuffle and continues at the saved position.
-
-Use `resume` to continue a run, or [initialization](../initialization.md) to copy
-selected weights into a fresh run. These operations are mutually exclusive.
-For cluster continuation, follow the
-[persistent run-directory instructions](../cluster.md#snapshots-and-records).
-
-<a id="configs-hydra-outside-registries-inside"></a>
-
-## Configuration
-
-Hydra composes YAML defaults, applies command-line overrides, and writes the resolved
-configuration for a run. Component registries then turn the configuration into
-objects, resolving names such as `encoder:resnext50` within the expected component
-kind.
-
-A configuration's `_imports_` list loads method and benchmark registrations, letting
-a method provide its own components while using the same training entry point.
-Project configs inherit packaged defaults through Hydra's search path. See
-[configuration and overrides](../cli.md#configuration-and-overrides) for selection
-rules and examples.
-
-<a id="the-two-reproductions"></a>
+Streaming decisions stay in order, while worker processes decode and augment
+frames in parallel. Prefetch prepares the next batch only within the current
+advance, so it never uses memory that a later advance would change. Seeds for
+each batch and item come from the run's seed, so samples and augmentations do
+not depend on the number of workers. The training loops do not implement
+distributed data-parallel training. To resume a streaming run, the driver
+replays the consumed observations to rebuild its admission state, then restores
+the saved memory.
 
 ## Method differences
 
-The two methods use different memory units and segmentation signals within the same
-streaming framework. Their project pages describe the objectives and available
-configurations.
+Memory Storyboard segments with the model it is training, so its segments change
+as the model improves, and its labels must be revisable. BabyCL's frozen
+segmenter finalizes a segment once later frames cannot change it, so each label
+is written once. Its supervised contrastive objective treats frames that share
+a global segment ID as positives.
 
 | Choice | Memory Storyboard | BabyCL |
 | --- | --- | --- |
 | Memory unit | Frames | Visual segments and utterance–frame pairs |
-| Tier routing | Independent admission to short and long tiers | Short-tier overflow into long tier |
-| Segmentation features | Learner's current backbone | Frozen ImageNet ResNeXt |
-| Temporal labels | Revisable global classes | Global segment IDs, shared by merged segments |
+| Tier routing | Independent admission to short and long tiers | Short-tier overflow into the long tier |
+| Segmentation features | Learner's current backbone | Frozen ImageNet ResNeXt-50 |
+| Segment labels | Revisable global classes | Global segment IDs, shared by merged segments |
 | Repeated updates | Reuse the batch | Resample each batch |
-| Objective | Instance discrimination and segment supervised contrastive learning | Instance, segment supervised contrastive, and image–text contrastive learning |
-
-<a id="design-rules"></a>
-
-## Design constraints
-
-Retention and sampling operate on references, keeping decoded images out of replay
-memory. Finalized event records are separate from revisable labels, so a label update
-does not require rewriting buffers or synchronizing loader workers.
-
-Streaming decisions remain ordered, while worker processes and prefetch parallelize
-data preparation. The current training loops do not implement distributed data-parallel
-training. Experiments that need different scheduling or memory semantics must provide
-those components explicitly.
-
-<a id="extending"></a>
+| Objectives | Instance discrimination and segment supervised contrastive learning | The same, plus image–text contrastive learning |
 
 ## Extension points
 
-New methods belong under `src/egolearn/methods/<name>/`, with experiment
-configs under `projects/<name>/`. Shared components belong in the library once
-multiple methods need them. See [project conventions](../../projects/README.md).
-
-<a id="file-guide"></a>
+New methods go under `src/egolearn/methods/<name>/` and their configs under
+`projects/<name>/`, as the [project conventions](../../projects/README.md)
+describe.
 
 | Extension | Starting point |
 | --- | --- |
@@ -280,8 +127,4 @@ multiple methods need them. See [project conventions](../../projects/README.md).
 | Objective | [Loss interface](../../src/egolearn/model/losses/base.py) |
 | Augmentation | [Registered views](../../src/egolearn/data/views.py) |
 | Training loop | [Streaming driver](../../src/egolearn/training/driver.py) |
-| Evaluation | [Benchmark development](../evaluation.md#adding-benchmarks) |
-
-Each extension needs behavior tests for its contract. Preserve deterministic ordering,
-resume behavior, and evaluation protocols when adding a method or optimizing its
-implementation.
+| Evaluation | [Adding benchmarks](../evaluation/extending.md) |

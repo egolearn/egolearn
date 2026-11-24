@@ -22,10 +22,6 @@ watch:
   - projects/babycl/docs/walkingtours.md
   - projects/storyboard/README.md
   - projects/streammae/README.md
-  - projects/streammae/ablations.md
-  - projects/streammae/training.md
-  - projects/streammae/method.md
-  - projects/streammae/wtpp.md
   - projects/streammae/walkingtours.md
   - projects/vjepa2/README.md
   - projects/krishnacam/README.md
@@ -163,22 +159,16 @@ nav:
     - BabyCL:
       - Overview: projects/babycl.md
       - SAYCam inputs: projects/babycl/training_data.md
-      - Offline inputs: projects/babycl/offline.md
       - KrishnaCam: projects/babycl/krishnacam.md
       - WalkingTours: projects/babycl/walkingtours.md
     - Memory Storyboard: projects/storyboard.md
     - MAE and StreamMAE:
       - Overview: projects/streammae.md
-      - Training and resume: projects/streammae/training.md
-      - Matched ablations: projects/streammae/ablations.md
-      - Method: projects/streammae/method.md
-      - WalkingTours: projects/streammae/walkingtours.md
-      - WT++ preparation: projects/streammae/wtpp.md
+      - WalkingTours and WT++: projects/streammae/walkingtours.md
     - V-JEPA 2: projects/vjepa2.md
     - KrishnaCam: projects/krishnacam.md
   - Design:
     - Architecture: design/architecture.md
-    - Data-loading performance: design/data_loading_performance.md
   # Filled from source by scripts/docs/reference.py on each build.
   - Reference: []
   - Project:

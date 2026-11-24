@@ -1,70 +1,46 @@
 # Status and limitations
 
-EgoLearn supports streaming and offline training, saved-model evaluation, and
-reproducible benchmark suites. Use this page to choose a supported workflow and
-check its limits before preparing data or allocating compute.
+This page lists what egolearn supports and the limits that change how you use
+it. Check it before you prepare data or request compute.
 
-## Training and data
+## Supported workflows
 
-| Workflow | Support | Starting point |
-| --- | --- | --- |
-| Synthetic CPU training | Runs without data access or pretrained weights | [Quickstart](../README.md#quickstart) |
-| BabyCL | Streaming and offline image–text learning on prepared SAYCam inputs | [BabyCL](../projects/babycl/README.md) |
-| Memory Storyboard | Streaming visual learning with temporal segmentation | [Memory Storyboard](../projects/storyboard/README.md) |
-| MAE and StreamMAE | Masked image reconstruction, full-pass runs, and matched streaming/offline ablations | [MAE and StreamMAE](../projects/streammae/README.md) |
-| WalkingTours | Original-video preparation and BabyCL or StreamMAE training on extracted frames | [WalkingTours](datasets/walkingtours.md) |
-| V-JEPA 2 | Initial offline runs and matched full IID/streaming recipes on SAYCam and BabyView | [V-JEPA 2](../projects/vjepa2/README.md) |
-| KrishnaCam | Direct-video visual training with streaming and offline recipes | [KrishnaCam](../projects/krishnacam/README.md) |
-| Frame directories and packed stores | Ordered images, aligned transcripts, replay, and worker loading | [Data loading](data_loading.md) |
-| Raw video | PyAV decoding on CPU or supported NVIDIA hardware | [Video training](../projects/babycl/docs/krishnacam.md) |
+- Streaming and offline training for the methods in the
+  [overview](../README.md#methods), from extracted frames, packed frame stores
+  or video files.
+- Evaluation of saved models on the benchmarks in the
+  [evaluation guide](evaluation.md), with fixed-feature linear probes and
+  full-network fine-tuning on ImageNet.
+- Model export, initialization from a checkpoint, Slurm submission and
+  benchmark suites across seeds.
 
-The training loops run in one process and do not implement distributed data-parallel
-training. The shared streaming driver supports mixed precision through `driver.amp`;
-the shared offline driver rejects that option. V-JEPA 2 configures precision in
-its own recipes. Exact step limits can interrupt an advance, and snapshots retain
-the remaining work for continuation.
+## Training limits
 
-PyAV requires constant-rate videos with frame-count metadata. Frame-directory
-recipes require already prepared images; setting their `fps` does not extract or
-resample frames. Match the timing, orientation, and crop settings documented by
-the method before comparing results.
+- Training runs in one process on one device. There is no distributed
+  data-parallel training.
+- Mixed precision through `driver.amp` works in streaming runs only. V-JEPA 2
+  sets precision in its own recipes.
+- Video decoding with PyAV needs constant-frame-rate files with frame-count
+  metadata.
+- Frame-directory streams read frames you have already extracted. Their `fps`
+  setting gives the frame times, but it does not extract or resample frames.
+- BabyCL needs aligned SAYCam transcripts, which you obtain separately, and
+  egolearn has no converter for raw transcripts. Its offline recipe also needs
+  a storyboard file that egolearn cannot export.
 
-BabyCL's aligned SAYCam transcripts are obtained separately, and its mixed offline
-recipe needs a precomputed storyboard. EgoLearn does not provide a raw-transcript
-converter or storyboard exporter. See [training inputs](../projects/babycl/docs/training_data.md)
-and [offline inputs](../projects/babycl/docs/offline.md).
+## Evaluation limits
 
-## Evaluation and artifacts
+- kNN and SVM readouts are not implemented.
+- EgoSchema and Ego4D NLQ query a vision-language model that you serve through
+  an OpenAI-compatible API. The `qa` extra installs the client, not a server.
+- Access to released weights and access to benchmark data are separate
+  requests. A dataset's catalog entry tells you how to obtain it, not that a
+  download is available to you.
 
-The [evaluation guide](evaluation.md#benchmark-selection) lists runnable configs,
-required data, model capabilities, and score definitions. Generic fixed-feature
-linear and SGD probes are available, along with standalone ImageNet full-network
-fine-tuning. kNN and SVM readouts are not implemented.
+## Reproduction
 
-EgoSchema and Ego4D NLQ query a served generative model through an OpenAI-compatible
-client. The `qa` extra installs the client, not the model server. Read the
-[server prerequisites](evaluation/egoschema.md#serving-the-model) and each dataset's
-access restrictions before running either benchmark.
-
-Model exports use safetensors weights and JSON construction metadata. They can be
-loaded for evaluation or [initialization](initialization.md); full snapshots also
-retain training state for resuming a run. See [checkpoint trust](../SECURITY.md#model-export-and-checkpoint-trust).
-
-[Results publication](publishing_results.md) uploads per-run evidence and updates
-the website from a public Hugging Face feed. Published scores must retain their
-training and evaluation protocols for meaningful comparisons.
-
-Dataset catalog entries describe access requirements and preparation commands.
-They do not guarantee an available download. [Checkpoint access](evaluation/hub.md#checkpoint-access)
-and [benchmark data access](evaluation/data.md) are separate requirements.
-
-## Reproduction limits
-
-Method guides specify the supported scientific protocols and deviations from their
-papers. Matching model capabilities does not make different preprocessing, splits,
-training budgets, or readout procedures comparable.
-
-The V-JEPA 2 recipes use small egocentric models rather than Meta's original
-training scale. They do not provide external Meta checkpoint conversion, action
-conditioning, or V-JEPA 2.1. The [method guide](../projects/vjepa2/README.md#recipe-and-compatibility)
-describes the architecture and evaluation differences.
+Method pages state which paper protocol they follow and how they differ from
+it. Scores are comparable only when preprocessing, splits, training budget and
+readout all match. The V-JEPA 2 recipes train small models on egocentric video.
+They do not convert Meta's checkpoints, and they include neither action
+conditioning nor V-JEPA 2.1.

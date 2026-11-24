@@ -1,77 +1,66 @@
 # BabyCL / BabyCLIP
 
-BabyCL learns visual and verbal representations from SAYCam in a single
-chronological pass. This project provides the BabyCLIP training recipe, an offline
-variant, and configuration controls for memory and objective ablations.
+BabyCL learns visual and verbal representations from a child's egocentric video
+in one chronological pass. This project implements the BabyCLIP recipe from the
+[BabyCL paper](https://arxiv.org/abs/2606.05115) on SAYCam, an offline variant,
+and the settings for the paper's ablations. Visual-only versions train on
+[KrishnaCam](docs/krishnacam.md) and [WalkingTours](docs/walkingtours.md).
 
-For silent KrishnaCam videos, use the
-[visual BabyCL training and benchmark guide](docs/krishnacam.md).
-For the original WalkingTours videos, use the [WalkingTours experiment guide](docs/walkingtours.md).
+A frozen ImageNet ResNeXt-50 cuts the stream into segments of about three
+minutes, which enter one replay memory while utterance–frame pairs enter
+another. After each new segment, the learner runs eight updates on batches of
+three segments and 32 pairs. Each batch trains instance discrimination,
+supervised contrastive learning (SupCon) over segments, and image–text
+contrastive learning. SupCon treats frames that share a global segment ID as
+positives, so segments that the segmenter merges count as one class. The
+[architecture page](../../docs/design/architecture.md#method-differences)
+compares these choices with Memory Storyboard's.
 
 ## Training
 
-Use the [default config](configs/saycam_default.yaml) for streaming training.
-Override `stream.root_dir`, `stream.transcript_json`, and `tokenizer.vocab_json`
-with your input paths. The [training input guide](docs/training_data.md) specifies
-the 5 fps frame layout, orientation, transcript format, and vocabulary source.
-
-The [shared settings](configs/saycam_shared.yaml) also construct Labeled-S 4AFC,
-VTWT, and Baby Winoground probes. Override their manifest, CSV, image, and vocabulary
-paths, or set `probes=[]` to disable them. Their manifest, CSV, and vocabulary files
-must exist even for `dry_run=true`. See the
-[evaluation data guide](../../docs/evaluation/data.md) for access and preparation.
-
-Set `SAYCAM_ROOT`, `SAYCAM_TRANSCRIPTS`, and `BABYCL_VOCAB` to the prepared inputs,
-then validate the training pipeline without constructing the evaluation probes:
+You need the SAYCam frames, aligned transcripts and vocabulary described in
+[SAYCam inputs](docs/training_data.md). Install the training dependencies with
+`uv sync --extra train`, set the input paths, and validate the pipeline:
 
 ```bash
+export SAYCAM_ROOT=/path/to/saycam_5fps
+export SAYCAM_TRANSCRIPTS=/path/to/expand_correct_seg.json
+export BABYCL_VOCAB=/path/to/vocab.json
 uv run egl train projects/babycl/configs/saycam_default.yaml \
-  stream.root_dir="$SAYCAM_ROOT" stream.transcript_json="$SAYCAM_TRANSCRIPTS" \
-  tokenizer.vocab_json="$BABYCL_VOCAB" 'probes=[]' dry_run=true
+  "stream.root_dir=$SAYCAM_ROOT" "stream.transcript_json=$SAYCAM_TRANSCRIPTS" \
+  "tokenizer.vocab_json=$BABYCL_VOCAB" 'probes=[]' dry_run=true
 ```
 
-Remove `dry_run=true` to train on a GPU. The default frozen segmenter needs
-ImageNet ResNeXt-50 weights, which torchvision downloads if they are not cached.
+The dry run ends with `[dry-run] pipeline valid.`, and without `dry_run=true`
+the command trains on a GPU. `probes=[]` turns off the in-training evaluation
+probes. To keep them, set their data paths from
+[`saycam_shared.yaml`](configs/saycam_shared.yaml) after preparing the files
+with the [evaluation data guide](../../docs/evaluation/data.md).
 
-The recipe combines visual instance discrimination, segment supervised contrastive
-learning (SupCon), and image–text contrastive learning. Each full batch contains
-three visual segments with 32 sampled frames each, plus 32 utterance–frame pairs.
-Early batches use an all-visual fallback when too few utterance pairs are available.
+`saycam_default` stops at the paper run's fixed step count, before the end of
+SAYCam-S. To train on the whole stream, add
+`driver.max_steps=null solver.schedule.total_steps=null`.
 
-SupCon treats frames that share a global segment ID as positives, so segments
-that the segmenter merges count as one class.
+## Configuration
 
-Visual segments and utterance pairs occupy separate memories, each with a short
-FIFO tier whose overflow enters a long reservoir tier. After a segment is
-admitted, training performs eight updates with freshly sampled batches.
+Each of the paper's ablations is a config change:
 
-`saycam_default` retains the paper's run length and precision settings:
-
-- **Run length.** The original fixed 26568 steps before training (3321
-  offline-storyboard segments times 8 updates) and indexed the learning-rate
-  schedule by that count. It stopped after about 73% of SAYCam-S.
-  `driver.max_steps` and `solver.schedule.total_steps` reproduce this. Set both
-  to `null` to train on the whole stream with the progress-driven schedule.
-- **Precision.** `driver.amp` runs the segment branch in float16 with a loss
-  scaler and keeps the cross-modal branch in float32.
-
-The segment views also use the 2-D Gaussian blur (`blur_impl: torchvision`), an
-utterance that ends on a frame is visible at that frame
-(`stream.transcript_first`), and the pairs long tier holds 16868 items.
+| Paper setting | Change |
+| --- | --- |
+| Buffer policy or size | `memories.*.tiers.*.update` or `capacity` |
+| Multimodal fraction | Segment and pair counts of 3/32, 2/64 or 1/96 for 1/4, 1/2 or 3/4 |
+| Updates per segment | `driver.rate.steps_per_admit` |
+| Clip-importance weighting | `use_sample_weights: true` on the image–text loss, with `clip_importance` in the transcripts |
+| CL-CVCL baseline | Remove the segment slot, its fallback, and the instance and SupCon losses |
 
 ## SAYCam results
 
-The table reports three `saycam_default` runs, with seeds 1337, 2002 and 3003,
-each scored at its final checkpoint with [`paper_evals.yaml`](configs/paper_evals.yaml).
-All scores are percentages, and SD is the sample standard deviation over the
-three seeds.
-
-The paper column gives the authors' values for their temporal-classification
-recipe. Its Labeled-S 4AFC is an end-of-training mean with an approximate 95%
-interval over five seeds; the other rows come from the end-of-training
-checkpoint of its best seed. Check the version of the linked
-[paper](https://arxiv.org/abs/2606.05115) when comparing figures, since its
-reported Labeled-S 4AFC value can differ.
+The table reports the final checkpoints of three `saycam_default` runs, scored
+with [`paper_evals.yaml`](configs/paper_evals.yaml), in percent. SD is the
+sample standard deviation over the three seeds. The paper column gives the
+authors' temporal-classification recipe: Labeled-S 4AFC as a five-seed mean with
+an approximate 95% interval, which differs between paper versions, and the other
+rows from its best seed. Baby Winoground is the group score.
 
 | Benchmark | Seed 1337 | Seed 2002 | Seed 3003 | Mean ± SD | Paper |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -83,35 +72,15 @@ reported Labeled-S 4AFC value can differ.
 | BabyView 4AFC | 32.94 | 30.72 | 33.93 | 32.53 ± 1.64 | 32.53 |
 | BabyView linear | 52.57 | 51.81 | 52.15 | 52.18 ± 0.38 | 49.96 |
 
-Baby Winoground reports the group score, which counts an item only when both
-the original and the edited scene prefer their own caption. Every row uses the
-paper's protocol, so the remaining differences come from training.
+The seed 3003 run is released as
+[`egolearn/babycl-resnext50-saycam`](https://huggingface.co/egolearn/babycl-resnext50-saycam),
+which requires approved SAYCam access.
 
-### Differences from the paper
-
-- **Segment objective.** The paper trains a temporal classifier whose targets
-  depend on each segment's position in the batch. These runs use SupCon over
-  the segmenter's global IDs instead. Commit `8f39160` has the earlier
-  temporal-classification recipe.
-- **Randomness.** EgoLearn draws its sampling, augmentation and initialization
-  randomness differently, so a seed here is not the paper's seed. The paper's
-  code is not run-to-run reproducible either: same-seed reruns of its default
-  run reach a final Labeled-S 4AFC between 42.2% and 44.5%.
-- **Segmentation.** The frozen ResNeXt-50 that segments the stream runs on a
-  GPU. Floating-point differences move a few near-tied cuts, which changes 9 of
-  the 3751 segments the run trains on.
-- **Pixel rounding.** The original converted segment frames to 8 bits by
-  truncation before augmentation, which darkens some intensities by one level.
-
-### Reproducing the table
-
-Train each seed, then evaluate its final checkpoint. The training command
-skips the in-training probes, which do not change training.
-Set `RUN_DIR` to a new output directory. Set the training paths described above
-and the evaluation-data variables listed in
-[`paper_evals.yaml`](configs/paper_evals.yaml) before running these commands.
+To reproduce a seed, set the evaluation-data variables listed at the top of
+[`paper_evals.yaml`](configs/paper_evals.yaml), then train and evaluate:
 
 ```bash
+export RUN_DIR=runs/babycl-saycam-seed1337
 uv run egl train projects/babycl/configs/saycam_default.yaml seed=1337 \
   "run_dir=$RUN_DIR" "stream.root_dir=$SAYCAM_ROOT" \
   "stream.transcript_json=$SAYCAM_TRANSCRIPTS" "tokenizer.vocab_json=$BABYCL_VOCAB" \
@@ -121,60 +90,32 @@ uv run egl eval projects/babycl/configs/paper_evals.yaml "checkpoint=$RUN_DIR/fi
 
 Repeat with `seed=2002` and `seed=3003`, each in its own `RUN_DIR`.
 
-## Offline BabyCL variant
+### Differences from the paper
 
-`saycam_iid` trains the full BabyCL objective with the complete selected dataset
-available from the start. It inherits the streaming model, augmentations, losses,
-and solver from `saycam_shared.yaml`.
+- The paper trains a temporal classifier whose targets depend on each segment's
+  position in the batch. These runs use SupCon over the segmenter's global IDs
+  instead. Commit `8f39160` has the earlier temporal-classification recipe.
+- EgoLearn draws its randomness differently, so a seed here is not the paper's
+  seed. Same-seed reruns of the original code vary by about two points on
+  Labeled-S 4AFC.
+- Floating-point differences in the GPU segmenter move a few near-tied segment
+  boundaries relative to the original run.
+- The original code converts segment frames back to 8 bits by truncation before
+  augmentation, which darkens some pixels by one level. EgoLearn skips that
+  conversion.
 
-This differs from the paper's CVCL-only IID baseline:
+## Offline variant
 
-| Setting | Paper IID baseline | `saycam_iid` |
-| --- | --- | --- |
-| Losses | CVCL only | NT-Xent + SupCon + CLIP-InfoNCE |
-| Batch | 8 image/text pairs | 3 x 32 visual frames + 32 image/text pairs |
-| Epochs | 400 | 1 by default, configurable with `driver.epochs` |
-| AdamW learning rate | 1e-4 | 1e-3 vision/embed head, 1e-4 remaining parameters |
-| Weight decay | 0.1 | 1e-4, with vision/embed BN and bias exempt |
-| Schedule | ReduceLROnPlateau | Cosine with warmup |
+`saycam_iid.yaml` trains the same model and objectives with the whole dataset
+available from the start, reading segments from a
+[storyboard file](docs/training_data.md#offline-storyboard) that you provide:
 
-An epoch shuffles every aligned utterance chunk once and drops the incomplete
-batch, while visual segments are sampled independently with replacement. Supply a
-complete storyboard manifest using the [offline input guide](docs/offline.md),
-which documents its format and launch command.
+```bash
+export BABYCL_STORYBOARD=/path/to/storyboard.json
+uv run egl train projects/babycl/configs/saycam_iid.yaml \
+  "stream.root_dir=$SAYCAM_ROOT" "stream.transcript_json=$SAYCAM_TRANSCRIPTS" \
+  "tokenizer.vocab_json=$BABYCL_VOCAB" "driver.batch.storyboard_json=$BABYCL_STORYBOARD"
+```
 
-## Ablations
-
-The following settings express the paper's ablation choices. For pairs-only runs,
-remove the segment slot, its fallback, and the NT-Xent and SupCon losses together.
-
-| Paper ablation | Configuration change |
-| --- | --- |
-| Buffer policy | Change `memories.*.tiers.long.update`, or use a single reservoir tier |
-| Buffer size | Change each tier's `capacity` |
-| Multimodal fraction | Use segment/pair counts 3/32, 2/64, or 1/96 for fractions 1/4, 1/2, or 3/4 |
-| Clip-importance weighting | Enable `use_sample_weights` on the image–text loss and supply transcript `clip_importance` values |
-| Four or eight resampled updates | Set `driver.rate.steps_per_admit` |
-| CL-CVCL baseline | Use a pairs-only recipe and remove NT-Xent and SupCon |
-| One-pass CVCL | Also set `driver.rate.steps_per_admit: 1` |
-| BabyView | Select `stream:babyview`, normalize text, and supply frames pre-cropped to 9:16 portrait |
-
-Without transcript `clip_importance` values, the weighting flag leaves the loss
-unweighted. No BabyView training config or portrait pre-crop view ships.
-
-## Segmentation and implementation
-
-A frozen ImageNet ResNeXt supplies visual features for the segmenter, which expands
-utterance-anchored chunks by similarity and packs them into segments of about three
-minutes. It finalizes each segment only after the
-stream has advanced far enough that later observations cannot change it.
-
-Image–text pairs use contiguous runs of the utterance's original frame timestamps
-rather than the segmenter's similarity-expanded chunks. Each chunk enters memory
-after all its frames have appeared, with duplicates removed.
-
-The [method package](../../src/egolearn/methods/babycl/) contains the ported segmentation
-math, admission components, text encoder, and augmentation recipes. Component
-docstrings record adaptations from the original implementation. The
-[architecture guide](../../docs/design/architecture.md#method-differences) compares
-BabyCL's memory and training choices with Memory Storyboard.
+The run lasts one epoch unless you set `driver.epochs`. Unlike the paper's IID
+baseline, it trains all three objectives.

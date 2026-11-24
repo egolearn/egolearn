@@ -4,7 +4,7 @@ Introduced by BabyVLM V1: https://shawnking98.github.io/BabyVLM/
 Labels: https://github.com/ShawnKing98/babylmms-eval/tree/main/dataset/vtwt
 Task attribution: BabyVLM / babylmms-eval, Apache-2.0:
 https://github.com/ShawnKing98/babylmms-eval/blob/main/LICENSE
-Data access and preparation: docs/evaluation.md#babyvlm-benchmark-data
+Data access and preparation: docs/evaluation/data.md#babyvlm-benchmark-data
 
 Each sample contains one image and two two-word phrases. A sample is correct
 when the positive phrase has strictly higher cosine similarity to the image.

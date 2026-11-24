@@ -11,7 +11,7 @@ _imports_:
 benchmarks:
   - _target_: "probe:spatial_relations"
     name: spatial_relations_monitoring
-    abstract_2d_manifest: "hf://datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization@v1/monitoring/2d-stimuli/manifest.json"
-    rendered_3d_manifest: "hf://datasets/agentic-learning-ai-lab/egolearn-spatial-relation-categorization@v1/monitoring/3d-stimuli/manifest.json"
+    abstract_2d_manifest: "hf://datasets/egolearn/spatial-relation-categorization@v1/monitoring/2d-stimuli/manifest.json"
+    rendered_3d_manifest: "hf://datasets/egolearn/spatial-relation-categorization@v1/monitoring/3d-stimuli/manifest.json"
     batch_size: 32
     tie_tolerance: 1.0e-6

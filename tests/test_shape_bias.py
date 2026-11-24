@@ -215,7 +215,7 @@ def test_packaged_eval_config_uses_hosted_stimuli(tmp_path: Path, monkeypatch) -
         cfg = OmegaConf.to_container(compose(config_name="shape_bias_eval"), resolve=True)
     assert isinstance(cfg, dict)
     spec = cfg["benchmarks"][0]
-    prefix = "hf://datasets/agentic-learning-ai-lab/egolearn-shape-bias@v1/"
+    prefix = "hf://datasets/egolearn/shape-bias@v1/"
     assert spec["manifest"] == prefix + "stimulus_manifest.json"
     monkeypatch.setattr(
         sys.modules["egolearn.config.instantiate"],
