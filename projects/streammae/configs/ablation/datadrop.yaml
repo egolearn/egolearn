@@ -1,0 +1,4 @@
+# @package _global_
+ablation_name: datadrop
+run_control:
+  window_size: ${run_control.reference_window_size}

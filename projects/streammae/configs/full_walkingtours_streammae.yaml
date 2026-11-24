@@ -1,0 +1,6 @@
+defaults:
+  - walkingtours_shared
+  - _self_
+hydra:
+  searchpath: [pkg://egolearn.configs]
+run_dir: runs/streammae_walkingtours

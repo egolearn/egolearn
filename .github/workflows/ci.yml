@@ -53,6 +53,11 @@ jobs:
       - run: uv sync --locked --extra train --extra qa --group docs
       # addopts in pyproject.toml already excludes the slow/gpu/llm tiers
       - run: uv run pytest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm run test:site
 
   lock:
     runs-on: ubuntu-latest

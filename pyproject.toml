@@ -27,7 +27,7 @@ Documentation = "https://egolearn.org/docs/"
 Repository = "https://github.com/egolearn/egolearn"
 Issues = "https://github.com/egolearn/egolearn/issues"
 
-# Optional extras are added together with the code that needs them (see docs/roadmap.md).
+# Optional extras are added together with the code that needs them (see docs/status.md).
 # Still planned:
 #   eval  : scikit-learn                        (kNN/SVM readout)
 [project.optional-dependencies]

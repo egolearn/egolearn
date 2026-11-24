@@ -16,7 +16,15 @@ and 333 test clips whose answers are hidden.
 ## Downloading the data
 
 Ego4D requires a signed license agreement (see [ego4d-data.org](https://ego4d-data.org/)),
-and the download credentials it issues expire after 14 days. With the Ego4D CLI:
+and issues download credentials through that process. Install the
+[Ego4D CLI](https://ego4d-data.org/docs/start-here/) separately and choose a writable
+data root before downloading:
+
+```bash
+export EGOLEARN_DATA=/path/to/data
+```
+
+With the Ego4D CLI:
 
 ```bash
 ego4d --output_directory "$EGOLEARN_DATA/ego4d" --version v2 \
@@ -32,8 +40,8 @@ Set `benchmarks.0.verify=false` to score a subset.
 ## Running the evaluation
 
 Start a server as described for [EgoSchema](egoschema.md#serving-the-model).
-Ego4D frames go only to servers the lab runs itself. Install the `train` and
-`qa` extras (`uv sync --extra train --extra qa`), then give the server's address:
+Ego4D frames go only to servers you operate under the dataset's access terms.
+Install the `train` and `qa` extras (`uv sync --extra train --extra qa`), then give the server's address:
 
 ```bash
 uv run egl eval ego4d_nlq_eval vlm_url=http://<host>:8000/v1 \

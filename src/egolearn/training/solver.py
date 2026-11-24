@@ -6,13 +6,14 @@ rule.  Each parameter goes to the first rule whose regex matches its fully-quali
 
 The schedule is a function of progress -- the fraction of the stream consumed so far, used
 instead of epochs -- not of a precomputed total step count.  This removes BabyCL's need to
-estimate steps_needed from the offline storyboard segment count.  A reproduction of a
+estimate the step count from the offline storyboard segment count.  A reproduction of a
 step-indexed original can opt back in with `total_steps` (see ProgressCosine).
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import Any
 
 import torch
@@ -28,6 +29,7 @@ def build_optimizer(
     opt: str = "adamw",
     momentum: float = 0.9,
     warnings: list[str] | None = None,
+    betas: Sequence[float] = (0.9, 0.999),
 ):
     """groups: [{match, lr, weight_decay, split_no_decay?, no_decay_pattern?}]
 
@@ -35,6 +37,7 @@ def build_optimizer(
     with the given weight_decay and one with 0.0 for params whose name matches
     `no_decay_pattern` (default: bias / BN / norm, matching BabyCL's
     _split_decay_named_params_cnn).
+    `betas` configures Adam/AdamW moments; defaults retain PyTorch's values.
     """
     compiled: list[dict[str, Any]] = []
     for g in groups:
@@ -89,10 +92,13 @@ def build_optimizer(
                 {"params": g["no_decay_params"], "lr": g["lr"], "weight_decay": 0.0}
             )
 
-    if opt == "adamw":
-        return torch.optim.AdamW(torch_groups)
-    if opt == "adam":
-        return torch.optim.Adam(torch_groups)
+    if opt in ("adam", "adamw"):
+        if len(betas) != 2:
+            raise ValueError("Adam betas must contain exactly two values")
+        moments = (float(betas[0]), float(betas[1]))
+        if opt == "adamw":
+            return torch.optim.AdamW(torch_groups, betas=moments)
+        return torch.optim.Adam(torch_groups, betas=moments)
     if opt == "sgd":
         for tg in torch_groups:
             tg["momentum"] = momentum
@@ -113,8 +119,8 @@ class ProgressCosine:
     curve matches the original's step-indexed schedule: warmup over 2% of the run,
     cosine over the remainder.
 
-    `warmup_min_steps` is a LOWER bound on warmup length (mcl:
-    `max(100, int(0.02 * steps_needed))`) -- on very short runs warmup stretches to
+    `warmup_min_steps` is a LOWER bound on warmup length (the original BabyCL:
+    `max(100, int(0.02 * total_steps))`) -- on very short runs warmup stretches to
     at least this many gradient steps.
 
     When the stream announces no total length (open-ended), progress is None and the
@@ -122,9 +128,9 @@ class ProgressCosine:
     sane open-ended default; smarter open-ended schedules are a deferred question.
 
     `total_steps` switches to a STEP-indexed schedule, for reproducing an original
-    that fixes its step budget up front (mcl's BabyCL: `steps_needed` from the offline
+    that fixes its step budget up front (the original BabyCL: the step count from the offline
     storyboard, with `driver.max_steps` set to the same value).  Gradient step `s`
-    (0-based, `clock.step`) gets exactly mcl's LambdaLR factor: with
+    (0-based, `clock.step`) gets exactly the original's LambdaLR factor: with
     `warm = max(warmup_min_steps, int(warmup_frac * total_steps))`, `(s + 1) / warm`
     while `s < warm`, then cosine from 1 to `floor` over the remaining
     `total_steps - warm` steps.  Stream progress and `anchor` are ignored.

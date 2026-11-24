@@ -11,7 +11,7 @@ from egolearn.utils.model_artifact import METADATA, WEIGHTS, export_sha256, reso
 
 # These are input arguments used by the shipped streams, tokenizers and probes.
 # Do not guess from arbitrary strings or inspect output/config/cache directories.
-_PATH_KEYS = {
+INPUT_PATH_KEYS = {
     "checkpoint",
     "root_dir",
     "data_root",
@@ -140,7 +140,7 @@ def prepare_inputs(
         if isinstance(node, Mapping):
             for key, value in node.items():
                 name = f"{prefix}.{key}"
-                if key in _PATH_KEYS:
+                if key in INPUT_PATH_KEYS:
                     capture(node, key, name, model=key == "checkpoint")
                 elif isinstance(value, (dict, list)):
                     visit(value, name)

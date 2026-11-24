@@ -5,8 +5,8 @@ Randomness: everything a batch draws -- which items are sampled from memory,
 which frame inside a segment, where a clip starts, every augmentation
 parameter -- derives from the batch's own sequence number (`compose_seq` on
 the clock) and the run seed, never from a shared RNG stream.  A batch is
-therefore a pure function of (seed, sequence number, memory contents): the
-same batch composes identically whether it is built just-in-time, prefetched
+therefore a pure function of (seed, sequence number, memory contents, label-store
+state): the same batch composes identically whether it is built just-in-time, prefetched
 while the previous step trains, or rebuilt by a resumed run whose crashed
 predecessor had it in flight.
 
@@ -14,21 +14,16 @@ Loading is two-phase: refs for EVERY slot are drawn first (no pixels), then
 the decode+augment work of the whole batch goes to the Loader in one call --
 frames and clips together -- so a worker pool sees one well-packed submission
 instead of one barrier per slot, and a strict slot coming up short is
-discovered before a single pixel is decoded (mcl's feeder gates the same
-way: it checks use_annot before gathering).
+discovered before a single pixel is decoded.
 
-Two label fields are computed here at batch time instead of being stored:
-  * seg.id          -- looked up in the slot's LabelStore at THIS moment, so
-                       Memory Storyboard's retroactive relabeling of old
-                       segments is visible to the loss;
-  * seg.batch_label -- the item's position within the slot (BabyCL's TCL
-                       labels).
+Segment labels are resolved from the slot's LabelStore at batch time, so
+Memory Storyboard's retroactive relabeling of old segments is visible to the loss.
 
 Batch layout: ``batch[slot_name]`` is a dict with
   views    FloatTensor [B, V, C, H, W]  (clip slots: [B, V, T, C, H, W])
   modality str, what the views are ("image", "video", ...); the model routes
            each slot to the encoder of this modality
-  labels   LongTensor  [B]            (present iff labels_from/batch_label)
+  labels   LongTensor  [B]            (present iff labels_from)
   text_ids LongTensor  [B, T], text_len LongTensor [B]   (iff slot.text)
   weights  FloatTensor [B] or None    (from weight.sample if any item has it)
   meta     list of source items (refs + payload; read-only)
@@ -155,14 +150,12 @@ class Composer:
         work: list[WorkItem] = []
         labels, texts, weights, metas = [], [], [], []
         any_weight = False
-        for pos, item in enumerate(items):
+        for item in items:
             K.require_keys(item, [K.VIDEO_REF], f"composer slot {slot.name!r}")
             ref = item[K.VIDEO_REF]
 
             label: int | None
-            if slot.batch_label:
-                label = pos
-            elif store is not None:
+            if store is not None:
                 label = store.resolve(ref.key)
                 if label is None:
                     raise K.KeyFlowError(
@@ -191,7 +184,12 @@ class Composer:
                 frame_idx = self.loader.pick_frame_indices(ref, k, rng)
                 for fi in frame_idx:
                     seed = ctx.derive_seed(f"aug:{seq}:{slot.name}:{len(work)}")
-                    work.append(("frame", ref, fi, slot.views, seed))
+                    task: WorkItem = ("frame", ref, fi, slot.views, seed)
+                    if K.VIEW_CONTEXT in item:
+                        if slot.unit != "frame":
+                            raise ValueError("contextual views currently require point frame slots")
+                        task = (*task, item[K.VIEW_CONTEXT])
+                    work.append(task)
                     if label is not None:
                         labels.append(label)
                     metas.append(item)

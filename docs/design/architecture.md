@@ -7,8 +7,8 @@ while sharing models, augmentation, optimization, and evaluation.
 [BabyCL](../../projects/babycl/README.md) and
 [Memory Storyboard](../../projects/storyboard/README.md) select these components
 through configuration files. Their segmentation algorithms live in method packages,
-while the training framework provides the common machinery. The
-[historical design notes](streaming.md) explain the original constraints.
+while the training framework provides the common machinery. See
+[status and limitations](../status.md) for the supported workflows.
 
 <a id="how-it-fits-together"></a>
 
@@ -41,8 +41,8 @@ to the weighted training objective. Admission algorithms that inspect image cont
 also use the loader, so segmentation can decode frames before batch sampling.
 
 A streaming run normally ends when its input is exhausted, though `driver.max_steps`
-can stop it earlier at a check between stream advances. One advance
-may schedule several training updates, so this is not an exact per-update cutoff.
+stops at exactly the configured step, including within a stream advance. A resumed
+snapshot completes any remaining updates in that advance before reading new input.
 
 <a id="streaming-vs-offline-side-by-side"></a>
 
@@ -97,8 +97,9 @@ construction checks component contracts, and record validation rejects unknown k
 
 Dataset adapters expose ordered sessions with video and text channels aligned by
 media time rather than frame indices. Frame-directory, packed-frame, and synthetic
-sources use the same stream interface. A raw-video training adapter exists, but its
-decoder backend is a stub; use extracted or packed frames for training.
+sources use the same stream interface. `stream:video` reads raw videos through
+`decoder:pyav`, which requires constant-rate recordings with frame-count metadata.
+See the [KrishnaCam guide](../../projects/krishnacam/README.md) for a runnable recipe.
 
 A batch recipe declares slots with their sources, sample counts, units, views, and
 label stores. Sources can select a memory tier, mix several tiers, or use newly
@@ -142,13 +143,16 @@ Batch slots route by modality, so each modality has at most one trainable encode
 Additional copies, such as EMA targets, must be configured with `frozen: true`.
 
 Losses name the batch slots and model components they use, allowing several objectives
-to share representations. Memory Storyboard combines instance discrimination with
-temporal classification, while BabyCL adds an image–text contrastive objective.
+to share representations. Memory Storyboard combines instance discrimination over
+current and replay frames with supervised contrastive learning over replay frames.
+BabyCL combines instance discrimination, supervised contrastive learning from
+global segment IDs, and image–text contrastive learning.
 V-JEPA predicts masked video representations using a context
 encoder, a predictor, and a frozen target encoder updated by an exponential average.
 Its components are `encoder:video_vit`, `predictor:vjepa`, and `loss:vjepa`, with
-`unit: clip` slots and the `clip_rrc` view. No packaged V-JEPA training config ships;
-the [video tests](../../tests/test_video.py) contain a complete small composition.
+`unit: clip` slots and the `clip_rrc` view. The generic V-JEPA components have no
+packaged training recipe. For complete video-training recipes, use the
+[V-JEPA 2 project](../../projects/vjepa2/README.md), which provides its own registrations.
 
 Model capabilities describe the available representations and prediction interfaces,
 which evaluation components check against their declared requirements during construction.
@@ -240,9 +244,9 @@ configurations.
 | Memory unit | Frames | Visual segments and utterance–frame pairs |
 | Tier routing | Independent admission to short and long tiers | Short-tier overflow into long tier |
 | Segmentation features | Learner's current backbone | Frozen ImageNet ResNeXt |
-| Labels for temporal classification | Revisable global classes | Batch-local segment classes |
+| Temporal labels | Revisable global classes | Global segment IDs, shared by merged segments |
 | Repeated updates | Reuse the batch | Resample each batch |
-| Objective | Instance discrimination and temporal classification | Those objectives plus image–text contrastive learning |
+| Objective | Instance discrimination and segment supervised contrastive learning | Instance, segment supervised contrastive, and image–text contrastive learning |
 
 <a id="design-rules"></a>
 

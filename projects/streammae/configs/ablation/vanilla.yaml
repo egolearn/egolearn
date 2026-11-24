@@ -1,0 +1,4 @@
+# @package _global_
+ablation_name: vanilla
+run_control:
+  window_size: ${run_control.batch_size}

@@ -1,7 +1,7 @@
 """Tokenizer for the CVCL/BabyCL text side: turns utterance strings into
 padded id tensors using a fixed word-level vocabulary.
 
-Provenance: matches BabyCL's ms_dataloader tokenization -- vocab.json lookup,
+Provenance: matches the original BabyCL tokenization -- vocab.json lookup,
 optional <sos>/<eos> wrapping, and the SAYCam-vocab normalizer (lowercase,
 split punctuation off words, split contractions).  Normalization is OFF for
 SAYCam (its transcripts are already normalized) and ON for BabyView.

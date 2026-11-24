@@ -13,7 +13,7 @@ stream, then run k training steps, repeat.  One cycle:
   2. TRAIN    -- run `rate.steps_per_admit` gradient steps.  This setting controls how many
      training steps run per unit of new stream data, which turns "compute-matched baseline"
      into a config flag.  With `rate.resample=true` each step draws a fresh batch from memory
-     (BabyCL's repeats_per_push); with false the same batch is reused (Memory Storyboard's
+     (as in BabyCL); with false the same batch is reused (Memory Storyboard's
      num_grads).
   3. Repeat until the stream runs out.  Training ends when the stream ends, never at a
      precomputed step count.
@@ -272,6 +272,8 @@ class LockstepDriver:
         self.ctx.clock.admitted = 0
         self._replaying = True
         try:
+            for builder in self.admission:
+                builder.set_replaying(True)
             while self.ctx.clock.admitted < target:
                 if self._step_stream() is None:
                     print(
@@ -287,6 +289,8 @@ class LockstepDriver:
                     pass
         finally:
             self._replaying = False
+            for builder in self.admission:
+                builder.set_replaying(False)
             self.ctx.clock.events_emitted = events_before
         print(
             f"[driver] resume: replayed {self.ctx.clock.admitted} "

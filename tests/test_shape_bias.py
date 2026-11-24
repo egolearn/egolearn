@@ -115,13 +115,6 @@ def test_vectorized_scorer_matches_independent_loop() -> None:
     assert np.isclose(vectorized["mean_cosine_margin"], expected.mean(), atol=1e-15)
 
 
-def test_protocol_cardinality() -> None:
-    metrics = score_shape_bias(np.random.default_rng(3).normal(size=(16, 16, 4))).metrics
-    assert metrics["n_stimuli"] == 256
-    assert metrics["n_triplets"] == 57_600
-    assert metrics["shape_decisions"] + metrics["texture_decisions"] == 57_600
-
-
 class _FakeModel:
     def __init__(self) -> None:
         self.next_index = 0
@@ -166,6 +159,7 @@ def test_probe_writes_compact_artifact(tmp_path: Path, monkeypatch) -> None:
         artifact = json.load(handle)
     assert artifact["n_stimuli"] == 256
     assert artifact["n_triplets"] == 57_600
+    assert artifact["shape_decisions"] + artifact["texture_decisions"] == 57_600
     assert len(artifact["anchors"]) == 256
     metadata = probe.metadata()
     assert metadata["n_images"] == 256

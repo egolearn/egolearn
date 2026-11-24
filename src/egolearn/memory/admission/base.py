@@ -104,3 +104,10 @@ class EventBuilder:
     def end_session(self) -> None:
         """Called when the session ends: everything still pending can no
         longer change, so it should be finalized and flushed."""
+
+    def set_replaying(self, replaying: bool) -> None:
+        """Optional notification while rebuilding admission state on resume.
+
+        Builders may defer expensive derived metadata only if it is restored
+        from memory snapshots and their subsequent live state remains exact.
+        """

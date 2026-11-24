@@ -495,12 +495,17 @@ def test_video_benchmark_compares_identical_requests_and_bounded_jpegs(
     assert all(result["frames_per_s"] > 0 for result in report["variants"])
 
 
-def test_babycl_krishnacam_trains_without_transcripts(videos, tmp_path):
+def test_babycl_krishnacam_trains_without_transcripts(videos, tmp_path, monkeypatch):
+    import copy
+
     import torch.nn.functional as F
 
     import egolearn
     from egolearn.config.registry import EMBEDDERS
+    from egolearn.core import keys as K
     from egolearn.memory.admission.base import EmbeddingProvider
+    from egolearn.training.hooks import Hook
+    from egolearn.utils.snapshot import load_snapshot, save_snapshot
 
     @EMBEDDERS.register("test_video_mean")
     class MeanEmbedder(EmbeddingProvider):
@@ -532,6 +537,7 @@ def test_babycl_krishnacam_trains_without_transcripts(videos, tmp_path):
         window_scale=2,
         seg_extend_min_sec=0.1,
         seg_extend_max_sec=0.2,
+        global_merge_cos=1.1,  # disable merging so resume must restore the global-ID counter
     )
     plain["memories"]["segments"]["tiers"]["short"]["capacity"] = 2
     slot = plain["recipe"]["slots"][0]
@@ -540,15 +546,60 @@ def test_babycl_krishnacam_trains_without_transcripts(videos, tmp_path):
         "encoders": {"vision": {"_target_": "encoder:toy_cnn", "dim": 16}},
         "heads": {
             "proj128": {"encoder": "vision", "_target_": "head:mlp", "sizes": [16, 16, 8]},
-            "cls": {"encoder": "vision", "_target_": "head:linear", "in_dim": 16, "out_dim": 2000},
+            "segment128": {
+                "encoder": "vision",
+                "_target_": "head:linear",
+                "in_dim": 16,
+                "out_dim": 8,
+            },
         },
     }
     plain["driver"].update(prefetch=False, max_steps=2)
     plain["driver"]["rate"]["steps_per_admit"] = 1
     plain["hooks"] = {}
-    pipe = egolearn.build(plain)
+
+    def observe_labels(pipe, history):
+        compose_batch = pipe.driver.composer.compose
+
+        def check_labels(*args, **kwargs):
+            batch = compose_batch(*args, **kwargs)
+            if batch is not None:
+                slot = batch["segments"]
+                expected = [
+                    pipe.label_stores["events"].resolve(item[K.VIDEO_REF].key)
+                    for item in slot[K.SLOT_META]
+                ]
+                assert slot[K.SLOT_LABELS].tolist() == expected
+                history.append(expected)
+            return batch
+
+        monkeypatch.setattr(pipe.driver.composer, "compose", check_labels)
+
+    snapshot = str(tmp_path / "streaming.pth")
+
+    class Snapshot(Hook):
+        def on_step(self, driver, logs):
+            if driver.ctx.clock.step == 1:
+                save_snapshot(snapshot, driver)
+
+    pipe = egolearn.build(copy.deepcopy(plain))
+    labels_seen: list[list[int]] = []
+    observe_labels(pipe, labels_seen)
+    pipe.driver.hooks.append(Snapshot())
     pipe.driver.fit()
+    assert labels_seen
     assert pipe.ctx.clock.step == 2
     assert pipe.ctx.clock.events_emitted > 0
     assert pipe.loader.frame_requests > 8  # training frames plus segmentation embeddings
     assert pipe.driver.nonfinite_steps == 0
+    assert len(set(pipe.label_stores["events"].state_dict()["labels"].values())) > 1
+
+    resumed = egolearn.build(copy.deepcopy(plain))
+    load_snapshot(snapshot, resumed.driver)
+    resumed_labels: list[list[int]] = []
+    observe_labels(resumed, resumed_labels)
+    resumed.driver.fit()
+    assert resumed_labels == labels_seen[1:]
+    assert resumed.label_stores["events"].state_dict() == pipe.label_stores["events"].state_dict()
+    for name, value in pipe.model.state_dict().items():
+        assert torch.equal(value, resumed.model.state_dict()[name]), name

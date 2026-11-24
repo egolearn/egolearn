@@ -1,4 +1,4 @@
-"""Driver and stream options that reproduce mcl's BabyCL training loop.
+"""Driver and stream options that reproduce the original BabyCL training loop.
 
 Covers the step-indexed LR schedule, the exact max_steps cap, session-end
 events ending an advance quantum, opt-in mixed precision and the
@@ -26,12 +26,12 @@ from egolearn.utils.snapshot import load_snapshot, save_snapshot
 
 
 @pytest.mark.parametrize("total", [26568, 1000, 150])
-def test_step_indexed_schedule_matches_mcl_lambda_lr(total):
-    # mcl: warmup max(100, int(0.02 * steps_needed)), linear (step + 1) / warm,
+def test_step_indexed_schedule_matches_original_lambda_lr(total):
+    # the original: warmup max(100, int(0.02 * total)), linear (step + 1) / warm,
     # then cosine to 0; LambdaLR evaluates lambda(k) for the (k + 1)-th update
     warm = max(100, int(0.02 * total))
 
-    def mcl_lambda(step):
+    def original_lambda(step):
         if step < warm:
             return float(step + 1) / float(max(1, warm))
         progress = (step - warm) / max(1, total - warm)
@@ -39,12 +39,12 @@ def test_step_indexed_schedule_matches_mcl_lambda_lr(total):
 
     param = torch.nn.Parameter(torch.zeros(1))
     optimizer = torch.optim.AdamW([param], lr=1.0)
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=mcl_lambda)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=original_lambda)
     schedule = ProgressCosine(warmup_frac=0.02, warmup_min_steps=100, total_steps=total)
     ctx = SimpleNamespace(clock=SimpleNamespace(step=0, progress=0.5))
     for step in sorted({0, 1, warm - 1, warm, warm + 1, total // 2, total - 1}):
         ctx.clock.step = step
-        expected = mcl_lambda(step)
+        expected = original_lambda(step)
         assert schedule.multiplier(ctx) == pytest.approx(expected, abs=1e-12)
     for step in range(min(total, 300)):
         ctx.clock.step = step

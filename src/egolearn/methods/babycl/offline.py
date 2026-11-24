@@ -17,6 +17,7 @@ from egolearn.data.batching.composer import Composer
 from egolearn.data.batching.recipe import Recipe, SlotSpec
 from egolearn.data.sources.base import DenseFrameChannel
 from egolearn.data.sources.saycam import SaycamStream
+from egolearn.memory.labels import LabelStore
 from egolearn.methods.babycl.an_chunks import ANChunkEmitter
 from egolearn.training.offline import OfflineDriver
 
@@ -27,6 +28,7 @@ class BabyCLOfflineIndex:
     pairs: list[dict]
     num_frames: int
     storyboard_sha256: str | None  # None for pairs-only indexes
+    segment_labels: list[int]
 
 
 def build_offline_index(stream: SaycamStream, storyboard_json: str | None) -> BabyCLOfflineIndex:
@@ -38,6 +40,7 @@ def build_offline_index(stream: SaycamStream, storyboard_json: str | None) -> Ba
     Without a storyboard, pairs-only batches index utterances and no segments.
     """
     videos: dict[str, dict] | None = None
+    segment_ids: dict[str, list[int]] = {}
     storyboard_sha256 = None
     if storyboard_json is not None:
         raw = Path(storyboard_json).read_bytes()
@@ -48,7 +51,29 @@ def build_offline_index(stream: SaycamStream, storyboard_json: str | None) -> Ba
         videos = {v["video_dir"]: v for v in manifest["videos"]}
         if len(videos) != len(manifest["videos"]):
             raise ValueError("offline storyboard has duplicate session entries")
+        for sid, video in videos.items():
+            if not isinstance(video.get("segments"), list):
+                raise ValueError(f"offline storyboard segments must be a list in session {sid!r}")
+        explicit_ids = any("global_id" in s for v in videos.values() for s in v["segments"])
+        next_id = 0
+        for sid, video in videos.items():
+            segment_ids[sid] = []
+            for segment in video["segments"]:
+                if explicit_ids and "global_id" not in segment:
+                    raise ValueError(
+                        "offline storyboard must supply global_id for every segment; "
+                        f"missing in session {sid!r}"
+                    )
+                gid = segment.get("global_id", next_id)
+                if type(gid) is not int or not 0 <= gid < 2**63:
+                    raise ValueError(
+                        f"offline storyboard global_id in session {sid!r} "
+                        "must be a nonnegative int64"
+                    )
+                segment_ids[sid].append(gid)
+                next_id += 1
     segments, pairs = [], []
+    segment_labels = []
     num_frames = 0
     emitter = ANChunkEmitter(fps=stream.fps)
     for session in stream.sessions():
@@ -65,7 +90,7 @@ def build_offline_index(stream: SaycamStream, storyboard_json: str | None) -> Ba
             if video["frames"] != stream.frame_files(sid):
                 raise ValueError(f"offline storyboard frame order differs for {sid!r}")
             covered_until = 0
-            for segment in video["segments"]:
+            for segment, gid in zip(video["segments"], segment_ids[sid], strict=True):
                 start, end = int(segment["start"]), int(segment["end"])
                 if start != covered_until or not start < end <= len(dense):
                     raise ValueError(
@@ -73,6 +98,7 @@ def build_offline_index(stream: SaycamStream, storyboard_json: str | None) -> Ba
                     )
                 ref = dense.interval_ref(start, end)
                 segments.append({K.VIDEO_REF: ref})
+                segment_labels.append(gid)
                 covered_until = end
             if covered_until != len(dense):
                 raise ValueError(f"offline storyboard does not cover all frames in {sid!r}")
@@ -85,7 +111,7 @@ def build_offline_index(stream: SaycamStream, storyboard_json: str | None) -> Ba
         pairs.extend(emitter.poll())
     if not pairs or (videos is not None and not segments):
         raise ValueError("offline BabyCL requires nonempty storyboard segments and utterance pairs")
-    return BabyCLOfflineIndex(segments, pairs, num_frames, storyboard_sha256)
+    return BabyCLOfflineIndex(segments, pairs, num_frames, storyboard_sha256, segment_labels)
 
 
 class BabyCLOfflineDriver(OfflineDriver):
@@ -131,7 +157,9 @@ class BabyCLOfflineDriver(OfflineDriver):
         self.segments_per_batch = int(segments_per_batch)
         self.frames_per_segment = int(frames_per_segment)
         self.pairs_per_batch = int(pairs_per_batch)
-        self.composer = Composer(self.loader, tokenizer=self.tokenizer)
+        self.composer = Composer(
+            self.loader, tokenizer=self.tokenizer, label_stores={"events": LabelStore("events")}
+        )
         slots = []
         if self.segments_per_batch > 0:
             slots.append(
@@ -142,7 +170,7 @@ class BabyCLOfflineDriver(OfflineDriver):
                     unit="segment",
                     frames_per_item=self.frames_per_segment,
                     views=segment_views,
-                    batch_label=True,
+                    labels_from="events",
                 )
             )
         slots.append(
@@ -184,6 +212,10 @@ class BabyCLOfflineDriver(OfflineDriver):
             assert isinstance(self.stream, SaycamStream)
             self.index = build_offline_index(self.stream, self.storyboard_json)
         index = self.index
+        self.composer.label_stores["events"].assign(
+            [segment[K.VIDEO_REF].key for segment in index.segments], index.segment_labels
+        )
+        self.snapshot_metadata = {"storyboard_sha256": index.storyboard_sha256}
         if len(index.pairs) < self.pairs_per_batch:
             raise ValueError("not enough utterance chunks for a complete BabyCL batch")
         print(
@@ -196,6 +228,20 @@ class BabyCLOfflineDriver(OfflineDriver):
         if not self.segments_per_batch:
             print("[babycl-iid] pairs-only batches (segments_per_batch=0)", flush=True)
         return index.pairs
+
+    def validate_snapshot(self, state: dict) -> None:
+        """Reject changed segment labels before restoring offline training state."""
+        if self.storyboard_json is None:
+            return
+        metadata = state.get("driver", {}).get("metadata") or {}
+        digest = metadata.get("storyboard_sha256")
+        if digest is None:
+            inputs = (state.get("run_provenance") or {}).get("input_provenance", {})
+            digest = inputs.get("driver.batch.storyboard_json", {}).get("sha256")
+        if digest is None:
+            raise ValueError("snapshot lacks storyboard identity; start a new run")
+        if digest != hashlib.sha256(Path(self.storyboard_json).read_bytes()).hexdigest():
+            raise ValueError("storyboard differs from the training snapshot")
 
     def _compose(self, refs, seq: int | None = None) -> dict:
         if self.index is None:

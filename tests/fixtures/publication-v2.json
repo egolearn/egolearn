@@ -1,0 +1,296 @@
+{
+  "runs": [
+    {
+      "checkpoint": {
+        "metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "private": true,
+        "repo_id": "test/model-1",
+        "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000001",
+        "step": 12,
+        "weights_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "condition": {
+        "architecture": "ToyCNN",
+        "dataset": "Synthetic",
+        "description": "Synthetic tests only.",
+        "id": "toy",
+        "label": "Toy",
+        "regime": "offline"
+      },
+      "evaluations": [
+        {
+          "column": {
+            "benchmark": "labeled_s_4afc",
+            "description": "Four-alternative image-word matching.",
+            "direction": "max",
+            "id": "labeled_s_4afc",
+            "label": "Labeled-S 4AFC",
+            "metric": "four_afc_acc",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 224
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.1
+        }
+      ],
+      "expected_seeds": [
+        1
+      ],
+      "id": "38850e25a79894a59d815d75e87ef7f14b5d153fe703ba52df6df165b8517e5c",
+      "provenance": {
+        "legacy_evaluation": false,
+        "training_code_commit": null,
+        "training_config_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "schema_version": 1,
+      "training_seed": 1
+    },
+    {
+      "checkpoint": {
+        "metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "private": true,
+        "repo_id": "test/model-2",
+        "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000002",
+        "step": 12,
+        "weights_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "condition": {
+        "architecture": "ToyCNN",
+        "dataset": "Synthetic",
+        "description": "Synthetic tests only.",
+        "id": "reference",
+        "label": "Synthetic imported reference",
+        "regime": "offline"
+      },
+      "evaluations": [
+        {
+          "column": {
+            "benchmark": "labeled_s_linear",
+            "description": "Frozen-feature linear decoding, top-1 accuracy.",
+            "direction": "max",
+            "id": "labeled_s_linear",
+            "label": "Labeled-S linear",
+            "metric": "top1",
+            "unit": "fraction"
+          },
+          "protocol": {
+            "code_commit": null,
+            "evaluation_seed": 0,
+            "input_scope": "Manifest hashes only",
+            "input_sha256": {
+              "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "settings": {
+              "size": 112
+            },
+            "version": "1"
+          },
+          "protocol_sha256": "63c0c61fbe8bc0f5e55ffdaf9bc0304cabb19f361f0f1bb9f847b1a049974581",
+          "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "value": 0.2
+        }
+      ],
+      "expected_seeds": [
+        null
+      ],
+      "id": "cc9c32fe533b9a57fc56153681a8e561b60f9791718b5a9daf45b13f8cf0ad3c",
+      "not_applicable": [
+        {
+          "column": {
+            "benchmark": "labeled_s_4afc",
+            "description": "Four-alternative image-word matching.",
+            "direction": "max",
+            "id": "labeled_s_4afc",
+            "label": "Labeled-S 4AFC",
+            "metric": "four_afc_acc",
+            "unit": "fraction"
+          },
+          "reason": "No trained image-text head."
+        }
+      ],
+      "provenance": {
+        "legacy_evaluation": false,
+        "reference": true,
+        "training_code_commit": null,
+        "training_config_sha256": null
+      },
+      "schema_version": 2,
+      "training_seed": null
+    }
+  ],
+  "table": {
+    "columns": [
+      {
+        "benchmark": "labeled_s_4afc",
+        "description": "Four-alternative image-word matching.",
+        "direction": "max",
+        "id": "labeled_s_4afc",
+        "label": "Labeled-S 4AFC",
+        "metric": "four_afc_acc",
+        "unit": "fraction"
+      },
+      {
+        "benchmark": "labeled_s_linear",
+        "description": "Frozen-feature linear decoding, top-1 accuracy.",
+        "direction": "max",
+        "id": "labeled_s_linear",
+        "label": "Labeled-S linear",
+        "metric": "top1",
+        "unit": "fraction"
+      }
+    ],
+    "results_repo": "test/results",
+    "rows": [
+      {
+        "cells": {
+          "labeled_s_4afc": {
+            "expected_n": 1,
+            "mean": null,
+            "n": 0,
+            "protocols": [],
+            "reason": "No trained image-text head.",
+            "sd": null,
+            "status": "not_applicable"
+          },
+          "labeled_s_linear": {
+            "expected_n": 1,
+            "mean": 0.2,
+            "n": 1,
+            "protocols": [
+              {
+                "code_commit": null,
+                "evaluation_seed": 0,
+                "input_scope": "Manifest hashes only",
+                "input_sha256": {
+                  "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                "settings": {
+                  "size": 112
+                },
+                "sha256": "63c0c61fbe8bc0f5e55ffdaf9bc0304cabb19f361f0f1bb9f847b1a049974581",
+                "version": "1"
+              }
+            ],
+            "sd": null,
+            "status": "complete"
+          }
+        },
+        "condition": {
+          "architecture": "ToyCNN",
+          "dataset": "Synthetic",
+          "description": "Synthetic tests only.",
+          "id": "reference",
+          "label": "Synthetic imported reference",
+          "regime": "offline"
+        },
+        "expected_seeds": [
+          null
+        ],
+        "id": "reference",
+        "runs": [
+          {
+            "checkpoint": {
+              "metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "private": true,
+              "repo_id": "test/model-2",
+              "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000002",
+              "step": 12,
+              "weights_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "id": "cc9c32fe533b9a57fc56153681a8e561b60f9791718b5a9daf45b13f8cf0ad3c",
+            "provenance": {
+              "legacy_evaluation": false,
+              "reference": true,
+              "training_code_commit": null,
+              "training_config_sha256": null
+            },
+            "seed": null
+          }
+        ]
+      },
+      {
+        "cells": {
+          "labeled_s_4afc": {
+            "expected_n": 1,
+            "mean": 0.1,
+            "n": 1,
+            "protocols": [
+              {
+                "code_commit": null,
+                "evaluation_seed": 0,
+                "input_scope": "Manifest hashes only",
+                "input_sha256": {
+                  "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                "settings": {
+                  "size": 224
+                },
+                "sha256": "7b6c35ac120d2440122565bccb274f38fd931643e1e080ff64f63d954172ee65",
+                "version": "1"
+              }
+            ],
+            "sd": null,
+            "status": "complete"
+          },
+          "labeled_s_linear": {
+            "expected_n": 1,
+            "mean": null,
+            "n": 0,
+            "protocols": [],
+            "sd": null,
+            "status": "incomplete"
+          }
+        },
+        "condition": {
+          "architecture": "ToyCNN",
+          "dataset": "Synthetic",
+          "description": "Synthetic tests only.",
+          "id": "toy",
+          "label": "Toy",
+          "regime": "offline"
+        },
+        "expected_seeds": [
+          1
+        ],
+        "id": "toy",
+        "runs": [
+          {
+            "checkpoint": {
+              "metadata_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "private": true,
+              "repo_id": "test/model-1",
+              "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000001",
+              "step": 12,
+              "weights_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "id": "38850e25a79894a59d815d75e87ef7f14b5d153fe703ba52df6df165b8517e5c",
+            "provenance": {
+              "legacy_evaluation": false,
+              "training_code_commit": null,
+              "training_config_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            },
+            "seed": 1
+          }
+        ]
+      }
+    ],
+    "schema_version": 2,
+    "updated_at": "2026-01-01T00:00:00Z"
+  }
+}

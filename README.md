@@ -30,6 +30,7 @@ The toy configuration trains a small convolutional model on synthetic colored
 blocks using the CPU. It needs no dataset access, pretrained weights, or API keys.
 The dry run validates the pipeline. The training run prints losses and writes its
 run record under `runs/toy/records/`; the toy configuration does not save weights.
+To save and reload a model, follow the [CPU export example](docs/cli.md#toy-model-export).
 
 After installation, use `uv run egl` or activate `.venv` and run `egl` directly.
 `egolearn` is an alias for the same command.
@@ -39,8 +40,13 @@ uv run egl --help
 uv run egl data list
 ```
 
+To evaluate a pretrained model next, follow the
+[first checkpoint evaluation](docs/evaluation/first_evaluation.md). It uses public
+weights and locally prepared stimuli, with no access request. To train on real
+data, choose a method below and prepare its required inputs.
+
 The [CLI guide](docs/cli.md) covers configuration files, data preparation,
-evaluation, model export, cluster submission, and benchmark suites.
+model export, cluster submission, and benchmark suites.
 
 <a id="whats-here"></a>
 
@@ -57,12 +63,17 @@ Start with a method's configuration and data instructions:
 | --- | --- |
 | BabyCL | [Streaming and offline image–text learning on SAYCam](projects/babycl/README.md) |
 | Memory Storyboard | [Streaming visual learning with temporal segmentation](projects/storyboard/README.md) |
+| MAE and StreamMAE | [Masked image reconstruction with streaming and offline recipes](projects/streammae/README.md) |
 | V-JEPA 2 | [Video representation learning on SAYCam and BabyView](projects/vjepa2/README.md) |
+| KrishnaCam visual baselines | [Streaming and offline training directly from MP4 videos](projects/krishnacam/README.md) |
 
 The SAYCam videos used by BabyCL and Memory Storyboard require
 [Databrary access](docs/evaluation/data.md#saycam-access). Configure dataset roots
 and prepared inputs according to the method's guide before running real-data training.
-Datasets and checkpoints are not included in this repository.
+V-JEPA 2 also supports BabyView recordings with
+[separate data access](docs/evaluation/data.md#babyview-training-data).
+BabyCL requires prepared aligned transcripts as well as frames; its input guide
+describes how to obtain them. Datasets and checkpoints are not included in this repository.
 
 See the [architecture guide](docs/design/architecture.md) for stream and memory
 contracts, the [data-loading guide](docs/data_loading.md) for storage and worker
@@ -71,20 +82,12 @@ selected checkpoint weights.
 
 ## Model checkpoints
 
-Published checkpoints are available from [EgoLearn on Hugging Face](https://huggingface.co/egolearn).
-SAYCam and BabyView models require manual approval. You must already have access to
-the corresponding training dataset on Databrary.
-
-To request access:
-
-1. Submit an access request on the model's Hugging Face page.
-2. Email [mengye@nyu.edu](mailto:mengye@nyu.edu) with your Hugging Face username,
-   the model name, your intended use, and evidence that you can access the
-   corresponding dataset on Databrary. For example, attach a screenshot of your
-   Databrary access permissions for SAYCam or BabyView, matching the model's training dataset.
-
-The EgoLearn team reviews the evidence before granting access to the weights.
-KrishnaCam and WalkingTours checkpoints are available without an access request.
+Choose pretrained weights and their evaluation recipes from the
+[model catalog](docs/evaluation/hub.md#released-models). KrishnaCam and WalkingTours
+weights are public. SAYCam and BabyView weights require manual approval based
+on access to the corresponding training dataset on Databrary.
+Follow the [access-request instructions](docs/evaluation/hub.md#checkpoint-access)
+and use a read token from the approved Hugging Face account.
 
 ## Evaluation
 
@@ -103,6 +106,8 @@ Generative models can run [EgoSchema](docs/evaluation/egoschema.md) and
 The [BabyCL results](projects/babycl/README.md#saycam-results) compare two seeds
 with the paper. [Benchmark suites](docs/benchmark_suites.md) pin inputs and seeds,
 retain run records, and generate tables with baseline comparisons.
+The [results-publication guide](docs/publishing_results.md) explains how to publish
+evaluated checkpoints and update the website's benchmark table.
 
 ## Repository layout
 
@@ -113,11 +118,11 @@ retain run records, and generate tables with baseline comparisons.
 | `projects/` | Method guides and experiment configurations ([conventions](projects/README.md)) |
 | `tests/` | Unit tests and constrained video, slow, GPU, and LLM tiers |
 | `scripts/` | Data preparation, benchmarks, and cluster launchers |
-| `docs/` | User guides, API reference, design notes, and [roadmap](docs/roadmap.md) |
+| `docs/` | User guides, API reference, and [supported workflows](docs/status.md) |
 
 ## Citation and contributing
 
 Use [CITATION.cff](CITATION.cff) to cite the software, and cite the relevant method
 papers when using their implementations. See [CONTRIBUTING.md](CONTRIBUTING.md)
-for development and review requirements, [SECURITY.md](SECURITY.md) for repository
-hygiene, and [RELEASING.md](RELEASING.md) for the publication procedure.
+for development and review requirements and [SECURITY.md](SECURITY.md) for
+checkpoint trust and vulnerability reporting.

@@ -19,7 +19,7 @@ class ResNeXt50Encoder(nn.Module):
     2048-wide pooled feature.
 
     Both founding reproductions train FROM SCRATCH (pretrained=False):
-    BabyCL passes --no_pretrained_cnn; Memory Storyboard builds its ResNet
+    BabyCL disables CNN pretraining; Memory Storyboard builds its ResNet
     from scratch.
     """
 

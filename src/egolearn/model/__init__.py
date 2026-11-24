@@ -12,7 +12,7 @@ Submodules:
   * masking     -- token-grid mask samplers for masked video prediction
   * generative  -- generative components (openai_chat); base.py documents the
                    contract and the Video input type
-  * losses      -- the standard loss library (ntxent, tcl, clip_infonce, vjepa)
+  * losses      -- the standard loss library (ntxent, supcon, tcl, clip_infonce, vjepa)
 """
 
 from . import encoders, generative, predictors  # noqa: F401  (registers components)

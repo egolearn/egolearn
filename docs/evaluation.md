@@ -13,6 +13,13 @@ The base `evaluate` config defaults to `device=cpu`. The `imagenet_linear_eval`
 config used below defaults to `device=cuda`. To run that example on CPU,
 replace `device=cuda` with `device=cpu`.
 
+## First evaluation
+
+Start with the [public-checkpoint tutorial](evaluation/first_evaluation.md) to run
+shape bias on CPU without restricted data or model access approval. It includes
+stimulus preparation, a pinned checkpoint, and commands to inspect the result.
+The ImageNet example below assumes that you already have its licensed images.
+
 ## Command line
 
 For ImageNet linear decoding, provide a checkpoint and an ImageFolder root with
@@ -54,6 +61,87 @@ the search paths and overrides described in
 For repeated runs with pinned inputs and several seeds, use
 [benchmark suites](benchmark_suites.md).
 
+## Full-network fine-tuning
+
+Use `imagenet_full_finetune_eval` to train a checkpoint's encoder and a new
+classification head on ImageNet. The benchmark scores final-epoch validation
+accuracy and leaves the original model unchanged. Run it in a compute
+allocation with the training extra installed:
+
+```bash
+uv run egl eval imagenet_full_finetune_eval \
+  checkpoint="$CHECKPOINT" data_root="$IMAGENET_ROOT" \
+  benchmarks.0.encoder=vision output_json=finetune.json
+```
+
+The default `benchmarks.0.encoder=image` follows the model's image-modality
+routing. You can also select an encoder by its checkpoint name. The packaged
+config uses 100 epochs of AdamW with cosine decay, five warm-up epochs, and
+physical batches of 64 accumulated over four steps. It applies RandAugment,
+MixUp/CutMix, label smoothing, and random erasing. These defaults define a
+configurable protocol; they do not reproduce every model's published recipe.
+Use `egl eval imagenet_full_finetune_eval --cfg job` to inspect all settings.
+
+The registered target is `benchmark:imagenet_full_finetune`. You can combine it
+with other benchmarks under `benchmarks` or use the packaged config in a
+[benchmark suite](benchmark_suites.md). Its seed follows the top-level seed in
+the packaged config. Results use the standard evaluation schema with checkpoint
+identity, protocol settings and version, class order, sample counts, and a split
+membership hash. Membership hashes cover paths and labels, not image contents.
+
+### Execution and resume
+
+BF16 AMP and the execution options are disabled by default. Enable them through
+Hydra overrides when comparing performance on your GPU:
+
+```bash
+uv run egl eval imagenet_full_finetune_eval \
+  checkpoint="$CHECKPOINT" data_root="$IMAGENET_ROOT" \
+  benchmarks.0.encoder=vision benchmarks.0.amp=true \
+  benchmarks.0.defer_metrics=true benchmarks.0.channels_last=true \
+  benchmarks.0.cudnn_benchmark=true benchmarks.0.compile_mode=default
+```
+
+Compilation preserves checkpoint keys. Channels-last applies to model weights
+and input images. Deferred metrics reduce device-to-host transfers; invalid
+losses and gradients are rejected before optimizer updates. Kernel choices can
+change numerical rounding, and cuDNN autotuning can select different algorithms
+between runs. Larger physical batches also change BatchNorm statistics and
+MixUp/CutMix grouping, even when the effective batch stays constant.
+
+Set `benchmarks.0.output_dir` to save epoch checkpoints, progress, and training
+history. Rerun with the same directory to resume from the last completed epoch.
+Use a distinct directory for each checkpoint, seed, and configuration. Resume
+validates the starting encoder, construction, split membership, settings, and
+fine-tuning code and library versions. A changed protocol requires a new directory.
+The default `null` keeps adaptation in memory without saving epoch checkpoints.
+
+### Throughput comparisons
+
+Save a resolved evaluation config, then pass it to the throughput script:
+
+```bash
+uv run egl eval imagenet_full_finetune_eval \
+  checkpoint="$CHECKPOINT" data_root="$IMAGENET_ROOT" \
+  benchmarks.0.encoder=vision benchmarks.0.amp=true \
+  --cfg job --resolve > "$FINETUNE_CONFIG"
+uv run python scripts/bench/bench_imagenet_finetune.py "$FINETUNE_CONFIG" \
+  --output "$BENCHMARK_OUTPUT"
+```
+
+The config must contain one ImageNet full-fine-tuning benchmark with an effective
+batch size of 256. The output directory must not exist. Each variant uses the
+packaged training implementation, starting with execution options disabled for
+the baseline. Variants enable deferred metrics, kernel options, and larger
+physical batches independently or in combination.
+
+The script reads the sampled image subset before timing. Each variant excludes
+16 warm-up updates and measures three windows of 64 updates. The report includes
+individual timings, peak GPU memory, differences in model state, and a repeated
+baseline to measure drift. Timing excludes validation and checkpoint writes.
+These short runs measure throughput; compare converged accuracy before adopting
+execution changes in a reported evaluation protocol.
+
 ## Benchmark selection
 
 Choose a protocol compatible with the model and prepare its inputs before
@@ -69,6 +157,7 @@ running evaluation.
 | Labeled-S linear decoding, BabyCL paper protocol | `probe:labeled_s_stratified_linear` | [All images, per-category 80/20 split](evaluation/data.md#labeled-s-linear-data) | `top1`; 1/26 uniform-guess accuracy |
 | mini-ImageNet linear decoding | `probe:mini_imagenet_linear` | 100-class `train/` and `val/` class folders | `top1`; 1/100 uniform-guess accuracy |
 | BabyView 4AFC | `probe:four_afc` | [Frozen trials on vocabulary-matched categories](#babyview-protocols) | `four_afc_acc`; 0.25 chance |
+| Konkle 4AFC | `probe:four_afc` | [Trials over 60 object categories, drawn per vocabulary](#konkle-4afc) | `four_afc_acc`; 0.25 chance |
 | BabyView linear decoding | `probe:linear` | [Frozen split over all 72 categories](#babyview-protocols) | `top1`; 1/72 uniform-guess accuracy |
 | VTWT | `probe:vtwt` | [CSV labels, frames, and training vocabulary](evaluation/data.md#babyvlm-benchmark-data) | `vtwt_acc`; 0.5 chance |
 | Baby Winoground | `probe:baby_winoground` | [CSV labels, positive/negative images, and training vocabulary](evaluation/data.md#babyvlm-benchmark-data) | `bw_group_acc`; 0.25 for independent random choices |
@@ -86,8 +175,11 @@ image-phrase choices to be correct, so its group baseline assumes independent
 random choices for the two images.
 
 The shape-bias and spatial-relations configs supply their own Hub input paths.
-If you have repository access, only `checkpoint=` is required. Private
-collections require authentication through `HF_TOKEN`.
+Their hosted collections require repository access and `HF_TOKEN`, independently
+of access to model weights. With those permissions, only `checkpoint=` is required.
+Otherwise follow the [first checkpoint evaluation](evaluation/first_evaluation.md)
+for local shape-bias inputs, or prepare both domains using the
+[spatial-relations guide](evaluation/spatial_relations.md#preparing-and-checking-data).
 
 Small evaluations use `probe:*` targets both during training and in standalone
 evaluation, where you put these configs in the `benchmarks` list. Full ImageNet
@@ -143,6 +235,7 @@ complete [BabyVLM](evaluation/data.md#babyvlm-evaluation-config) and
 | Labeled-S linear | `probe:labeled_s_linear`, `probe:labeled_s_stratified_linear` | `egolearn.evaluation.benchmarks.labeled_s_linear` |
 | mini-ImageNet linear | `probe:mini_imagenet_linear` | `egolearn.evaluation.benchmarks.mini_imagenet_linear` |
 | BabyView 4AFC and linear | `probe:four_afc`, `probe:linear` | `egolearn.evaluation.benchmarks.babyview_4afc` |
+| Konkle 4AFC | `probe:four_afc` | `egolearn.evaluation.benchmarks.konkle_4afc` |
 | Generic fixed-feature linear | `probe:linear` | `egolearn.evaluation.linear_probe` |
 | Generic SGD linear | `probe:linear_sgd` | `egolearn.evaluation.linear_sgd_probe` |
 | VTWT | `probe:vtwt` | `egolearn.evaluation.benchmarks.vtwt` |
@@ -246,8 +339,91 @@ preference; this is not an object-classification accuracy.
 | `shape_bias_ties` | Number of equal-similarity triplets |
 | `shape_bias_n` | Number of triplets |
 
-See [Hub collections](evaluation/hub.md#packaged-collections) for the stimuli,
-license, citation, and use of a verified local copy.
+### Prepare local stimuli
+
+Install the `train` extra, then run the preparer in a new output directory:
+
+```bash
+uv run egl data prepare shape-bias
+export SHAPE_BIAS_MANIFEST="${EGOLEARN_DATA:-data}/shape-bias/stimulus_manifest.json"
+```
+
+The command downloads masks and textures from
+[Tartaglini et al.'s source repository](https://github.com/alexatartaglini/developmental-shape-bias)
+at pinned commit `09277d997e5d2924b83c5b6d1d792475a200a0b4`, verifies their checksums,
+and renders the 256 stimuli locally. Source assets are cached under
+`${EGOLEARN_DATA:-data}/.sources/shape-bias`; the prepared collection goes under
+`${EGOLEARN_DATA:-data}/shape-bias`. To choose another data root, put `--root DIR`
+before `prepare` and set the manifest variable to that root.
+
+Preparation needs internet access on the first run and refuses an existing output
+collection. It does not require access to the lab-hosted Hub repository. Keep the
+source assets and rendered images outside Git, follow the upstream terms, and cite
+[Tartaglini, Vong, and Lake (2022)](https://github.com/alexatartaglini/developmental-shape-bias).
+Preparing a local copy does not grant redistribution rights.
+
+Follow the [checkpoint evaluation example](evaluation/first_evaluation.md#evaluation)
+to score a public model. For a manifest outside the default collection, pass
+`"benchmarks.0.manifest=$SHAPE_BIAS_MANIFEST"` in its evaluation command.
+If you already have access to the [hosted collection](evaluation/hub.md#packaged-collections),
+you can fetch a verified copy instead of preparing it locally.
+
+## Konkle 4AFC
+
+Konkle 4AFC tests word–object matching on studio photographs that appear in no
+training corpus. It uses 60 object categories from the
+[Konkle et al. (2010)](https://konklab.fas.harvard.edu/) object set, with 17
+photographs each, and follows the protocol of
+[Scaling cross-situational word learning on children's naturalistic experiences](https://arxiv.org/abs/2610.31842).
+Each trial shows a category word with one photograph of that category and three
+photographs of other categories. The model is correct when the target photograph
+is the most similar to the word.
+
+Download the object set from the Konkle lab, extract it, and draw the trials for
+the model's training vocabulary:
+
+```bash
+uv run egl data prepare konkle-4afc \
+  --data_root /path/to/17-objects --vocab_json /path/to/training_vocab.json \
+  --output data/konkle_4afc/trials.json
+```
+
+A category whose label is missing from the vocabulary gets no trials and is
+scored at chance (0.25). The preparer prints these categories. Two models see the
+same trials only when their vocabularies cover the same categories.
+
+Add the probe to an evaluation config and run it with `egl eval`:
+
+```yaml
+defaults:
+  - /evaluate
+  - _self_
+
+_imports_:
+  - egolearn.evaluation.benchmarks.konkle_4afc
+benchmarks:
+  - _target_: "probe:four_afc"
+    name: konkle_4afc
+    manifest: data/konkle_4afc/trials.json
+    vocab_json: /path/to/training_vocab.json
+    vision_head: embed512
+    view: resize
+    size: 224
+```
+
+```bash
+uv run egl eval path/to/konkle.yaml checkpoint=runs/example/final.pth
+```
+
+| Metric | Meaning |
+| --- | --- |
+| `four_afc_acc` | Accuracy over all 60 categories, with out-of-vocabulary categories at 0.25 |
+| `four_afc_acc_scored` | Accuracy over in-vocabulary categories only, reported when some are out of vocabulary |
+
+Scores are not directly comparable with the paper's. The paper's models score a
+word against 17 region vectors per image and keep the best match, while
+`probe:four_afc` scores one pooled image representation. Its copy of the images
+also names files differently, so the same seed selects different photographs.
 
 ## Checkpoint compatibility
 
@@ -365,5 +541,5 @@ contract, registration, capability checks, and protocol versioning.
 
 ## Hub artifacts and access tiers
 
-See [Hub artifacts](evaluation/hub.md) for verified downloads, `hf://` input
+See [Models and Hub data](evaluation/hub.md) for verified downloads, `hf://` input
 paths, cache management, access tiers, and publication rules.

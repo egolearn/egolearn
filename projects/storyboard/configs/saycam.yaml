@@ -1,7 +1,7 @@
-# Memory Storyboard on SAYCam -- reproduction config.
+# Memory Storyboard on SAYCam -- SimCLR + global segment SupCon.
 #
 # Code-verified against agentic-learning-ai-lab/memory-storyboard
-# (train_storyboard_merging.py, replay_buffer.py, utils.py), README example:
+# (train_storyboard_merging.py --method simclr, replay_buffer.py, utils.py):
 #   curr 64 + replay 448, short FIFO 5000 (stream subsample 8) /
 #   long reservoir 45000, crop 112, SGD lr 0.05, class_length 7500,
 #   prototype merging with dynamic quantile threshold (merge_threshold 0.003).
@@ -11,7 +11,7 @@
 #     the short FIFO admits every 8th frame (admit_stride), the long
 #     reservoir ingests every frame;
 #   * batch = two slots, each drawing from ONE tier;
-#   * NT-Xent over curr+replay JOINTLY; TCL over the replay slot only,
+#   * NT-Xent over curr+replay JOINTLY; SupCon over the replay slot only,
 #     with GLOBAL class ids resolved through the revisable LabelStore;
 #   * segmentation embeddings come from the LEARNER'S OWN backbone;
 #   * training pace: 1 gradient step per 64-frame stream advance, and with more
@@ -96,16 +96,15 @@ model:
     vision: {_target_: "encoder:resnext50", pretrained: false}
   heads:
     proj128: {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 128]}
-    # num classes >= len(stream)/class_length + headroom for unmerged splits
-    cls:     {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 2000]}
+    segment128: {encoder: vision, _target_: "head:mlp", sizes: [2048, 2048, 128]}
 
 losses:
   # NT-Xent over the concatenated curr+replay batch (one joint loss, as in MS)
   - {_target_: "loss:ntxent", name: instance,
      slots: [curr, replay], head: proj128, temperature: 0.1, weight: 1.0}
-  # TCL on the replay portion only, global (revisable) storyboard classes
-  - {_target_: "loss:tcl", name: temporal,
-     slots: [replay], head: cls, num_classes: 2000, filter_unseen: true, weight: 1.0}
+  # SupCon on the replay portion only, global (revisable) storyboard classes
+  - {_target_: "loss:supcon", name: temporal,
+     slots: [replay], head: segment128, temperature: 0.1, weight: 1.0}
 
 solver:
   opt: sgd
