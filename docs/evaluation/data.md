@@ -261,4 +261,6 @@ benchmarks:
 These settings match BabyCL models trained with EgoLearn, and CVCL models also
 need `image_norm: clip` in both entries. A trial whose image is missing is
 skipped and counted in `vtwt_skipped` or `bw_skipped`. The run still completes,
-so check that both counts are zero before you report a score.
+so before you report a score, check that both counts are zero. Also check that
+`vtwt_n` equals the number of VTWT rows and `bw_n` the number of Baby Winoground
+instances, since an empty CSV also scores 0.0 with nothing skipped.
