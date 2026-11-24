@@ -95,8 +95,8 @@ uv run --group docs mkdocs serve
 For the complete local build, see [site development](scripts/docs/README.md).
 
 Images in `landing/media/` are either drawn or generated for the page, or come
-from published, openly licensed sources and the datasets' own project pages; the
-page credits each one.
+from published, openly licensed sources and the datasets' own project pages;
+[image credits](docs/credits.md) lists each one.
 
 ### Generated reference
 

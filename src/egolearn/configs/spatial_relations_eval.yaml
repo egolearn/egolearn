@@ -1,6 +1,5 @@
 # Spatial relation categorization (Davidson, Orhan & Lake, 2024) on the hosted
-# monitoring subsets. CC BY 4.0; cite the paper. Private until release:
-# authenticate with HF_TOKEN.
+# monitoring subsets. CC BY 4.0; cite the paper.
 #   egl eval spatial_relations_eval checkpoint=<checkpoint or export>
 defaults:
   - evaluate
