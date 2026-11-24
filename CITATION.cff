@@ -5,7 +5,7 @@ title: "EgoLearn: learning from egocentric video streams"
 authors:
   - name: "Agentic Learning AI Lab, New York University"
     website: "https://agenticlearning.ai"
-repository-code: "https://github.com/agentic-learning-ai-lab/egolearn"
+repository-code: "https://github.com/egolearn/egolearn"
 license: MIT
 abstract: >-
   EgoLearn provides streaming and offline self-supervised learning, bounded replay
