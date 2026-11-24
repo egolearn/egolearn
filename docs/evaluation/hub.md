@@ -107,7 +107,8 @@ repositories, while `checkpoint` and `model_config` read model repositories. A
 model reference names one file, and evaluation fetches the matching
 `model.json` from the same commit. Dataset references download the whole
 repository into the Hugging Face cache under `HF_HOME`, without checking the
-collection checksums.
+collection checksums. A manifest whose relative paths leave its repository,
+such as those in `babyview-4afc`, needs a fetched copy instead.
 
 ## Access tiers
 

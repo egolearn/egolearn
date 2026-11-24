@@ -134,6 +134,10 @@ and download only the crops:
 uv run egl data fetch babyview-4afc --revision v1
 uv run egl data prepare babyview-4afc --download_only
 ```
+
+Point the configs at the fetched files, not at `hf://` paths: a Hub reference
+places the manifests in the Hugging Face cache, where their relative paths do
+not reach the crops.
  Save this config as `babyview_eval.yaml` and run it with
 `uv run egl eval babyview_eval.yaml checkpoint=run/final.pth`:
 

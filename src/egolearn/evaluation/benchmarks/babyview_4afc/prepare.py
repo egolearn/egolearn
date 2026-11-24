@@ -112,15 +112,18 @@ def main() -> None:
     p = preparation_parser("babyview-4afc", description=__doc__)
     args = p.parse_args()
 
+    if args.vocab_json is None and not args.download_only:
+        p.error("--vocab_json is required unless --download_only is given")
     if args.download or args.download_only:
         download(args.data_root)
-    if args.download_only:
-        print(f"downloaded the public crops to {args.data_root}")
-        return
-    if args.vocab_json is None:
-        p.error("--vocab_json is required unless --download_only is given")
-    vocab = json.loads(args.vocab_json.read_text())
+    # load_manifest checks that every listed crop exists, which also catches an
+    # extraction that stopped after manifest.csv.
     by_cat = load_manifest(args.data_root)
+    if args.download_only:
+        n_crops = sum(len(paths) for paths in by_cat.values())
+        print(f"{n_crops} public crops in {args.data_root}")
+        return
+    vocab = json.loads(args.vocab_json.read_text())
     all_cats = sorted(by_cat)
     in_vocab = [c for c in all_cats if c in vocab]
     oov = [c for c in all_cats if c not in vocab]

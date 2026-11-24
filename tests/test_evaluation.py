@@ -61,17 +61,42 @@ def test_babyview_prepare_writes_paths_relative_to_the_output(tmp_path, monkeypa
     assert loaded.train[0].image == str(out / split["train"][0]["image"])
 
 
-def test_babyview_prepare_download_only_needs_no_vocabulary(tmp_path, monkeypatch):
+def test_babyview_prepare_download_only_needs_no_vocabulary(tmp_path, monkeypatch, capsys):
+    data = _fake_crops(tmp_path)
     fetched: list[Path] = []
     monkeypatch.setattr(prepare, "download", fetched.append)
     out = tmp_path / "out"
-    argv = ["prepare", "--data_root", str(tmp_path / "crops"), "--out_dir", str(out)]
+    argv = ["prepare", "--data_root", str(data), "--out_dir", str(out)]
     monkeypatch.setattr(sys, "argv", [*argv, "--download_only"])
     prepare.main()
-    assert fetched == [tmp_path / "crops"] and not out.exists()
-    monkeypatch.setattr(sys, "argv", argv)
+    assert fetched == [data] and not out.exists()
+    assert "36 public crops" in capsys.readouterr().out
+    # A missing vocabulary fails before anything is downloaded.
+    monkeypatch.setattr(sys, "argv", [*argv, "--download"])
     with pytest.raises(SystemExit):
         prepare.main()
+    assert fetched == [data]
+    # An extraction that stopped after manifest.csv is reported, not accepted.
+    next((data / "crops" / "cat0").iterdir()).unlink()
+    monkeypatch.setattr(sys, "argv", [*argv, "--download_only"])
+    with pytest.raises(SystemExit, match="missing crop"):
+        prepare.main()
+
+
+def test_linear_sgd_probe_resolves_relative_manifest_paths(tmp_path):
+    manifests = tmp_path / "manifests"
+    manifests.mkdir()
+    images = [f"../images/{index}.png" for index in range(4)]
+    split = {
+        "classes": ["a", "b"],
+        "train": [{"image": images[0], "label": 0}, {"image": images[1], "label": 1}],
+        "test": [{"image": images[2], "label": 0}, {"image": images[3], "label": 1}],
+    }
+    manifest = manifests / "split.json"
+    manifest.write_text(json.dumps(split))
+    probe = linear_sgd_probe.LinearSGDProbe("sgd", manifest=str(manifest), workers=0)
+    assert probe.split.train[0].image == str(manifests / images[0])
+    assert probe.split.test[1].image == str(manifests / images[3])
 
 
 def test_babyview_prepare_follows_the_frozen_protocol(tmp_path):
