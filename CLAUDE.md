@@ -27,8 +27,7 @@ uv run pre-commit run --all-files
 - **Never port code from the source repos without an explicit request** — porting
   is triaged per-PR by the code owners (CONTRIBUTING.md "Porting policy").
 - **Merge commits only** — never rebase, squash, or force-push shared history.
-- PRs target public `egolearn/egolearn`. Never merge in the private
-  `agentic-learning-ai-lab/egolearn`; its `main` is a nightly copy of public `main`.
+- Open PRs against `egolearn/egolearn`.
 - Never commit secrets, personal cluster paths, dataset frames (SAYCam/BabyView are
   IRB-controlled; the only exception is credited, already-public images in
   `landing/media/`), or files >500 KB (SECURITY.md has the full list).

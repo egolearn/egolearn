@@ -9,14 +9,10 @@
 # Review gate: approvals must come from a CODE OWNER (.github/CODEOWNERS), so only
 # code-owner approvals count. enforce_admins=false lets repo admins (org owners)
 # bypass the gate — use only during repo setup, then restore true on that repository.
-# Never apply it to the private development repository: rulesets there let only
-# deploy keys update main, and the nightly sync in the lab's private
-# agentic-learning-ai-lab/egolearn-sync repository holds the only one.
 #
 # Notes:
 # - required_linear_history stays FALSE: this repo merges with merge commits only
-#   (squash/rebase are disabled at the repo level) so hashes remain shared with the
-#   private development repository. Linear history would forbid that.
+#   (squash/rebase are disabled at the repo level), which linear history would forbid.
 # - The checks list must match the job names in .github/workflows/ci.yml.
 set -euo pipefail
 
