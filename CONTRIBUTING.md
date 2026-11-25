@@ -17,6 +17,9 @@ uv run pre-commit install
 
 ## Pull requests
 
+- Open PRs against `egolearn/egolearn`. Every commit on the branch becomes
+  public, so first check its whole history for restricted data, personal paths
+  and unpublished results.
 - All five CI checks must pass: `lint`, `types`, `test`, `lock`, `gitleaks`.
 - Every PR needs an approving review from a code owner (`.github/CODEOWNERS`),
   who are auto-requested. Your own approval doesn't count, even as a code owner.

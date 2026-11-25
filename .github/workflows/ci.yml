@@ -6,8 +6,7 @@ on:
   # Stacked feature PRs need the same checks before their base reaches main.
   pull_request:
   push:
-    # Validate the public commit in the private repo before synchronizing main.
-    branches: [main, "release-sync/**"]
+    branches: [main]
 
 permissions:
   contents: read
