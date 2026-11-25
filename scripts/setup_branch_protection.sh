@@ -4,14 +4,14 @@
 # Usage:
 #   bash scripts/setup_branch_protection.sh owner/repo [approvals] [enforce_admins]
 #   bash scripts/setup_branch_protection.sh egolearn/egolearn             # defaults: 1 approval, admins enforced
-#   bash scripts/setup_branch_protection.sh agentic-learning-ai-lab/egolearn 1 false
-#                                                                        # setup phase: PI can bypass
+#   bash scripts/setup_branch_protection.sh egolearn/egolearn 1 false     # setup phase: PI can bypass
 #
 # Review gate: approvals must come from a CODE OWNER (.github/CODEOWNERS), so only
 # code-owner approvals count. enforce_admins=false lets repo admins (org owners)
 # bypass the gate — use only during repo setup, then restore true on that repository.
 # Never apply it to the private development repository: rulesets there let only
-# the sync deploy key update main (.github/workflows/sync-private-main.yml).
+# deploy keys update main, and the nightly sync in the lab's private
+# agentic-learning-ai-lab/egolearn-sync repository holds the only one.
 #
 # Notes:
 # - required_linear_history stays FALSE: this repo merges with merge commits only

@@ -19,9 +19,9 @@ uv run pre-commit install
 
 Lab members can keep unpublished work on branches of the private
 `agentic-learning-ai-lab/egolearn` repository. Its `main` is a copy of public
-`main`, fast-forwarded every night by
-[a workflow](.github/workflows/sync-private-main.yml), and nothing else can
-update it. Never merge a PR in the private repository.
+`main`, fast-forwarded every night by a job in the lab's private
+`egolearn-sync` repository, and nothing else can update it. Never merge a PR in
+the private repository.
 
 Start a branch from public `main` and keep it current by merging `main`. When
 the work is ready for review, push the branch to `egolearn/egolearn` and open
